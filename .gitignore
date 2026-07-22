@@ -1,0 +1,28 @@
+# data 不進 git，透過雲端同步
+data/
+!data/**/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# ML artifacts
+*.npy
+*.npz
+*.pt
+*.bin
+*.safetensors
+checkpoints/
+wandb/
+runs/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+
+# secrets
+.env

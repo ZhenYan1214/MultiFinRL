@@ -1,0 +1,30 @@
+# 統一開發環境（唯一依據）。安裝：pip install -r requirements.txt
+# 版本先不鎖死，跑通後由團隊一次鎖定（pip freeze 後截取）。
+
+# --- shared ---
+numpy
+pandas
+pyyaml
+tqdm
+
+# --- Module A: data engineering ---
+yfinance
+mplfinance
+requests
+beautifulsoup4
+lxml
+
+# --- Module B: encoders + RAG ---
+torch
+transformers
+sentencepiece
+faiss-cpu          # GPU 機器可改 faiss-gpu；若改用 Milvus 則加 pymilvus
+
+# --- Module C: fusion + RL + backtest ---
+peft               # QLoRA
+bitsandbytes
+accelerate
+gymnasium
+stable-baselines3
+matplotlib
+scikit-learn

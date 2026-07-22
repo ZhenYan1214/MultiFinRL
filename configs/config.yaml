@@ -1,0 +1,39 @@
+# 全域參數，三個模組共同讀取；改動需通知全員
+market: US
+tickers: [AAPL]            # 先固定一檔，跑通後再擴充
+date_range:
+  start: "2021-01-01"
+  end: "2025-12-31"        # 5 年
+
+chart:
+  window_days: 20
+  image_size: [224, 224]
+  channels: 3
+  format: png
+
+label:
+  horizon_trading_days: 5   # 未來第 5 個交易日收盤 vs 當日收盤
+  bullish_threshold: 0.02   # > +2% -> BULLISH
+  bearish_threshold: -0.02  # < -2% -> BEARISH，其餘 NEUTRAL
+
+text:
+  max_chunk_tokens: 512     # FinBERT 上限
+
+rag:
+  top_k: 3
+  vector_db: faiss          # faiss 或 milvus
+
+# encoder 預設（B 模組讀取；shape 一旦定案不可再變，見 docs/data_format.md）
+encoders:
+  vision: google/vit-base-patch16-224   # H_v: [197, 768]
+  text: ProsusAI/finbert                # H_t: [512, 768]；H_r: [3, 512, 768]
+
+# fusion / RL（C 模組讀取）
+fusion:
+  d_model: 768              # 融合層內部維度
+  n_heads: 8
+  n_layers: 2
+  z_dim: 768                # Z_fused 輸出維度
+
+timezone: America/New_York
+seed: 42

@@ -1,0 +1,15 @@
+{
+  "ticker": "AAPL",
+  "date": "2021-03-15",
+  "vectors": {
+    "H_v": { "file": "H_v.npy", "shape": [197, 768], "dtype": "float32", "encoder": "google/vit-base-patch16-224" },
+    "H_t": { "file": "H_t.npy", "shape": [512, 768], "dtype": "float32", "encoder": "ProsusAI/finbert" },
+    "H_r": { "file": "H_r.npy", "shape": [3, 512, 768], "dtype": "float32", "encoder": "ProsusAI/finbert", "top_k": 3 }
+  },
+  "retrieved_chunk_ids": [
+    "AAPL_10-Q_2021-02-01_003",
+    "AAPL_EC_2021Q1_012",
+    "AAPL_10-K_2020-10-30_047"
+  ],
+  "source_json": "data/processed/dataset/AAPL/2021-03-15.json"
+}

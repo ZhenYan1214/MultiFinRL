@@ -1,0 +1,48 @@
+{
+  "ticker": "AAPL",
+  "date": "2021-03-15",
+  "chart": {
+    "path": "data/raw/charts/AAPL/2021-03-15.png",
+    "window_days": 20,
+    "size": [224, 224],
+    "channels": 3
+  },
+  "news": [
+    {
+      "headline": "Apple unveils new product line",
+      "content": "Cleaned full text without HTML tags ...",
+      "source": "yahoo_finance",
+      "published_at": "2021-03-15T09:30:00-04:00",
+      "days_ago": 0
+    },
+    {
+      "headline": "Supply chain update for major tech firms",
+      "content": "Cleaned full text ...",
+      "source": "reuters",
+      "published_at": "2021-03-13T14:00:00-04:00",
+      "days_ago": 2
+    }
+  ],
+  "filing_chunks": [
+    {
+      "chunk_id": "AAPL_10-Q_2021-02-01_003",
+      "doc_type": "10-Q",
+      "filing_date": "2021-02-01",
+      "text": "Chunk of at most 512 tokens ..."
+    }
+  ],
+  "transcript_chunks": [
+    {
+      "chunk_id": "AAPL_EC_2021Q1_012",
+      "doc_type": "earnings_call",
+      "event_date": "2021-01-27",
+      "text": "Chunk of at most 512 tokens ..."
+    }
+  ],
+  "prices": {
+    "close_t0": 123.99,
+    "close_t5": 120.53,
+    "future_closes": [124.1, 122.8, 121.9, 121.2, 120.53]
+  },
+  "label": "BEARISH"
+}
