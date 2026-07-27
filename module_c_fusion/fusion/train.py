@@ -135,6 +135,12 @@ def main():
         train(model, batches, args.epochs, args.lr, device)
         export_z_fused(model, args.ticker, days, device)
 
+        # 整段時間範圍都產完了，自動彙整成單一索引檔，供分類驗證/回測/RL 訓練直接讀取
+        from module_c_fusion.fusion.consolidate import build_index, save_index
+        index_data = build_index(args.ticker)
+        if index_data:
+            save_index(args.ticker, index_data)
+
     ckpt = paths.OUTPUTS / "checkpoints" / "fusion.pt"
     ckpt.parent.mkdir(parents=True, exist_ok=True)
     torch.save(model.state_dict(), ckpt)

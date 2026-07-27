@@ -14,10 +14,18 @@ import numpy as np
 from shared import paths
 from shared.utils import load_config, read_json
 from module_c_fusion.rl.env import PortfolioEnv
+from module_c_fusion.fusion.consolidate import load_index
 
 
 def load_real(ticker: str):
-    """讀 Z_fused 序列與對應次日報酬（用 A 的 future_closes[0] 對 close_t0）。"""
+    """讀 Z_fused 序列與對應次日報酬（用 A 的 future_closes[0] 對 close_t0）。
+
+    優先讀彙整索引；索引不存在時 fallback 成逐日掃描。
+    """
+    idx = load_index(ticker)
+    if idx is not None:
+        return idx["z"], idx["return_next"]
+
     z_dir = paths.OUTPUTS / "z_fused" / ticker
     z_list, r_list = [], []
     for f in sorted(z_dir.glob("*.npy")):

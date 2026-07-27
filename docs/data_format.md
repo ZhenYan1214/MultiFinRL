@@ -127,7 +127,10 @@ data/vectors/AAPL/2021-03-15/
 
 ```
 data/outputs/
-├── z_fused/{TICKER}/{YYYY-MM-DD}.npy   # 每日 Z_fused 向量
+├── z_fused/
+│   ├── {TICKER}/{YYYY-MM-DD}.npy       # 每日 Z_fused 向量（除錯/可解釋性分析用）
+│   ├── {TICKER}_index.npz              # ★ 彙整索引：整段時間範圍一次讀取用
+│   └── {TICKER}_index.meta.json        # 索引摘要（天數、日期範圍、z_dim）
 ├── checkpoints/                         # Fusion 模型與 RL agent 權重
 ├── metrics/
 │   ├── classification_report.json      # 情緒分類準確率（對照 A 的 label）
@@ -135,6 +138,17 @@ data/outputs/
 └── backtest/
     └── report_{run_id}.json            # 累積報酬、Sharpe、MDD、有無 RL 對照
 ```
+
+`{TICKER}_index.npz` 內容（`module_c_fusion/fusion/consolidate.py` 產出）：
+
+| 陣列 | shape | 說明 |
+|---|---|---|
+| `dates` | [N] | YYYY-MM-DD，依日期排序 |
+| `z` | [N, z_dim] | 每日 Z_fused，float32 |
+| `label` | [N] | 0=BEARISH 1=NEUTRAL 2=BULLISH，對照 A 的 label |
+| `return_next` | [N] | t → t+1 實際報酬，來自 A 的 `future_closes[0]` / `close_t0` |
+
+`train.py` 跑完整段時間範圍後自動產生此索引；分類驗證、回測、RL 訓練一律優先讀這個檔案。
 
 ---
 

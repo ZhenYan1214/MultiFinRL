@@ -17,6 +17,7 @@ import numpy as np
 
 from shared import paths
 from shared.utils import load_config, read_json, write_json
+from module_c_fusion.fusion.consolidate import load_index
 
 TRADING_DAYS_PER_YEAR = 252
 
@@ -56,7 +57,16 @@ def run_backtest(weights: np.ndarray, asset_returns: np.ndarray, cost: float = 0
 # --- 資料與策略 ---
 
 def load_series(ticker: str):
-    """回傳 (dates, z_seq, next_day_returns)；只取測試期避免用到訓練期。"""
+    """回傳 (dates, z_seq, next_day_returns)。
+
+    優先讀彙整索引；索引不存在時 fallback 成逐日掃描。
+    注意：這裡回傳整段期間的序列，不自動切測試期——切分邏輯由呼叫端（策略函式）決定，
+    例如 weights_rule_based() 內部用前 70% fit、其餘出訊號。
+    """
+    idx = load_index(ticker)
+    if idx is not None:
+        return idx["dates"].tolist(), idx["z"], idx["return_next"]
+
     z_dir = paths.OUTPUTS / "z_fused" / ticker
     dates, z_list, r_list = [], [], []
     for f in sorted(z_dir.glob("*.npy")):
