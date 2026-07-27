@@ -30,6 +30,24 @@ python -m module_c_fusion.backtest.backtest --ticker AAPL --strategy rule_based 
 回測策略：`buy_and_hold`（baseline）/ `rule_based`（分類訊號，無 RL 對照組）/ `ppo`（RL 組）。
 基礎版訓練目標是情緒分類 cross-entropy；QLoRA 與對比損失是後續強化，介面不變。
 
+## Z_fused 的儲存方式
+
+`train.py` 對整段時間範圍跑完後，除了逐日存檔（`data/outputs/z_fused/{TICKER}/{date}.npy`，
+供除錯/可解釋性分析），會自動呼叫 `fusion/consolidate.py` 彙整成單一索引檔：
+
+```
+data/outputs/z_fused/{TICKER}_index.npz        # dates / z / label / return_next 四個陣列
+data/outputs/z_fused/{TICKER}_index.meta.json  # 天數、日期範圍、z_dim 等摘要（人類可讀）
+```
+
+`classifier.py`、`backtest.py`、`train_ppo.py` 都會優先讀這個索引檔（沒有才 fallback 逐日掃描），
+之後要接新的下游任務，直接讀 `{TICKER}_index.npz` 即可，不用重新掃資料夾。
+索引檔沒自動生成時（例如只手動跑過 `train.py --fake`），可單獨補建：
+
+```bash
+python -m module_c_fusion.fusion.consolidate --ticker AAPL
+```
+
 ## 注意事項
 
 - 回測時嚴禁使用 `future_closes` 以外的未來資訊；`future_closes` 只用於計算已成立部位的損益。

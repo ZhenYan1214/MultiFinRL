@@ -15,13 +15,22 @@ from sklearn.metrics import accuracy_score, classification_report
 
 from shared import paths
 from shared.utils import read_json, write_json
+from module_c_fusion.fusion.consolidate import load_index
 
 LABEL_TO_ID = {"BEARISH": 0, "NEUTRAL": 1, "BULLISH": 2}
 ID_TO_LABEL = {v: k for k, v in LABEL_TO_ID.items()}
 
 
 def load_z_and_labels(ticker: str):
-    """讀取所有 (date, Z_fused, label)，依日期排序。"""
+    """讀取所有 (date, Z_fused, label)，依日期排序。
+
+    優先讀彙整索引（data/outputs/z_fused/{ticker}_index.npz）；
+    索引還沒建立時 fallback 成逐日掃描（速度較慢，但結果一致）。
+    """
+    idx = load_index(ticker)
+    if idx is not None:
+        return list(zip(idx["dates"].tolist(), list(idx["z"]), idx["label"].tolist()))
+
     z_dir = paths.OUTPUTS / "z_fused" / ticker
     rows = []
     for f in sorted(z_dir.glob("*.npy")):
