@@ -62,7 +62,7 @@ def main():
     Xtr, ytr = np.stack([z for _, z, _ in train]), [y for _, _, y in train]
     Xte, yte = np.stack([z for _, z, _ in test]), [y for _, _, y in test]
 
-    clf = LogisticRegression(max_iter=1000, multi_class="multinomial")
+    clf = LogisticRegression(max_iter=1000)  # 新版 sklearn 預設就是 multinomial，不用再指定
     clf.fit(Xtr, ytr)
     pred = clf.predict(Xte)
 

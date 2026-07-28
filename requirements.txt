@@ -16,6 +16,7 @@ lxml
 
 # --- Module B: encoders + RAG ---
 torch
+torchvision        # AutoImageProcessor（ViT 圖片前處理）需要，transformers 沒有把它列為必裝
 transformers
 sentencepiece
 faiss-cpu          # GPU 機器可改 faiss-gpu；若改用 Milvus 則加 pymilvus
