@@ -1,144 +1,161 @@
 # MultiFinRL
 
-多模態檢索增強金融決策框架（Multimodal Retrieval-Augmented Financial Decision Framework with Reinforcement Learning）
+**A Multimodal Retrieval-Augmented Financial Decision Framework with Reinforcement Learning**
 
-本專案將每支股票每個交易日的 **K 線圖（視覺）**、**財經新聞（文字）**、**財報／法說會文件（外部知識）** 三種資料，分別經過視覺編碼器（ViT）、文字編碼器（FinBERT / LLaMA）與 RAG 檢索模組處理後，用 Cross-Modal Transformer 融合成一個代表當日市場狀態的向量 **Z_fused**，並以此訓練強化學習（PPO）投資組合配置 agent。
+MultiFinRL turns three kinds of daily market data — candlestick charts (visual), financial news (text), and filings / earnings-call transcripts (external knowledge) — into a single vector, `Z_fused`, that represents a stock's market state on a given trading day. A vision encoder (ViT), a text encoder (FinBERT), and a retrieval-augmented generation (RAG) module each process one modality; a Cross-Modal Transformer fuses the three into `Z_fused`. That vector is then used both to validate market-sentiment classification and event extraction, and as the state input for a PPO reinforcement-learning agent that allocates a portfolio.
 
 ---
 
-## 兩階段目標
-
-| 年度 | 目標 |
+| Phase | Goal |
 |---|---|
-| 第一階段 | 建立完整資料與模型 pipeline，產出 Z_fused，以市場情緒分類與事件抽取驗證其品質，並完成簡單的投資組合回測 |
-| 第二階段 | 將 Z_fused 接上 RL（PPO），進行完整投資組合配置與回測，評估 Sharpe Ratio、最大回撤等績效指標 |
+| Phase 1 | Build the full data-to-`Z_fused` pipeline; validate `Z_fused` quality via market-sentiment classification and event extraction; run a simple portfolio backtest (single-stock position sizing or a small multi-asset mix). |
+| Phase 2 | Connect `Z_fused` to a PPO agent for portfolio allocation; run a full backtest; compare performance with and without RL (Sharpe ratio, max drawdown, etc.). |
 
-## Pipeline 總覽
+Both phases run within the same year and the pipeline is expected to cover the output of both — classification, event extraction, a simple backtest, and an RL-based backtest — not one phase per year.
 
+## Architecture
+
+```mermaid
+flowchart LR
+    subgraph A["Track A — Data Engineering"]
+        A1["OHLCV, charts,\nnews, filings"]
+    end
+    subgraph B["Track B — Encoding + RAG"]
+        B1["H_v (ViT)\nH_t (FinBERT)\nH_r (RAG top-K)"]
+    end
+    subgraph C1["Track C — Fusion"]
+        C1a["Cross-Modal\nTransformer"]
+        C1b["Z_fused"]
+    end
+    subgraph C2["Track C — Validation, RL, Backtest"]
+        C2a["Sentiment /\nevent classification"]
+        C2b["PPO portfolio\nagent"]
+        C2c["Backtest\n(Sharpe, MDD, return)"]
+    end
+    A1 --> B1 --> C1a --> C1b
+    C1b --> C2a
+    C1b --> C2b --> C2c
 ```
-輸入：股票代號 + 時間範圍
-        │
-        ▼
-┌─────────────┐    ┌──────────────────┐    ┌──────────────┐    ┌─────────────┐
-│  A 抓取資料   │──▶│  B 編碼 + RAG 檢索 │──▶│ C 融合 Z_fused │──▶│ C 分類/RL/回測 │
-│ 圖片/新聞/財報 │    │  H_v, H_t, H_r    │    │ Cross-Modal   │    │  驗證與績效    │
-└─────────────┘    └──────────────────┘    └──────────────┘    └─────────────┘
-   module_a_data      module_b_encoder       module_c_fusion     module_c_fusion
-```
 
-對時間範圍內每個交易日重複執行，最終產出數千筆 Z_fused。
+This runs once per trading day for the configured date range, producing one `Z_fused` vector per day — several thousand for a multi-year run on a single stock.
 
 ---
 
-## 分工與目錄對應
+## Ownership and Directory Layout
 
-| 負責人 | 模組目錄 | 職責 | 交付物 |
 |---|---|---|---|
-| A | `module_a_data/` | 資料工程：爬蟲、K 線圖產生、文字清洗、Chunk 切分、漲跌標籤 | 統一 JSON 資料集（`data/processed/dataset/`），一天一筆 |
-| B | `module_b_encoder/` | ViT / FinBERT 編碼、RAG 向量庫與檢索、事件抽取 | 每日 H_v、H_t、H_r 向量（`data/vectors/`），格式固定 |
-| C | `module_c_fusion/` | Cross-Modal Transformer + QLoRA、分類驗證、PPO、回測 | 可依市場狀態輸出投組建議的完整系統與回測績效報告 |
+| A | `module_a_data/` | Data engineering: crawlers, chart generation, text cleaning, chunking, price-movement labels | One JSON record per day (`data/processed/dataset/`) |
+| B | `module_b_encoder/` | ViT / FinBERT encoding, RAG index and retrieval, event extraction | Daily `H_v`, `H_t`, `H_r` vectors (`data/vectors/`) in a fixed format |
+| C | `module_c_fusion/` | Cross-Modal Transformer, classification validation, PPO, backtesting | A system that outputs portfolio recommendations from market state, plus backtest reports |
 
-共用程式（資料格式驗證、路徑常數、共用工具）放在 `shared/`，由三人共同維護；改動 `shared/` 前先在群組告知。
+Shared code (schema validation, path constants, utilities) lives in `shared/` and is jointly maintained; changes there should be flagged to the other tracks before merging.
 
-## 專案結構
+## Repository Structure
 
 ```
 MultiFinRL/
-├── README.md                     # 本文件
-├── requirements.txt              # 統一開發環境（唯一依據）
+├── README.md                       # this file
+├── requirements.txt                 # single source of truth for the dev environment
 ├── .gitignore
 ├── configs/
-│   └── config.yaml               # 全域參數：股票池、日期範圍、K 值、圖片尺寸等
+│   └── config.yaml                  # global parameters: tickers, date range, chart/label settings
 ├── docs/
-│   ├── data_format.md            # ★ 資料格式契約（A/B/C 銜接的唯一標準）
-│   └── decisions.md              # 已確認的規格決策紀錄（含負責人 Q&A）
+│   ├── data_format.md               # data contract between A / B / C
+│   ├── decisions.md                 # decision log, including open questions
+│   └── data_and_experiments_log.md  # data sources and classification results over time
 ├── samples/
-│   ├── DataStruct.example.json   # A 產出格式範例
-│   └── vectors_index.example.json# B 產出格式範例
+│   ├── DataStruct.example.json      # example of A's output format
+│   └── vectors_index.example.json   # example of B's output format
 ├── shared/
-│   ├── schemas.py                # 資料格式驗證（讀寫雙方都要通過）
-│   ├── paths.py                  # 路徑常數，避免硬編路徑
+│   ├── schemas.py                   # validates records against the data contract
+│   ├── paths.py                     # path constants
 │   └── utils.py
-├── module_a_data/                # ═══ A：資料工程 ═══
+├── module_a_data/                   # Track A — data engineering
 │   ├── README.md
 │   ├── crawler/
-│   │   ├── fetch_ohlcv.py        # yfinance 下載 OHLCV
-│   │   ├── fetch_news.py         # 財經新聞爬蟲
-│   │   ├── fetch_filings.py      # SEC EDGAR 財報
-│   │   └── fetch_transcripts.py  # 法說會逐字稿
+│   │   ├── fetch_ohlcv.py           # OHLCV via yfinance
+│   │   ├── fetch_news.py            # recent news
+│   │   ├── fetch_news_alpaca.py     # historical news backfill via Alpaca News API
+│   │   ├── fetch_filings.py         # SEC EDGAR filings
+│   │   └── fetch_transcripts.py     # earnings-call transcripts
 │   ├── preprocess/
-│   │   ├── chart_generator.py    # mplfinance 產生 20 日 K 線圖 PNG
-│   │   ├── text_cleaner.py       # HTML 清洗
-│   │   └── chunker.py            # 文件切 Chunk（≤512 token）
-│   ├── labeling.py               # 漲跌標籤產生
-│   └── build_dataset.py          # 彙整輸出每日 JSON
-├── module_b_encoder/             # ═══ B：Encoder + RAG + 事件抽取 ═══
+│   │   ├── chart_generator.py       # mplfinance candlestick charts, 20-day window
+│   │   ├── text_cleaner.py          # HTML/noise cleanup
+│   │   └── chunker.py               # document chunking (≤512 tokens)
+│   ├── labeling.py                  # BULLISH / BEARISH / NEUTRAL label generation
+│   └── build_dataset.py             # assembles the daily JSON records
+├── module_b_encoder/                # Track B — encoders + RAG + event extraction
 │   ├── README.md
 │   ├── encoders/
-│   │   ├── vision_encoder.py     # ViT → H_v
-│   │   └── text_encoder.py       # FinBERT/LLaMA → H_t
+│   │   ├── vision_encoder.py        # ViT -> H_v
+│   │   └── text_encoder.py          # FinBERT -> H_t
 │   ├── rag/
-│   │   ├── vector_db.py          # FAISS/Milvus 建庫
-│   │   └── retriever.py          # top-K 檢索 → H_r
-│   ├── event_extraction.py       # 財經事件抽取 + P/R/F1
-│   └── generate_vectors.py       # 主程式：每日產出三個向量
-├── module_c_fusion/              # ═══ C：Fusion + 驗證 + RL + 回測 ═══
+│   │   ├── vector_db.py             # FAISS index over filing/transcript chunks
+│   │   └── retriever.py             # top-K retrieval -> H_r
+│   ├── event_extraction.py          # keyword-based event extraction
+│   └── generate_vectors.py          # main entry point: produces H_v / H_t / H_r per day
+├── module_c_fusion/                 # Track C — fusion, validation, RL, backtest
 │   ├── README.md
 │   ├── fusion/
-│   │   ├── model.py              # Cross-Modal Transformer
-│   │   └── train.py              # QLoRA 微調
+│   │   ├── model.py                 # Cross-Modal Transformer
+│   │   ├── train.py                 # trains the fusion model, exports Z_fused
+│   │   └── consolidate.py           # merges per-day Z_fused into one index file
 │   ├── validation/
-│   │   └── classifier.py         # Z_fused 分類任務驗證
+│   │   └── classifier.py            # held-out classification test on Z_fused
 │   ├── rl/
-│   │   ├── env.py                # PPO 環境與獎勵函數
+│   │   ├── env.py                   # PPO environment and reward function
 │   │   └── train_ppo.py
 │   └── backtest/
-│       └── backtest.py           # Sharpe、MDD、累積報酬
+│       └── backtest.py              # cumulative return, Sharpe ratio, max drawdown
 ├── scripts/
-│   └── run_pipeline.py           # 串接 A→B→C 的完整 pipeline 入口
-└── data/                         # 不進 git（見 .gitignore），本機/雲端存放
-    ├── raw/                      # A 的原始資料
-    │   ├── ohlcv/  charts/  news/  filings/  transcripts/
-    ├── processed/dataset/        # A 的交付物：每日 JSON
-    ├── vectors/                  # B 的交付物：.npy 向量 + index JSON
-    └── outputs/                  # C 的產出：模型權重、Z_fused、回測報告
+│   └── run_pipeline.py              # runs A -> B -> C end to end
+└── data/                            # not tracked in git; synced locally/via cloud storage
+    ├── raw/                         # Track A's raw inputs (ohlcv, charts, news, filings, transcripts)
+    ├── processed/dataset/           # Track A's deliverable: one JSON per day
+    ├── vectors/                     # Track B's deliverable: .npy vectors + index JSON
+    └── outputs/                     # Track C's output: model checkpoints, Z_fused, backtest reports
 ```
 
-## 資料流與格式（摘要）
+## Data Flow
 
-完整定義見 **`docs/data_format.md`**，這裡只列銜接點：
+Full definition in `docs/data_format.md`; the handoff points are:
 
-1. **A → B**：`data/processed/dataset/{TICKER}/{YYYY-MM-DD}.json`，一天一筆，含 K 線圖路徑、新聞列表（含 `days_ago` 欄位）、財報/法說會 Chunk、漲跌標籤。
-2. **B → C**：`data/vectors/{TICKER}/{YYYY-MM-DD}/` 內存 `H_v.npy`、`H_t.npy`、`H_r.npy` 三個檔案，外加一份 `index.json` 記錄 shape 與來源。
-3. **C 產出**：`data/outputs/` 內存 Z_fused、模型 checkpoint、回測報告。
+1. **A → B**: `data/processed/dataset/{TICKER}/{YYYY-MM-DD}.json` — one record per day, containing the chart path, a news list (with a `days_ago` field), filing/transcript chunks, and the price-movement label.
+2. **B → C**: `data/vectors/{TICKER}/{YYYY-MM-DD}/` — `H_v.npy`, `H_t.npy`, `H_r.npy`, plus an `index.json` recording shapes and sources.
+3. **C output**: `data/outputs/` — `Z_fused` (per day and as a consolidated index), model checkpoints, and backtest reports.
 
-## 已確定的全域規格
+## Global Specifications
 
-| 項目 | 規格 |
+| Item | Spec |
 |---|---|
-| 市場 / 初始股票池 | 美股，先以 AAPL 為主，後續擴充（NVDA 等大型個股；指數/ETF 因無財報暫不納入） |
-| 資料時間範圍 | 5 年 |
-| K 線圖 | 往前 20 個交易日，PNG、224×224、RGB 三通道 |
-| 漲跌標籤 | 未來第 5 個交易日收盤價 vs 當日收盤價之報酬：> +2% → BULLISH；< −2% → BEARISH；其餘 → NEUTRAL |
-| 文字 Chunk | 每段最長 512 token（FinBERT 輸入上限） |
-| RAG 檢索 | K = 3 |
-| 新聞缺漏處理 | 以前幾日新聞補上，並附 `days_ago` 欄位供模型判斷相關性 |
-| 微調方式 | QLoRA（單機 RTX 5090 可訓練） |
-| 開發環境 | 以本 repo 的 `requirements.txt` 為唯一依據 |
+| Market / initial universe | US equities, starting with AAPL; expansion to more large-cap names (e.g. NVDA) is a later step. Indices/ETFs are excluded for now since they have no filings. |
+| Data range | 2021-01 onward, continuously extended (currently through 2026-08; see `configs/config.yaml`) |
+| Charts | 20-day trailing window, PNG, 224×224, RGB |
+| Price-movement label | Return from close to the close 5 trading days later: > +2% → BULLISH, < −2% → BEARISH, otherwise NEUTRAL |
+| Text chunking | ≤512 tokens per chunk (FinBERT's input limit) |
+| RAG retrieval | top-K = 3 |
+| Missing daily news | backfilled from prior days, with a `days_ago` field so the model can weigh relevance |
+| Fine-tuning | full-parameter training currently; QLoRA is planned to keep fusion-model training feasible on a single high-end GPU, not yet implemented (`docs/decisions.md` #29) |
+| Dev environment | `requirements.txt` in this repo is the single source of truth |
 
-## 執行順序
+## Current Status and Roadmap
 
-**第一階段（平行進行）**
-- A：依格式開始抓資料，先交付 50–100 筆樣本
-- B：用假資料把 ViT / FinBERT / RAG 架構跑通（一張圖進去、一個向量出來、存成正確格式）
-- C：用假向量把 Fusion Transformer 跑通（三個向量進去、Z_fused 出來）
+Operational today, on AAPL:
 
-**第二階段（A 資料量足夠後）**
-- A：持續完善資料
-- B：換成真實資料，產出真實 H_v / H_t / H_r
-- C：換成真實向量，正式訓練 Fusion、接 RL、做回測
+- Data (A): OHLCV, charts, recent news, and historical news (via the Alpaca News API, 2021–2026) are all in place. Filings are fetched via `edgartools`. Earnings-call transcripts are not yet fetched — the crawler exists but has never completed an end-to-end run.
+- Encoding (B): ViT and FinBERT encoders and FAISS-based RAG retrieval are working. Event extraction is currently keyword-based only, with no ground-truth labels or precision/recall/F1 evaluation yet.
+- Fusion and validation (C): the Cross-Modal Transformer, held-out classification validation, PPO training, and backtesting (buy-and-hold / rule-based / PPO strategies) all run end to end. Class-weighted training is the current default after diagnostic testing showed it was necessary for the model to learn anything from the news input at all.
 
-## 快速開始
+Known gaps, tracked in `docs/decisions.md`, not yet started:
+
+- QLoRA fine-tuning and the three composite training losses (alignment, evidence grounding, belief consistency) described in the original proposal — training currently uses a simpler classification proxy loss instead.
+- A generative decoder that turns `Z_fused` into a structured narrative — requires new ground-truth text data from Track A that does not exist yet.
+- Cross-modal interpretability (Integrated Gradients on the PPO policy).
+- A domain-gap comparison for ViT on candlestick charts vs. its natural-image pretraining (flagged as a question since early on, never run).
+- Curriculum learning for PPO training.
+- Multi-asset portfolio backtesting — the current backtest allocates between a single stock and cash, not across multiple tickers.
+
+## Getting Started
 
 ```bash
 git clone <repo-url>
@@ -147,10 +164,22 @@ python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\act
 pip install -r requirements.txt
 ```
 
-各模組的執行方式見各自目錄下的 `README.md`。
+See each module's own `README.md` for how to run it.
 
-## 協作規則
+## Execution Order
 
-- `main` 分支保持可執行；各自在 `feat/a-*`、`feat/b-*`、`feat/c-*` 分支開發，PR 合併。
-- 資料檔（`data/`）不進 git，透過雲端硬碟同步；repo 只放程式與格式範例。
-- 任何**資料格式的變更**必須先更新 `docs/data_format.md` 與 `shared/schemas.py`，並通知另外兩人，才能改自己的程式。
+**Phase 1 (parallel)**
+- A starts pulling data, delivering an initial 50–100 sample days early.
+- B wires up ViT / FinBERT / RAG against synthetic data first — one image or chunk in, one correctly formatted vector out.
+- C wires up the Fusion Transformer against synthetic vectors — three vectors in, `Z_fused` out.
+
+**Phase 2 (once A has enough real data)**
+- A keeps extending coverage.
+- B switches to real data, producing real `H_v` / `H_t` / `H_r`.
+- C switches to real vectors and begins actual training, RL, and backtesting.
+
+## Collaboration Guidelines
+
+- `main` stays runnable; work happens on `feat/a-*`, `feat/b-*`, `feat/c-*` branches, merged via PR.
+- Data (`data/`) is not committed to git and is synced separately; the repo holds only code and format examples.
+- Any change to the **data format** must update `docs/data_format.md` and `shared/schemas.py` first, and be flagged to the other tracks before downstream code changes.

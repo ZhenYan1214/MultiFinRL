@@ -1,55 +1,55 @@
-# Module C：Fusion + 驗證 + RL + 回測
+# Module C: Fusion + Validation + RL + Backtest
 
-**負責人：**（填入姓名）
-**輸入：** B 的每日向量（`data/vectors/`），格式見 `docs/data_format.md` 第 2 節；A 的標籤（分類驗證用）。
-**交付物：** 可依市場狀態輸出投資組合建議的完整系統 + 回測績效報告（`data/outputs/`），格式見 `docs/data_format.md` 第 3 節。
+**Owner:** (fill in name)
+**Input:** B's daily vectors (`data/vectors/`), format defined in `docs/data_format.md` section 2; A's labels for classification validation.
+**Deliverable:** a system that outputs portfolio recommendations from market state, plus backtest reports (`data/outputs/`), format defined in `docs/data_format.md` section 3.
 
-## 職責
+## Responsibilities
 
-1. 設計 Cross-Modal Transformer，把 H_v、H_t、H_r 融合成 **Z_fused**（`fusion/model.py`）
-2. 用 QLoRA 微調融合模型，使訓練可在單台 RTX 5090 上執行（`fusion/train.py`）
-3. 以市場情緒分類任務驗證 Z_fused 品質，對照 A 產生的標籤計算準確率（`validation/classifier.py`）
-4. 設計 PPO 強化學習環境與獎勵函數，把 Z_fused 餵給 RL agent 訓練（`rl/env.py`、`rl/train_ppo.py`）
-5. 完成回測：累積報酬、Sharpe Ratio、最大回撤（`backtest/backtest.py`）
-6. 比較加入 RL 前後的投資績效變化
+1. Design a Cross-Modal Transformer that fuses H_v, H_t, and H_r into **Z_fused** (`fusion/model.py`).
+2. Train the fusion model (`fusion/train.py`). Full-parameter training is used today; QLoRA is planned so training stays feasible on a single high-end GPU, but is not yet implemented (`docs/decisions.md` #29).
+3. Validate Z_fused quality with a held-out market-sentiment classification task against A's labels (`validation/classifier.py`).
+4. Design the PPO environment and reward function, and train an RL agent on Z_fused (`rl/env.py`, `rl/train_ppo.py`).
+5. Run backtests: cumulative return, Sharpe ratio, max drawdown (`backtest/backtest.py`).
+6. Compare investment performance with and without RL.
 
-## 第一階段（等 B 真實向量期間）
+## Phase 1 (while waiting on real vectors from B)
 
-用假向量把架構跑通：以 `docs/data_format.md` 規定的 shape 隨機產生 H_v、H_t、H_r，確認三個向量丟進去能跑出 Z_fused。等 B 的真實向量到位後，才開始正式訓練、接 RL、做回測。
+Wire up the architecture against synthetic vectors first: generate random H_v / H_t / H_r at the shapes defined in `docs/data_format.md` and confirm the three vectors in produce a `Z_fused` out. Once B's real vectors are available, move on to real training, RL, and backtesting.
 
-## 指令（在 repo 根目錄執行）
+## Commands (run from the repo root)
 
 ```bash
-python -m module_c_fusion.fusion.train --fake --n 32         # 第一階段：假向量測通（需 torch）
-python -m module_c_fusion.fusion.train --ticker AAPL         # 第二階段：真實向量訓練 + 輸出 Z_fused
-python -m module_c_fusion.validation.classifier --ticker AAPL  # 情緒分類驗證（時間切分 70/15/15）
-python -m module_c_fusion.rl.train_ppo --fake                # PPO 測通
-python -m module_c_fusion.backtest.backtest --ticker AAPL --strategy rule_based   # 回測
+python -m module_c_fusion.fusion.train --fake --n 32                   # phase 1: synthetic vectors (needs torch)
+python -m module_c_fusion.fusion.train --ticker AAPL --weighted        # phase 2: real training, exports Z_fused
+python -m module_c_fusion.validation.classifier --ticker AAPL --weighted   # classification validation (70/15/15 time split)
+python -m module_c_fusion.rl.train_ppo --fake                          # PPO smoke test
+python -m module_c_fusion.backtest.backtest --ticker AAPL --strategy rule_based   # backtest
 ```
 
-回測策略：`buy_and_hold`（baseline）/ `rule_based`（分類訊號，無 RL 對照組）/ `ppo`（RL 組）。
-基礎版訓練目標是情緒分類 cross-entropy；QLoRA 與對比損失是後續強化，介面不變。
+Backtest strategies: `buy_and_hold` (baseline), `rule_based` (classification signal, non-RL comparison), `ppo` (RL). It currently allocates a single ticker between the stock and cash — multi-asset allocation across several tickers has not been built yet.
 
-## Z_fused 的儲存方式
+`--weighted` re-weights the training loss (and, in `classifier.py`, uses scikit-learn's `class_weight="balanced"`) by inverse class frequency. Diagnostic testing (`docs/spec_c_accuracy_diagnostics.md`) found this necessary for the model to learn anything measurable from the news input at all, so it is now the recommended default rather than a purely diagnostic flag. `--ablate_news` (train.py only) zeroes out H_t in memory without touching any files on disk, and exists for the same diagnostic comparison.
 
-`train.py` 對整段時間範圍跑完後，除了逐日存檔（`data/outputs/z_fused/{TICKER}/{date}.npy`，
-供除錯/可解釋性分析），會自動呼叫 `fusion/consolidate.py` 彙整成單一索引檔：
+The base training objective is classification cross-entropy against A's labels via a throwaway linear head; a generative decoder and the three composite losses (alignment, evidence grounding, belief consistency) described in the original proposal are a later addition, not yet implemented — see `docs/decisions.md` #29 for the full list of what's deferred pending advisor sign-off, including cross-modal interpretability (Integrated Gradients on the PPO policy).
+
+## How Z_fused Is Stored
+
+After `train.py` finishes a full run, in addition to saving one file per day (`data/outputs/z_fused/{TICKER}/{date}.npy`, useful for debugging or later interpretability work), it calls `fusion/consolidate.py` automatically to build a single indexed file:
 
 ```
-data/outputs/z_fused/{TICKER}_index.npz        # dates / z / label / return_next 四個陣列
-data/outputs/z_fused/{TICKER}_index.meta.json  # 天數、日期範圍、z_dim 等摘要（人類可讀）
+data/outputs/z_fused/{TICKER}_index.npz        # dates / z / label / return_next arrays
+data/outputs/z_fused/{TICKER}_index.meta.json  # human-readable summary: day count, date range, z_dim, etc.
 ```
 
-`classifier.py`、`backtest.py`、`train_ppo.py` 都會優先讀這個索引檔（沒有才 fallback 逐日掃描），
-之後要接新的下游任務，直接讀 `{TICKER}_index.npz` 即可，不用重新掃資料夾。
-索引檔沒自動生成時（例如只手動跑過 `train.py --fake`），可單獨補建：
+`classifier.py`, `backtest.py`, and `train_ppo.py` all read this index first and only fall back to scanning per-day files if it's missing. Any new downstream task should read `{TICKER}_index.npz` directly rather than rescanning the vector directory. If the index wasn't generated automatically (e.g. after only running `train.py --fake`), rebuild it with:
 
 ```bash
 python -m module_c_fusion.fusion.consolidate --ticker AAPL
 ```
 
-## 注意事項
+## Notes
 
-- 回測時嚴禁使用 `future_closes` 以外的未來資訊；`future_closes` 只用於計算已成立部位的損益。
-- 第一年的回測先做「簡單版」（單股比例增減或少數標的的組合）；是否需在第一年就跑完整 PPO 尚未定案（見 `docs/decisions.md`）。
-- 分類驗證與回測都需要按時間切分 train/val/test，不可隨機打散（避免時間洩漏）。
+- Never use information beyond `future_closes` during backtesting; `future_closes` is only for computing the P&L of positions already taken.
+- Phase 1's backtest is intentionally simple (single-stock position sizing or a small multi-asset mix); whether a full PPO backtest is required within phase 1 itself is still open (`docs/decisions.md`).
+- Both classification validation and backtesting must use a chronological train/val/test split, never a random shuffle — shuffling would leak future information into training.

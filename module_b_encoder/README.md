@@ -1,37 +1,36 @@
-# Module B：Encoder + RAG + 事件抽取
+# Module B: Encoders + RAG + Event Extraction
 
-**負責人：**（填入姓名）
-**輸入：** A 的每日 JSON（`data/processed/dataset/`），格式見 `docs/data_format.md` 第 1 節。
-**交付物：** `data/vectors/{TICKER}/{YYYY-MM-DD}/` 內的 `H_v.npy`、`H_t.npy`、`H_r.npy` + `index.json`，格式見 `docs/data_format.md` 第 2 節。
+**Owner:** (fill in name)
+**Input:** A's daily JSON records (`data/processed/dataset/`). Format defined in `docs/data_format.md`, section 1.
+**Deliverable:** `H_v.npy`, `H_t.npy`, `H_r.npy`, and `index.json` under `data/vectors/{TICKER}/{YYYY-MM-DD}/`. Format defined in `docs/data_format.md`, section 2.
 
-## 職責
+## Responsibilities
 
-1. 從 HuggingFace 下載 ViT 預訓練模型，將 K 線圖 PNG 轉成特徵向量 **H_v**（`encoders/vision_encoder.py`）
-2. 用 FinBERT 或 LLaMA 將新聞文字轉成特徵向量 **H_t**（`encoders/text_encoder.py`）
-3. 用 FAISS 或 Milvus 建向量資料庫，存入財報/法說會 Chunk（`rag/vector_db.py`）
-4. 以 H_v 和 H_t 合併成 query，檢索 top-K（K=3）相關文件，產生 **H_r**（`rag/retriever.py`）
-5. 比較不同版本 ViT 與不同文字模型，找出最佳組合（實驗結果可寫進論文）
-6. 從新聞、財報及法說會文字抽取重大財經事件，評估 Precision / Recall / F1（`event_extraction.py`）
-7. 主程式每日產出三個向量（`generate_vectors.py`）
+1. Encode each candlestick chart PNG into a feature vector **H_v** with a pretrained ViT from HuggingFace (`encoders/vision_encoder.py`).
+2. Encode news text into a feature vector **H_t** with FinBERT or LLaMA (`encoders/text_encoder.py`).
+3. Build a FAISS vector index over filing/transcript chunks (`rag/vector_db.py`).
+4. Combine H_v and H_t into a query and retrieve the top-K (K=3) most relevant chunks to produce **H_r** (`rag/retriever.py`).
+5. Compare different ViT and text-encoder options and record which combination performs best.
+6. Extract notable financial events from news, filings, and transcripts, and evaluate precision / recall / F1 once ground truth exists (`event_extraction.py`).
+7. Produce all three vectors for every day from a single entry point (`generate_vectors.py`).
 
-## 第一階段（等 A 樣本期間）
+## Phase 1 (while waiting on real data from A)
 
-用假資料把架構跑通：確認可以把一張 PNG 丟進去、跑出一個向量、存成 `docs/data_format.md` 規定的格式。假資料可用隨機產生的 224×224 圖片與任意英文財經句子。
+Wire up the architecture against synthetic data first: confirm that a single PNG in produces a single vector out, saved in the format `docs/data_format.md` requires. Synthetic inputs can be randomly generated 224×224 images and arbitrary English financial-sounding sentences.
 
-## 指令（在 repo 根目錄執行）
+## Commands (run from the repo root)
 
 ```bash
-python -m module_b_encoder.generate_vectors --fake --n 10    # 第一階段：不需 GPU/模型，測通儲存格式
-python -m module_b_encoder.generate_vectors --ticker AAPL --limit 50   # 第二階段：真實資料
-python -m module_b_encoder.event_extraction --ticker AAPL    # 事件抽取（需 A 的資料）
+python -m module_b_encoder.generate_vectors --fake --n 10              # phase 1: no GPU/model needed, just checks the output format
+python -m module_b_encoder.generate_vectors --ticker AAPL --limit 50   # phase 2: real data
+python -m module_b_encoder.event_extraction --ticker AAPL              # event extraction (needs A's data)
 ```
 
-程式進入點：`generate_vectors.py` 的 `run_real()` 串起 encoders/ 與 rag/，
-要換模型只改 `configs/config.yaml` 的 `encoders` 區塊（shape 定案後不可變）。
+Entry point: `run_real()` in `generate_vectors.py` wires together `encoders/` and `rag/`. To swap encoders, change the `encoders` block in `configs/config.yaml` (vector shapes are locked in once finalized, see `data_format.md`).
 
-## 注意事項
+## Notes
 
-- 向量 shape 一旦定案不可再變；換 encoder 需全員同意（見 data_format.md）。
-- `index.json` 需記錄 `encoder` 的 HuggingFace model id 與 `retrieved_chunk_ids`。
-- ViT 預訓練是自然圖片，跟 K 線圖有 domain gap，實測時記錄不同版本的比較結果。
-- 事件抽取的 ground truth 來源尚未定案（見 `docs/decisions.md` 待確認事項），先完成抽取程式本體。
+- Vector shapes are locked in once finalized; changing an encoder requires agreement across all three tracks.
+- `index.json` must record the encoder's HuggingFace model id and the `retrieved_chunk_ids` used.
+- ViT is pretrained on natural images, which is a domain gap from candlestick charts. This comparison is flagged in `docs/decisions.md` (#10) but has not actually been run — the encoder is currently used frozen, with no fine-tuning and no benchmark against the gap.
+- Event extraction is currently keyword-based (e.g. matching "earnings" to an EARNINGS event) with no semantic understanding. Its ground-truth source and event taxonomy are still undecided (`docs/decisions.md`, open questions table) — build the extraction code first, but treat both the ground truth and the extraction method itself as open work.
