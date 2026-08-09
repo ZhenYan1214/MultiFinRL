@@ -6,10 +6,6 @@ MultiFinRL turns three kinds of daily market data — candlestick charts (visual
 
 ---
 
-## Program Goals
-
-The original two-year plan was compressed into a single year, split into two phases run back to back rather than across separate years (`docs/decisions.md` #18).
-
 | Phase | Goal |
 |---|---|
 | Phase 1 | Build the full data-to-`Z_fused` pipeline; validate `Z_fused` quality via market-sentiment classification and event extraction; run a simple portfolio backtest (single-stock position sizing or a small multi-asset mix). |
@@ -47,9 +43,6 @@ This runs once per trading day for the configured date range, producing one `Z_f
 
 ## Ownership and Directory Layout
 
-Each track works from an agreed data contract (`docs/data_format.md`) and stays within its own module directory.
-
-| Track | Directory | Responsibility | Deliverable |
 |---|---|---|---|
 | A | `module_a_data/` | Data engineering: crawlers, chart generation, text cleaning, chunking, price-movement labels | One JSON record per day (`data/processed/dataset/`) |
 | B | `module_b_encoder/` | ViT / FinBERT encoding, RAG index and retrieval, event extraction | Daily `H_v`, `H_t`, `H_r` vectors (`data/vectors/`) in a fixed format |
