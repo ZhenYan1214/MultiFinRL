@@ -52,6 +52,8 @@ def time_split(rows, train_ratio=0.7, val_ratio=0.15):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ticker", default="AAPL")
+    ap.add_argument("--weighted", action="store_true",
+                    help="診斷用：依訓練集類別出現頻率加權，預設關閉（見 spec_c_accuracy_diagnostics.md）")
     args = ap.parse_args()
 
     rows = load_z_and_labels(args.ticker)
@@ -62,13 +64,15 @@ def main():
     Xtr, ytr = np.stack([z for _, z, _ in train]), [y for _, _, y in train]
     Xte, yte = np.stack([z for _, z, _ in test]), [y for _, _, y in test]
 
-    clf = LogisticRegression(max_iter=1000)  # 新版 sklearn 預設就是 multinomial，不用再指定
+    class_weight = "balanced" if args.weighted else None
+    clf = LogisticRegression(max_iter=1000, class_weight=class_weight)  # 新版 sklearn 預設就是 multinomial，不用再指定
     clf.fit(Xtr, ytr)
     pred = clf.predict(Xte)
 
     labels_present = sorted(set(yte) | set(pred))
     report = {
         "ticker": args.ticker,
+        "weighted": args.weighted,
         "n_train": len(train), "n_val": len(val), "n_test": len(test),
         "test_period": [test[0][0], test[-1][0]] if test else [],
         "accuracy": accuracy_score(yte, pred),

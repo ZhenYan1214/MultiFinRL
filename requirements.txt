@@ -6,6 +6,7 @@ numpy
 pandas
 pyyaml
 tqdm
+pillow              # PIL.Image，chart_generator.py 存圖、vision_encoder.py 讀圖都用到
 
 # --- Module A: data engineering ---
 yfinance
@@ -13,6 +14,11 @@ mplfinance
 requests
 beautifulsoup4
 lxml
+edgartools          # 財報下載候選（decisions.md #25），見 fetch_filings_edgartools.py
+python-dotenv       # 讀 .env 裡的 Alpaca API key/secret，見 fetch_news_alpaca.py
+boto3               # foolcalls 內部 import 需要（即使我們不用它的 S3 功能）
+# foolcalls 不是正式上架的套件，PyPI 上沒有、GitHub 上也沒有 setup.py，
+# 不能直接寫在這裡用 pip 裝。用法見 fetch_transcripts.py 檔頭的說明。
 
 # --- Module B: encoders + RAG ---
 torch

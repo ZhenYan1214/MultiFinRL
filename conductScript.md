@@ -10,12 +10,23 @@ py -m module_a_data.preprocess.chart_generator --ticker AAPL --limit 100
 # 依股價畫 K 線圖，存成 data/raw/charts/AAPL/{日期}.png（--limit 100 = 先測前 100 天，拿掉就是全部）
 
 py -m module_a_data.crawler.fetch_filings --ticker AAPL --start 2021-01-01
-# 抓 SEC 財報（10-K/10-Q），存到 data/raw/filings/AAPL/
+# 抓 SEC 財報（10-K/10-Q，原生 requests 版），存到 data/raw/filings/AAPL/
+
+py -m module_a_data.crawler.fetch_filings_edgartools --ticker AAPL --start 2021-01-01
+# 財報的另一個版本，用 edgartools 套件（decisions.md #25，先試用看看是否更好）
+# 輸出格式跟上面那支完全一樣，兩支擇一即可，不要兩支都跑（會互相覆蓋 index.json）
 
 py -m module_a_data.crawler.fetch_news --ticker AAPL
-# 抓新聞（目前只有近期新聞，歷史新聞來源還沒定案，先跳過也不會報錯）
+# 抓新聞（yfinance，只有近期新聞）
 
-# fetch_transcripts.py：法說會逐字稿來源尚未定案，現在執行會直接報錯，先不要跑
+py -m module_a_data.crawler.fetch_news_alpaca --ticker AAPL --start 2021-01-01 --end 2026-08-08
+# 歷史新聞回補（Alpaca News API，decisions.md #27）：實測 AAPL 2021~2026 共 15,989 則、
+# 1,459 天，約 10 分鐘跑完。需要 .env 設定 ALPACA_API_KEY / ALPACA_API_SECRET（見檔頭說明）
+# ↑ FNSPID（爬蟲 + 現成 dataset）已驗證不可行並移除，見 decisions.md #26
+
+py -m module_a_data.crawler.fetch_transcripts --ticker AAPL --start 2021-01-01 --max_pages 200
+# 抓法說會逐字稿（foolcalls，decisions.md #25）；foolcalls 本身不是正式套件、
+# 且目前 GitHub 版本有個 import 會直接壞掉的 bug，安裝步驟跟修法見檔頭說明
 
 py -m module_a_data.build_dataset --ticker AAPL --limit 100
 # 把以上所有資料彙整成一天一筆的 JSON，存到 data/processed/dataset/AAPL/
