@@ -73,7 +73,7 @@
 | `*_chunks[].text` | 每段 ≤512 token（以 FinBERT tokenizer 計） |
 | `filing_chunks` / `transcript_chunks` | 「最新一份沿用到下一份發布為止」；當日無有效文件時為空陣列 `[]` |
 | `prices.future_closes` | 未來第 1~5 個交易日收盤價（標籤依據，**僅供產生標籤與回測，不可作為模型輸入**） |
-| `label` | 依 close_t5 vs close_t0 報酬：> +2% → `BULLISH`；< −2% → `BEARISH`；其餘 → `NEUTRAL` |
+| `label` | 依 close_t5 vs close_t0 報酬，用整段期間報酬分布的 1/3、2/3 分位數當門檻（2026-08 起，見 decisions.md #30）：報酬最高 1/3 → `BULLISH`；最低 1/3 → `BEARISH`；中間 1/3 → `NEUTRAL`。門檻數值本身依資料算出、非固定百分比，見 `module_a_data/labeling.py` |
 
 ---
 

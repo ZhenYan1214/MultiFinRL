@@ -35,3 +35,8 @@ gymnasium
 stable-baselines3
 matplotlib
 scikit-learn
+
+# --- Module B（選用）: event_ground_truth_llm.py 要用 LLM API 建 ground truth 時才需要 ---
+# 只裝其中一個即可（依 --provider 選擇的那個），現在還沒有用到，不用先裝
+# anthropic
+# openai

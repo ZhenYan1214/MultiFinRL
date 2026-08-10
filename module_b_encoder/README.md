@@ -11,7 +11,7 @@
 3. Build a FAISS vector index over filing/transcript chunks (`rag/vector_db.py`).
 4. Combine H_v and H_t into a query and retrieve the top-K (K=3) most relevant chunks to produce **H_r** (`rag/retriever.py`).
 5. Compare different ViT and text-encoder options and record which combination performs best.
-6. Extract notable financial events from news, filings, and transcripts, and evaluate precision / recall / F1 once ground truth exists (`event_extraction.py`).
+6. Extract notable financial events from news, filings, and transcripts, and evaluate against ground truth with precision / recall / F1 (`event_extraction.py`; this is a standalone analysis of A's data, separate from the H_v/H_t/H_r/Z_fused pipeline — it does not feed into steps 1-4 or 7).
 7. Produce all three vectors for every day from a single entry point (`generate_vectors.py`).
 
 ## Phase 1 (while waiting on real data from A)
@@ -33,4 +33,4 @@ Entry point: `run_real()` in `generate_vectors.py` wires together `encoders/` an
 - Vector shapes are locked in once finalized; changing an encoder requires agreement across all three tracks.
 - `index.json` must record the encoder's HuggingFace model id and the `retrieved_chunk_ids` used.
 - ViT is pretrained on natural images, which is a domain gap from candlestick charts. This comparison is flagged in `docs/decisions.md` (#10) but has not actually been run — the encoder is currently used frozen, with no fine-tuning and no benchmark against the gap.
-- Event extraction is currently keyword-based (e.g. matching "earnings" to an EARNINGS event) with no semantic understanding. Its ground-truth source and event taxonomy are still undecided (`docs/decisions.md`, open questions table) — build the extraction code first, but treat both the ground truth and the extraction method itself as open work.
+- Event extraction is keyword-based (`EVENT_KEYWORDS` in `event_extraction.py`) with no semantic understanding. A 149-day stratified ground truth sample now exists (`data/labels/event_ground_truth/{ticker}.json`, LLM-assisted labeling) so `main()` reports real precision/recall/f1 instead of a placeholder. Current measured result on AAPL: precision=0.162, recall=0.868, f1=0.273 — recall is high (the keyword rules rarely miss a real event) but precision is still low (plenty of false positives, e.g. keyword-based extraction can't reliably tell "discussing" something apart from "announcing" it that day). See `docs/decisions.md` #32 for the full before/after breakdown and root-cause analysis. `module_b_encoder/event_ground_truth_llm.py` has the scaffolding for API-based labeling (Claude/OpenAI) ready for when more tickers are added, not yet run.

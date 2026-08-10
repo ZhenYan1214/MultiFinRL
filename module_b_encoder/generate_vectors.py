@@ -67,6 +67,7 @@ def run_real(cfg, ticker: str, limit: int | None) -> None:
     vision = VisionEncoder(cfg["encoders"]["vision"])
     text = TextEncoder(cfg["encoders"]["text"])
     k = cfg["rag"]["top_k"]
+    alpha = cfg["rag"].get("query_alpha", 0.5)
     db = ChunkVectorDB()
 
     dataset_dir = paths.DATASET / ticker
@@ -86,7 +87,7 @@ def run_real(cfg, ticker: str, limit: int | None) -> None:
 
         h_v = vision.encode(paths.ROOT / record["chart"]["path"])
         h_t = text.encode_news(record["news"])
-        h_r, chunk_ids = retrieve(h_v, h_t, db, text, k)
+        h_r, chunk_ids = retrieve(h_v, h_t, db, text, k, alpha)
 
         save_vectors(ticker, date, h_v, h_t, h_r, chunk_ids,
                      vision.model_id, text.model_id, k,
