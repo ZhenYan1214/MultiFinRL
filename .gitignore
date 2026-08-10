@@ -1,6 +1,12 @@
-# data 不進 git，透過雲端同步
-data/
+# data 不進 git，透過雲端同步（data/labels/ 例外，見下方——git 規則是「父目錄被排除就無法
+# 再用 ! 復原裡面的檔案」，所以這裡改成分別排除各個子目錄，而不是排除整個 data/）
+data/raw/
+data/processed/
+data/vectors/
+data/outputs/
 !data/**/.gitkeep
+
+# data/labels/：人工／LLM 標記的 ground truth 是答案卷，弄丟要重標，進版本控制，不排除
 
 # Python
 __pycache__/
@@ -23,6 +29,9 @@ runs/
 .vscode/
 .idea/
 .DS_Store
+
+# Claude / Cowork session state（本機設定，不是專案內容）
+.claude/
 
 # secrets
 .env

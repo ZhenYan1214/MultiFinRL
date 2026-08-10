@@ -19,7 +19,7 @@ import datetime as dt
 from shared import paths, schemas
 from shared.utils import load_config, read_json, write_json
 from module_a_data.crawler.fetch_ohlcv import load_ohlcv
-from module_a_data.labeling import build_price_and_label
+from module_a_data.labeling import build_price_and_label, compute_quantile_thresholds
 from module_a_data.preprocess.chunker import make_chunks
 from module_a_data.preprocess.text_cleaner import clean
 
@@ -70,16 +70,21 @@ def collect_transcript_chunks(ticker: str, date: str, max_tokens: int) -> list[d
                        max_tokens, date_key="event_date")
 
 
-def build_daily_record(ticker: str, date: str, df, cfg) -> dict | None:
-    """組一筆每日 JSON；K 線圖不存在或標籤產不出來（資料頭尾）回傳 None。"""
+def build_daily_record(ticker: str, date: str, df, cfg,
+                       bullish_threshold: float, bearish_threshold: float) -> dict | None:
+    """組一筆每日 JSON；K 線圖不存在或標籤產不出來（資料頭尾）回傳 None。
+
+    bullish_threshold/bearish_threshold：整段 df 只算一次（見 main()），
+    每一天共用同一組門檻，不是每天重算。
+    """
     chart_path = paths.RAW_CHARTS / ticker / f"{date}.png"
     if not chart_path.exists():
         return None
     pl = build_price_and_label(
         df, date,
         horizon=cfg["label"]["horizon_trading_days"],
-        bullish_threshold=cfg["label"]["bullish_threshold"],
-        bearish_threshold=cfg["label"]["bearish_threshold"],
+        bullish_threshold=bullish_threshold,
+        bearish_threshold=bearish_threshold,
     )
     if pl is None:
         return None
@@ -108,10 +113,20 @@ def main():
     args = ap.parse_args()
 
     df = load_ohlcv(args.ticker)
+    horizon = cfg["label"]["horizon_trading_days"]
+    bearish_threshold, bullish_threshold = compute_quantile_thresholds(
+        df, horizon,
+        low_q=cfg["label"].get("quantile_low", 1 / 3),
+        high_q=cfg["label"].get("quantile_high", 2 / 3),
+    )
+    print(f"[build_dataset] 分位數門檻（依 {args.ticker} 整段報酬分布算出）："
+         f"bearish<{bearish_threshold:.4f}, bullish>{bullish_threshold:.4f}")
+
     n = 0
     for d in df.index:
         date = d.strftime("%Y-%m-%d")
-        record = build_daily_record(args.ticker, date, df, cfg)
+        record = build_daily_record(args.ticker, date, df, cfg,
+                                    bullish_threshold, bearish_threshold)
         if record is None:
             continue
         schemas.validate_daily_record(record)  # 不合法會 raise，直接中斷

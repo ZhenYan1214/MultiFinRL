@@ -62,7 +62,8 @@ MultiFinRL/
 ├── docs/
 │   ├── data_format.md               # data contract between A / B / C
 │   ├── decisions.md                 # decision log, including open questions
-│   └── data_and_experiments_log.md  # data sources and classification results over time
+│   ├── data_and_experiments_log.md  # data sources and classification results over time
+│   └── conduct_script.md            # copy-paste command cheat sheet, A → B → C
 ├── samples/
 │   ├── DataStruct.example.json      # example of A's output format
 │   └── vectors_index.example.json   # example of B's output format

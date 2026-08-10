@@ -1,24 +1,35 @@
 """RAG 檢索：以 H_v + H_t 合併成 query，檢索 top-K 相關文件 -> H_r。
 
 - K=3（configs/config.yaml 的 rag.top_k）。
-- query 目前做法：H_v 與 H_t 各自 mean-pool 成 [768] 後平均（兩模態等權）。
-  B 可自行改進（例如可學習的投影），但 H_r 輸出格式不可變。
+- query 做法（2026-08 修正，見 docs/decisions.md）：H_v 與 H_t 各自 mean-pool 成 [768] 後，
+  各自做 L2 正規化（避免兩個不同模型出來的向量數值量級不同、其中一個不成比例主導 query），
+  再依 alpha 加權合併（alpha 是 H_v 的權重，預設 0.5 對半，可在 configs/config.yaml 的
+  rag.query_alpha 調整，不用改程式碼）。真正的可學習/attention-based 加權留待之後。
 - H_r shape [K, 512, 768]：第一維為 K，順序依相似度由高至低；
   檢索到的每份 chunk 原文重新用 text_encoder 編碼成 [512, 768]。
 - 檢索不足 K 份（向量庫太小）時，缺的部分以 0 補齊，chunk_id 補 "PAD"。
+- query 向量本身不會被存進 H_r/index.json，只是內部檢索用的中間產物，
+  改這裡不影響 docs/data_format.md 定案的輸出格式。
 """
 import numpy as np
 
 
-def build_query(h_v: np.ndarray, h_t: np.ndarray) -> np.ndarray:
-    """H_v [197,768] + H_t [512,768] -> query [768]。"""
-    return (h_v.mean(axis=0) + h_t.mean(axis=0)) / 2
+def build_query(h_v: np.ndarray, h_t: np.ndarray, alpha: float = 0.5) -> np.ndarray:
+    """H_v [197,768] + H_t [512,768] -> query [768]。
+
+    各自 mean-pool 後 L2 正規化，再依 alpha 加權合併（alpha 為 H_v 權重）。
+    """
+    v = h_v.mean(axis=0)
+    t = h_t.mean(axis=0)
+    v = v / (np.linalg.norm(v) + 1e-8)
+    t = t / (np.linalg.norm(t) + 1e-8)
+    return alpha * v + (1 - alpha) * t
 
 
 def retrieve(h_v: np.ndarray, h_t: np.ndarray, db, text_encoder,
-             k: int = 3) -> tuple[np.ndarray, list[str]]:
+             k: int = 3, alpha: float = 0.5) -> tuple[np.ndarray, list[str]]:
     """回傳 (H_r [K, 512, 768], retrieved_chunk_ids)。"""
-    hits = db.search(build_query(h_v, h_t), k)
+    hits = db.search(build_query(h_v, h_t, alpha), k)
     h_r = np.zeros((k, 512, 768), dtype=np.float32)
     chunk_ids = []
     for i, (chunk_id, text, _score) in enumerate(hits):
