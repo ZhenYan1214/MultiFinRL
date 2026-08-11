@@ -1,32 +1,28 @@
 """用 LLM API 幫事件抽取（event_extraction.py）建立 ground truth 答案卷。
 
-現況（docs/decisions.md 待確認事項）：這支腳本先把架構寫好、還沒有實際執行過。
-目前的 ground truth 是人工（Claude 在對話中直接讀資料）分批標記的，跟這支腳本用同一份
-prompt（module_b_encoder/event_ground_truth_prompt.py），標記標準一致，之後兩者結果
-可以互相比較，也可以直接改用這支腳本重跑或擴大標記範圍。
+現況：149 天的 ground truth 是人工（Claude 在對話中直接讀資料）分批標記完成的
+（docs/decisions.md #32）。這支腳本跟事件抽取的正式 LLM 方法（event_extraction.py
+--method llm）共用同一套呼叫邏輯（module_b_encoder/llm_client.py）和同一份 prompt
+（event_ground_truth_prompt.py），標記標準一致，之後可以互相比較，也可以直接改用
+這支腳本重跑或擴大標記範圍。
 
 要啟用：
-    1. pip install anthropic  （或 openai，看要用哪個 provider）
-    2. .env 加 ANTHROPIC_API_KEY=...  （或 OPENAI_API_KEY=...）
+    1. pip install openai   （claude/deepseek 都走這個套件；用 claude 則 pip install anthropic）
+    2. .env 加對應的 key：ANTHROPIC_API_KEY / OPENAI_API_KEY / DEEPSEEK_API_KEY
     3. python -m module_b_encoder.event_ground_truth_llm --ticker AAPL
 
 費用參考（2026-08 定價）：AAPL 每天平均約 2.8 萬 tokens，抽樣 150 天用 Claude Haiku
-（$1/M input tokens）約 4-5 美金，全量 1381 天約 35-40 美金；用 OpenAI 費用量級類似，
-實際數字以當下官網定價為準。
+（$1/M input tokens）約 4-5 美金，全量 1381 天約 35-40 美金；DeepSeek/OpenAI 費用量級
+類似，實際數字以當下官網定價為準。
 """
 import argparse
-import json
-import os
 import random
 from collections import defaultdict
 from pathlib import Path
 
 from shared import paths
 from shared.utils import load_config, read_json, write_json
-from module_b_encoder.event_ground_truth_prompt import SYSTEM_PROMPT, build_user_prompt
-
-EVENT_TYPES = {"EARNINGS", "MA", "PRODUCT_LAUNCH", "LAWSUIT",
-               "GUIDANCE", "DIVIDEND", "MANAGEMENT_CHANGE"}
+from module_b_encoder.llm_client import DEFAULT_MODEL, label_events
 
 
 def stratified_sample(files: list[Path], n: int, seed: int) -> list[Path]:
@@ -46,53 +42,17 @@ def stratified_sample(files: list[Path], n: int, seed: int) -> list[Path]:
     return sorted(sampled)
 
 
-def call_claude(system: str, user: str, model: str) -> str:
-    import anthropic
-    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
-    resp = client.messages.create(
-        model=model, max_tokens=200, system=system,
-        messages=[{"role": "user", "content": user}],
-    )
-    return resp.content[0].text
-
-
-def call_openai(system: str, user: str, model: str) -> str:
-    import openai
-    client = openai.OpenAI(api_key=os.environ["OPENAI_API_KEY"])
-    resp = client.chat.completions.create(
-        model=model, max_tokens=200,
-        messages=[{"role": "system", "content": system},
-                  {"role": "user", "content": user}],
-    )
-    return resp.choices[0].message.content
-
-
-def parse_events(raw: str) -> list[str]:
-    """從 LLM 回應解析事件清單，過濾掉不在七類定義內的雜訊。"""
-    start, end = raw.find("{"), raw.rfind("}")
-    obj = json.loads(raw[start:end + 1])
-    events = [e for e in obj.get("events", []) if e in EVENT_TYPES]
-    return sorted(set(events))
-
-
 def label_day(ticker: str, date: str, provider: str, model: str) -> list[str]:
     record = read_json(paths.daily_json(ticker, date))
-    user_prompt = build_user_prompt(
-        ticker, date, record["news"], record["filing_chunks"], record["transcript_chunks"],
-    )
-    caller = call_claude if provider == "claude" else call_openai
-    raw = caller(SYSTEM_PROMPT, user_prompt, model)
-    return parse_events(raw)
-
-
-DEFAULT_MODEL = {"claude": "claude-haiku-4-5-20251001", "openai": "gpt-4o-mini"}
+    return label_events(ticker, date, record["news"], record["filing_chunks"],
+                        record["transcript_chunks"], provider, model)
 
 
 def main():
     cfg = load_config()
     ap = argparse.ArgumentParser()
     ap.add_argument("--ticker", default=cfg["tickers"][0])
-    ap.add_argument("--provider", choices=["claude", "openai"], default="claude")
+    ap.add_argument("--provider", choices=["claude", "openai", "deepseek"], default="claude")
     ap.add_argument("--model", default=None, help="不指定就用 provider 的預設模型")
     ap.add_argument("--n_sample", type=int, default=150)
     ap.add_argument("--seed", type=int, default=0)

@@ -9,9 +9,10 @@
 1. Design a Cross-Modal Transformer that fuses H_v, H_t, and H_r into **Z_fused** (`fusion/model.py`).
 2. Train the fusion model (`fusion/train.py`). Full-parameter training is used today; QLoRA is planned so training stays feasible on a single high-end GPU, but is not yet implemented (`docs/decisions.md` #29).
 3. Validate Z_fused quality with a held-out market-sentiment classification task against A's labels (`validation/classifier.py`).
-4. Design the PPO environment and reward function, and train an RL agent on Z_fused (`rl/env.py`, `rl/train_ppo.py`).
-5. Run backtests: cumulative return, Sharpe ratio, max drawdown (`backtest/backtest.py`).
-6. Compare investment performance with and without RL.
+4. Validate Z_fused a second, independent way: predict the day's event types (multi-label) directly from Z_fused and score against `data/labels/event_ground_truth/` (`validation/event_validation_head.py`, `docs/decisions.md` #33/#34). Classification validation checks predictive power for future price direction; this checks whether Z_fused faithfully retains same-day event information — the two measure different things and are read together, not merged.
+5. Design the PPO environment and reward function, and train an RL agent on Z_fused (`rl/env.py`, `rl/train_ppo.py`).
+6. Run backtests: cumulative return, Sharpe ratio, max drawdown (`backtest/backtest.py`).
+7. Compare investment performance with and without RL.
 
 ## Phase 1 (while waiting on real vectors from B)
 

@@ -93,7 +93,8 @@ MultiFinRL/
 │   ├── rag/
 │   │   ├── vector_db.py             # FAISS index over filing/transcript chunks
 │   │   └── retriever.py             # top-K retrieval -> H_r
-│   ├── event_extraction.py          # keyword-based event extraction
+│   ├── event_extraction.py          # event extraction: keyword (default) or --method llm, spec_b_event_extraction_llm.md
+│   ├── llm_client.py                 # shared LLM-calling helpers (claude/openai/deepseek)
 │   └── generate_vectors.py          # main entry point: produces H_v / H_t / H_r per day
 ├── module_c_fusion/                 # Track C — fusion, validation, RL, backtest
 │   ├── README.md
@@ -144,8 +145,8 @@ Full definition in `docs/data_format.md`; the handoff points are:
 Operational today, on AAPL:
 
 - Data (A): OHLCV, charts, recent news, and historical news (via the Alpaca News API, 2021–2026) are all in place. Filings are fetched via `edgartools`. Earnings-call transcripts are not yet fetched — the crawler exists but has never completed an end-to-end run.
-- Encoding (B): ViT and FinBERT encoders and FAISS-based RAG retrieval are working. Event extraction is currently keyword-based only, with no ground-truth labels or precision/recall/F1 evaluation yet.
-- Fusion and validation (C): the Cross-Modal Transformer, held-out classification validation, PPO training, and backtesting (buy-and-hold / rule-based / PPO strategies) all run end to end. Class-weighted training is the current default after diagnostic testing showed it was necessary for the model to learn anything from the news input at all.
+- Encoding (B): ViT and FinBERT encoders and FAISS-based RAG retrieval are working. Event extraction has a 149-day LLM-labeled ground truth (`data/labels/event_ground_truth/`) and two extraction methods: the default keyword rules (precision/recall/F1 0.162 / 0.868 / 0.273 on AAPL) and an LLM-based method (`--method llm`, `docs/spec_b_event_extraction_llm.md`) that measured 0.742 / 0.605 / 0.667 on the same 149-day sample (f1 +144%); a full 1381-day run is in progress.
+- Fusion and validation (C): the Cross-Modal Transformer, held-out classification validation, event validation head (multi-label probe of Z_fused against the same ground truth, micro F1 0.229 on AAPL), PPO training, and backtesting (buy-and-hold / rule-based / PPO strategies) all run end to end. Class-weighted training is the current default after diagnostic testing showed it was necessary for the model to learn anything from the news input at all.
 
 Known gaps, tracked in `docs/decisions.md`, not yet started:
 

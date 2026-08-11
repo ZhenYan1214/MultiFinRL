@@ -97,3 +97,15 @@
 **根因排查，跟原本猜測不同**：一開始以為主因是「文章跟公司無關但被誤判」（例如迪士尼文章被標成 AAPL 事件），但實際加上公司相關性檢查後 precision 幾乎沒動（0.073→0.078）。真正的主因是 `build_dataset.py` 的 `collect_filing_chunks()`/`collect_transcript_chunks()`：設計成「沿用最新一份財報/法說會到下一份發布為止」，同一份文件的標準樣板文字（股利政策、訴訟揭露、併購風險因素等段落，任何 10-Q/10-K 都會固定寫）被連續很多天重複讀到，每次都被誤判成「當天發生」的新事件。加上日期比對（只有 chunk 真正對應當天才算）之後，fp 從 886 大幅降到 424，才是這次改善的主要來源。
 
 **誠實記錄目前限制**：precision 絕對值仍偏低（0.162），代表關鍵字方法還是抓到不少雜訊，`EARNINGS`/`GUIDANCE`/`PRODUCT_LAUNCH` 仍有較多誤判，純關鍵字比對難以分辨「討論、回顧某件事」跟「當天真的宣布」的語意差別；ground truth 裡唯一一筆 `MANAGEMENT_CHANGE`（新聞用「Apple Hires Former BMW Executive To Lead Electric Car Efforts」這種不含 "appoint"/"resign" 字眼的報導方式）目前仍抓不到，反映純關鍵字方法的天花板。這是 `event_extraction.py` 檔頭本來就寫的「後續可改成 LLM-based 抽取」的實際動機來源，不在這一輪範圍內處理。
+
+**事件驗證頭（2026-08-10，decisions.md #34）**：拿 149 天 ground truth 對應的 Z_fused（768 維）當輸入，訓練 multi-label `LogisticRegression`（`class_weight="balanced"`），5-fold cross-validation 評估。`MA`、`MANAGEMENT_CHANGE` 各只有 1 個正樣本，標注「資料量不足，不評估」，其餘 5 類結果：
+
+| 事件類別 | 正樣本天數 | precision | recall | f1 |
+|---|---|---|---|---|
+| EARNINGS | 10 | 0.135 | 0.700 | 0.226 |
+| PRODUCT_LAUNCH | 15 | 0.111 | 0.400 | 0.174 |
+| LAWSUIT | 36 | 0.280 | 0.389 | 0.326 |
+| GUIDANCE | 7 | 0.115 | 0.857 | 0.203 |
+| DIVIDEND | 6 | 0.100 | 0.833 | 0.179 |
+
+micro-avg（5 類合計）：precision=0.147、recall=0.514、f1=0.229，跟事件抽取直接讀文字的 f1=0.273 同一個量級，代表 Z_fused 確實吸收了一定程度的事件相關資訊，沒有在 B/C 的編碼融合過程中把這類資訊完全丟失。**誠實記錄**：樣本數小（149 天）、輸入維度高（768），屬於高維度低樣本的困難設定，數字噪音大，是初步結果不是定論；`class_weight="balanced"` 讓 recall 明顯偏高、precision 偏低，跟未用平衡權重的事件抽取數字不是完全同條件的對照。

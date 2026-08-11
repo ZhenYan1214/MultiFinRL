@@ -32,3 +32,10 @@ def vector_dir(ticker: str, date: str) -> Path:
 def event_ground_truth_path(ticker: str) -> Path:
     """事件抽取 ground truth 路徑：{date: [event_type, ...]} 的字典。"""
     return LABELS / "event_ground_truth" / f"{ticker}.json"
+
+
+def event_extraction_llm_cache_path(ticker: str) -> Path:
+    """LLM-based 事件抽取的中斷續跑快取：{date: [event_type, ...]}，跟 ground truth 格式
+    相同但語意不同——這是機器抽取的結果，不是答案卷，不進版本控制（見 .gitignore data/outputs/）。
+    """
+    return OUTPUTS / "metrics" / "event_extraction_llm_cache" / f"{ticker}.json"
