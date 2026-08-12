@@ -1,0 +1,837 @@
+--- PAGE 1 ---
+三、研究計畫內容（以中文或英文撰寫） ： 
+(一) 研究計畫之背景 。 請詳述本研究計畫所要探討或解決的問題 、 研究原創性 、
+重要性、預期影響性及國內外有關本計畫之研究情況、重要參考文獻之評
+述等。如為連續性計畫應說明上年度研究進度。 
+1. Introduction  
+Financial markets generate vast amounts of heterogeneous and dynamically 
+evolving information. Market participants must continuously process textual news 
+reports, analyst commentaries, earnings call transcripts, structured financial statements, 
+numerical time-series data, and visual technical charts. The integration of these diverse 
+modalities is essential for forming coherent market interpretations and making 
+informed investment decisions. However, existing financial artificial intelligence (AI) 
+systems remain largely fragmented, focusing on isolated modalities rather than holistic 
+market understanding. 
+Recent advances in multimodal large language models (MLLMs) [1] have 
+demonstrated remarkable capabilities in integrating textual and visual inputs within 
+unified representation spaces. (e.g. GPT -5.2[2]) These models c an synthesize cross -
+modal signals and generate context-aware interpretations, making them promising tools 
+for financial analytics. In parallel, retrieval -augmented generation (RAG) [3] 
+techniques have been proposed to enhance factual grounding by dynamical ly 
+incorporating external knowledge sources such as regulatory filings, macroeconomic 
+reports, and historical disclosures. While these developments significantly improve 
+multimodal information synthesis, most applications in finance remain limited to 
+descriptive tasks such as document summarization, sentiment extraction, and question 
+answering 
+A fundamental gap persists between multimodal understanding and sequential 
+financial decision-making. Financial markets are inherently dynamic systems in which 
+decisions must be made under uncertainty, and actions influence subsequent states and 
+reward distributions. Traditional financial AI approaches have addressed specific 
+components of this process. Text -based models such as FinBERT [4] and 
+FinancialBERT [5] have been applied to news and earnings calls for sentiment analysis. 
+Time-series models, including LSTMs [6-8] and Transformer-based architectures, have 
+been used for price forecasting. Vision -based models such as CNNs and Vision 
+Transformers (ViTs)  [9-10] have been adopted for technical chart recognition. 
+Reinforcement learning (RL) methods [11-14] have also been explored for algorithmic 
+trading and portfolio allocation. However, these approaches are typically developed in 
+isolation, lacking a unified architectu re that integrates multimodal perception with 
+--- PAGE 2 ---
+principled decision optimization. 
+This study proposes a decision -centric financial AI framework that bridges 
+multimodal market understanding and sequential policy learning. Specifically, we 
+conceptualize multimodal large language models and retrieval-augmented mechanisms 
+as market belief constructors . These components synthesize heterogeneous financial 
+signals into structured latent representations that capture the semantic and contextual 
+state of the market. Bu ilding upon these belief states, a reinforcement learning agent 
+learns optimal, risk -sensitive policies for portfolio allocation and financial decision -
+making. By placing RL at the core of the framework, the system moves beyond 
+descriptive analytics toward actionable and adaptive decision support. 
+In addition to decision optimization, transparency and accountability are critical 
+requirements in financial applications. Unlike consumer-oriented AI systems, financial 
+decision models operate in high-stakes environments where prediction errors may lead 
+to substantial losses or systemic risks. Consequently, interpretability must extend 
+beyond token -level attention maps to encompass decision -level attribution. This 
+research integrates cross -modal attribution analys is to identify how textual signals, 
+visual patterns, and retrieved evidence contribute to policy outputs. Such 
+interpretability mechanisms aim to support regulatory compliance, risk auditing, and 
+institutional trust. 
+The proposed framework therefore advanc es financial AI along three 
+interconnected dimensions: 
+1. multimodal belief construction through integrated perception and retrieval, 
+2. sequential decision optimization via reinforcement learning over belief states, 
+and 
+3. cross-modal interpretability at both representation and policy levels. 
+By unifying perception, reasoning, and decision within a coherent architecture, this 
+study seeks to establish a foundation for next-generation financial decision systems that 
+are risk-aware, interpretable, and deployable in real-world markets. Beyond investment 
+applications, the framework holds potential implications for regulatory technology 
+(RegTech), systemic risk monitoring, and financial inclusion by enabling more 
+transparent and reliable AI-driven financial analysis. 
+2. Literature Review 
+Deep learning has been widely adopted in financial forecasting, particularly for 
+modeling nonlinear temporal dependencies in stock prices and market indicators. 
+Recurrent neural networks (RNNs), especially Long Short -Term Memory (LSTM) 
+networks, have becom e a standard approach for capturing sequential patterns in 
+financial time series. LSTM -based architectures have demonstrated superior 
+--- PAGE 3 ---
+performance over traditional statistical models by effectively modeling long -term 
+dependencies and nonlinear dynamics in stock price movements [15], [16]. 
+Several studies have further integrated convolutional neural networks (CNNs) with 
+LSTM models to enhance predictive performance. In these hybrid architectures, CNN 
+layers are employed to extract local spatial features from price matrices or technical 
+indicators, while LSTM layers capture temporal evolution [17], [18]. Empirical 
+evidence suggests that CNN –LSTM and CNN –BiLSTM models often outperform 
+standalone LSTM or CNN models in stock price prediction and volatility forecas ting 
+tasks [19]. These approaches highlight the importance of combining spatial feature 
+extraction with temporal modeling in financial forecasting. 
+However, despite their predictive effectiveness, most LSTM - and CNN -based 
+financial models rely primarily on  numerical price data and technical indicators, 
+neglecting textual and contextual information that may significantly influence market 
+behavior. 
+ 
+2.1 Transformer-Based and Vision-Based Models in Finance 
+With the emergence of Transformer architectures, attention  mechanisms have 
+increasingly been applied to financial time -series analysis. Transformer-based models 
+offer advantages in modeling long -range dependencies without recurrence, making 
+them suitable for capturing complex financial dynamics [20], [21]. 
+In parallel, Vision Transformer (ViT) architectures have been explored in financial 
+contexts, particularly for processing chart -based representations of time series. By 
+converting price sequences into image -like representations, ViT models can capture 
+global str uctural patterns in technical charts [22]. Hybrid architectures combining 
+CNNs with Transformer modules have also been proposed, leveraging CNNs for local 
+feature extraction and Transformers for global context modeling in stock prediction 
+tasks [23]. 
+While these approaches improve representation learning, they largely remain 
+within single -modality frameworks —either numerical sequences or visual chart 
+representations. The integration of heterogeneous modalities, including textual reports, 
+analyst commentary, and structured financial documents, remains limited. 
+ 
+2.2 Reinforcement Learning in Financial Decision-Making 
+Beyond prediction, reinforcement learning (RL) has been extensively investigated 
+for financial decision -making tasks, including portfolio allocation,  trading strategy 
+optimization, and risk management. Early work applied Deep Q-Networks (DQN) and 
+policy gradient methods to learn trading strategies directly from historical price 
+sequences [24]. Subsequent research introduced actor –critic frameworks such  as 
+--- PAGE 4 ---
+Proximal Policy Optimization (PPO) and Asynchronous Advantage Actor –Critic 
+(A3C), demonstrating improved stability and performance in dynamic portfolio 
+management [25], [26]. 
+More advanced models have incorporated graph neural networks within RL 
+frameworks to model inter-asset correlations and improve diversification strategies [27]. 
+These RL-based approaches move beyond static prediction toward adaptive decision 
+optimization under uncertainty. 
+Nevertheless, existing financial RL models typically define  the state space using 
+historical prices and technical indicators alone. They rarely incorporate multimodal 
+contextual information such as earnings reports, macroeconomic signals, regulatory 
+disclosures, or visual chart structures. As a result, the learned policies may fail to fully 
+reflect the semantic and structural complexity of real-world financial markets. 
+ 
+2.3 Large Language Models in Finance 
+The rapid advancement of large language models (LLMs) has significantly 
+reshaped research in financial natural  language processing. Domain -adapted models 
+such as FinBERT [4] and FinancialBERT [5] have been widely applied to sentiment 
+analysis of financial news, earnings call transcripts, and event -driven market 
+interpretation tasks. These models demonstrate improv ed performance over general -
+purpose language models by incorporating financial -specific corpora and domain 
+vocabulary. 
+More recently, large -scale foundation models trained on financial data, such as 
+BloombergGPT [28] and FinGPT [29], have further extended the application scope of 
+LLMs in finance. These models support tasks including document summarization, 
+financial question answering, event extraction, and regulatory document interpretation. 
+Their performance indicates that domain adaptation at scale can s ubstantially enhance 
+contextual understanding and factual consistency in financial texts. 
+In parallel, retrieval -augmented generation (RAG) frameworks have been 
+introduced to mitigate hallucination and improve factual grounding in LLM -based 
+systems [30]. By dynamically retrieving external financial documents —such as 10-K 
+filings, macroeconomic reports, or policy announcements —RAG-based models 
+improve reliability and contextual completeness. Recent multimodal RAG systems 
+tailored to financial question answer ing further demonstrate the feasibility of 
+integrating structured tables, textual disclosures, and visual information into unified 
+answer-generation pipelines [31], [32]. 
+Despite these advances, the majority of LLM -based financial applications remain 
+focused on descriptive and analytical tasks. Current systems are primarily designed for 
+summarization, information retrieval, and text -based reasoning rather than sequential 
+--- PAGE 5 ---
+financial decision-making. In other words, LLMs in finance have largely functioned as 
+advanced information processors rather than decision policy optimizers. 
+Furthermore, LLM -based systems are typically developed independently from 
+reinforcement learning frameworks used for portfolio management and trading strategy 
+optimization [33]. As a result, multimodal financial understanding and decision policy 
+learning are treated as separate research directions, lacking a unified architecture that 
+integrates semantic belief construction with sequential optimization. 
+These limitations suggest that the next stage of financial AI development lies not 
+merely in improving language understanding or multimodal reasoning accuracy, but in 
+transforming LLM-derived multimodal representations into structured belief states that 
+can support risk-sensitive decision optimization. 
+ 
+2.4  Research Gap 
+The existing body of literature reveals substantial progress across multiple research 
+streams in financial artificial intelligence. Deep learning models such as LSTM-, CNN-, 
+and Transformer -based architectures have improved pred ictive performance in 
+financial time -series modeling. Vision -based models, including CNN and Vision 
+Transformer (ViT) frameworks, have demonstrated effectiveness in extracting 
+structural information from technical charts. Reinforcement learning methods hav e 
+enabled adaptive portfolio management and trading strategy optimization. Meanwhile, 
+large language models and retrieval -augmented systems have enhanced financial text 
+understanding and document-level reasoning. Despite these advancements, a structural 
+fragmentation persists. 
+First, multimodal financial representation learning and sequential decision 
+optimization are largely developed in isolation. MLLM-based systems focus primarily 
+on information synthesis, summarization, and question answering, whereas 
+reinforcement learning frameworks concentrate on action optimization using low -
+dimensional numerical states such as historical prices and technical indicators. The 
+absence of a principled mechanism for transforming multimodal semantic 
+representations into structured decision states limits the integration of perception and 
+policy learning. 
+Second, existing financial RL models typically define the state space using 
+numerical time-series features, neglecting rich contextual signals embedded in textual 
+disclosures, earnings reports, regulatory filings, and visual chart structures. As a result, 
+policy learning is often decoupled from higher -level semantic understanding, 
+potentially leading to suboptimal or context-insensitive strategies. 
+Third, interpretability re search in financial AI remains modality -specific. While 
+token-level attribution methods and Grad -CAM visualizations provide local 
+--- PAGE 6 ---
+explanations, they do not extend naturally to policy -level decision attribution in 
+sequential settings. The interpretability o f reinforcement learning policies under 
+heterogeneous multimodal inputs remains underexplored. 
+Taken together, these observations indicate a critical gap: 
+There is currently no unified financial AI framework that integrates multimodal 
+belief construction, risk-sensitive reinforcement learning, and cross -modal decision -
+level interpretability within a coherent sequential decision architecture. 
+Addressing this gap requires reconceptualizing multimodal large language models 
+not as end-task predictors, but as belief constructors that generate semantically enriched 
+state representations. These belief states must then be connected to reinforcement 
+learning agents capable of optimizing policies under uncertainty and risk constraints. 
+Furthermore, decision -level attr ibution mechanisms are necessary to ensure 
+transparency and regulatory compatibility in high-stakes financial environments. 
+The proposed research aims to fill this gap by developing a decision -centric 
+multimodal financial framework in which multimodal perception, retrieval grounding, 
+policy optimization, and interpretability are integrated into a unified architecture. 
+ 
+2.5 Proposed Framework and Contributions 
+To address the aforementioned research gap, this study proposes a decision-centric 
+financial AI architecture, termed: “ A Multimodal Retrieval -Augmented Financial 
+Decision Framework with Reinforcement Learning.” 
+The core innovation of the proposed framework lies in the integration of multimodal 
+belief construction, sequential policy optimization, and cross-modal interpretab ility 
+within a unified system. 
+First, multimodal large language models (MLLMs) and retrieval -augmented 
+generation mechanisms are conceptualized as market belief constructors. Rather than 
+serving as end -task predictors, these componen ts synthesize heterogeneous financial 
+signals—including textual disclosures, technical charts, numerical indicators, and 
+retrieved external documents—into structured latent representations. These belief states 
+encode semantically enriched market conditions  and provide a high -dimensional yet 
+interpretable representation of financial environments. 
+Second, reinforcement learning (RL) is introduced as the decision optimization 
+layer. Operating over multimodal belief states, the RL agent learns risk -sensitive 
+policies for portfolio allocation and sequential financial decision -making. This design 
+bridges perception and action, enabling adaptive strategies under uncertainty rather 
+than static analytical outputs. 
+Third, the framework incorporates cross-modal interpretability mechanisms at both 
+representation and policy levels. In addition to token -level and visual attributions, 
+--- PAGE 7 ---
+decision-level attribution techniques are employed to quantify how multimodal inputs 
+influence policy outputs. This ensures transparency, acc ountability, and regulatory 
+compatibility in high-stakes financial contexts. 
+By integrating multimodal perception, retrieval grounding, reinforcement learning, 
+and decision-level interpretability, the proposed framework advances financial AI from 
+isolated analytical modules toward coherent, decision -oriented systems capable of 
+operating in dynamic market environments. 
+(二) 研究方法、進行步驟及執行進度。請分年列述：1.本計畫採用之研究方法與
+原因及其創新性。2.預計可能遭遇之困難及解決途徑。3.重要儀器之配合使
+用情形 。4.如為須赴國外或大陸地區研究 ， 請詳述其必要性以及預期效益等 。 
+3. Research Methodology 
+First-Year 
+This study proposes a multi -level composite architecture designed to transform 
+heterogeneous financial data into Latent Belief State for downstream decision-making. 
+Diverging from conventional MLLM applications focused on descriptive Visual 
+Question Answering (VQA), the first year of this project emphasizes the construction 
+of a decision-centric state representation. To achieve this, we utilize distinct encoders 
+for visual inputs (e.g., candlestick charts, technical indicators, and financial statements) 
+and textual inputs (e.g., news, analyst reports, and corporate filings). These signals are 
+projected into a unified hidden space to form a coherent market context. Furthermore, 
+a Retrieval-Augmented Generation (RAG) module is integrated to incorporate external 
+factual evidence from SEC filings and macroeconomic datasets, mitigating the risk of 
+model hallucinations. The primary objective of this stage is to generate a compressed, 
+semantically rich feature vector, denoted as 𝑍𝑓𝑢𝑠𝑒𝑑, which serves as the env ironment 
+state input for the Reinforcement Learning (RL) agent in Year 2.  The primary 
+architectural framework is illustrated in Figure 1.  Phase 1 focuses on perception and 
+belief construction, generating a decoupled latent state ( 𝑍𝑓𝑢𝑠𝑒𝑑). Phase 2 uti lizes this 
+state for RL-based policy optimization with a unified interpretability layer 
+--- PAGE 8 ---
+ 
+Figure 1. The proposed two-phase, decision-centric multimodal financial 
+framework.  
+. 
+Initially, the training data are organized into tuples (𝑋𝑣, 𝑋𝑡, 𝐷, 𝑦) (see Table 1), where  
+𝑋𝑣  denotes chart or tabular images, 𝑋𝑡 is financial text queries, 𝐷 is the retrieval 
+corpus, and  𝑦  is the target outputs. Each sample is designed to support both 
+multimodal representation learning and retrieval -augmented generation. For instance, 
+an example input image could be a candlestick chart file located at 
+images/AAPL_Q1_2021.png, described as “Daily candlestick chart of Apple Inc. 
+showing a head -and-shoulders formation with declining volume, indicative of a 
+potential bearish reversal.” 
+Table 1. Data Organization for Multimodal Belief Construction (Year 1) 
+Category Content 
+Image Data 
+(𝑋𝑣) 
+File Path: images/AAPL_Q1_2021.png 
+Description: Daily candlestick chart of Apple Inc. showing a 
+"head-and-shoulders" pattern with declining trading volume. 
+--- PAGE 9 ---
+Feature 
+Extraction 
+Target 
+Identify key technical patterns, calculate visual signal confidence 
+levels, and extract trend reversal probabilities. 
+Retrieved 
+Context (𝐷) 
+1. Technical Definition: A head-and-shoulders formation 
+combined with decreasing volume is a strong bearish reversal 
+indicator. 
+2. External Linkage: S&P 500 index faced resistance during the 
+same period, suggesting systemic pressure. 
+Belief 
+Representation 
+Output 
+(𝑍𝑓𝑢𝑠𝑒𝑑) 
+[Structured Output]: 
+● Market Sentiment: Bearish 
+● Key Indicators: Volume-price divergence, Pattern reversal 
+● Evidence Alignment: SEC 10-Q report highlights supply 
+chain constraints.(This output is formatted as a latent vector for 
+RL policy optimization in Year 2.) 
+3.1 Vision encoder 
+The image data 𝑋𝑣 ∈ ℝ𝐻×𝑊×𝐶 (with height 𝐻, width 𝑊, and channels 𝐶; e.g., 𝐶 =
+3 for color candlestick charts, 𝐶 = 1 or grayscale scanned tables) are divided into 𝑇𝑣 
+non-overlapping patches, each of size 𝑝 × 𝑝 . These patches are flattened and 
+embedded, then passed through a vision encoder 𝑔(⋅)  (e.g., CLIP or ViT pretrained 
+on financial chart corpora), producing token-level features: 
+𝑍𝑣 = 𝑔(𝑋𝑣) ∈ ℝ𝑇𝑣×𝑑𝑣 
+Here, 𝑇𝑣 =
+𝐻𝑊
+𝑃2  is the number of visual tokens and 𝑑𝑣 is the vision feature dimension. 
+To align these vision features with the hidden space of the language model, we apply a 
+learned projection matrix 𝑃𝑣 ∈ ℝ𝑇𝑣×𝑑ℎ. The projected features are: 
+𝐻𝑣 = 𝐿𝑁(𝑍𝑣𝑃𝑣) ∈ ℝ𝑇𝑣×𝑑ℎ 
+where LN denotes Layer Normalization, a standard operation used to stabilize training 
+by re-centering and re-scaling each feature vector. 
+In subsequent fusion stages, these projected tokens 𝐻𝑣 are treated analogously to word 
+embeddings. If a single global representation of the entire image is required, we employ 
+a pooling operator, such as: 
+--- PAGE 10 ---
+ [CLS] token pooling: appending a special “classification token” that aggregates 
+global context; or 
+ mean pooling: averaging all token embeddings. 
+This pooled embedding is denoted as 
+ℎ𝑣 = 𝑝𝑜𝑜𝑙(𝐻𝑣) ∈ ℝ𝑑ℎ,  
+and can serve as a compact summary vector for tasks like retrieval key generation or 
+global conditioning in the decoder. 
+3.2 Text encoder 
+In parallel with visual encoding, each financial text query 𝑋𝑡 (e.g., “What trading 
+signal is indicated by this candlestick chart?” or “Summarize the key risks in Tesla’s 
+Q2 earnings report”) is tokenized into a sequence of 𝑇𝑡 tokens: 
+𝑋𝑡 = 𝑤1, 𝑤2, … , 2𝑇𝑡. 
+ 
+Each token 𝑤𝑖 is mapped into an embedding vector through a pre-trained financial 
+language model encoder 𝑓(⋅), such as FinBERT, FinancialBERT, or a domain-adapted 
+LLaMA/BLOOM model. The encoded representations are: 
+𝑍𝑡 = 𝑓(𝑋𝑡) ∈ ℝ𝑇𝑡×𝑑𝑡 
+where 𝑑𝑡 is the text encoder’s hidden dimension. 
+To ensure consistency with the multimodal fusion stage, these embeddings are 
+projected into the same hidden space dimension 𝑑ℎ used by the language model. This 
+is achieved by a projection matrix 𝑃𝑡  ∈ ℝ𝑑𝑡×𝑑ℎ: 
+𝐻𝑡 = 𝐿𝑁(𝑍𝑡𝑃𝑡) ∈ ℝ𝑇𝑡×𝑑ℎ, 
+where 𝐿𝑁 again denotes Layer Normalization. 
+Analogous to the visual pathway, if a global representation of the text sequence is 
+required (e.g., for retrieval keys), a pooling operation is applied: 
+ℎ𝑡 = 𝑝𝑜𝑜𝑙(𝐻𝑡) ∈ ℝ𝑑ℎ.  
+Here, the pooling operator can be the hidden state of the [CLS] token, which is standard 
+in BERT -based models, or mean pooling across all tokens. The choice depends on 
+--- PAGE 11 ---
+whether the downstream task benefits more from a semantically focused ([CLS]) or 
+evenly distributed (mean) representation. 
+3.3 Retrieval-Augmented Generation 
+To incorporate external domain-specific knowledge, we employ a retrieval-augmented 
+generation (RAG) module. The retrieval corpus denotes as 𝐷 = 𝑑1, 𝑑2, … , 𝑑|𝐷| 
+consists of heterogeneous financial documents, such as SEC filings, analyst reports, 
+news articles, and macroeconomic bulletins. 
+Given a multimodal input pair (𝐻𝑣, 𝐻𝑡), we construct a query embedding 𝑞 ∈ ℝ𝑑ℎ 
+by pooling the fused visual and textual representations: 
+𝑞 = 𝑝𝑜𝑜𝑙([ℎ𝑣; ℎ𝑡]) ,   
+where [ℎ𝑣; ℎ𝑡] denotes the concatenation of pooled visual and text embeddings, and 
+𝑝𝑜𝑜𝑙(⋅) could be a linear projection or attentive pooling mechanism. 
+Each document 𝑑𝑗 ∈ 𝐷 is pre-encoded into a dense vector representation 𝑘𝑗  ∈ ℝ𝑑ℎ 
+ using the same text encoder 𝑓(⋅) followed by projection  𝑃𝑡. Retrieval is then 
+performed via similarity search in the embedding space: 
+𝑠𝑗 = 𝑠𝑖𝑚(𝑞, 𝑘𝑗), 
+where 𝑠𝑖𝑚(⋅,⋅) is typically cosine similarity or dot-product. 
+The top-𝐾 documents are selected based on similarity scores: 
+𝐷𝐾 = 𝑑𝑗1, 𝑑𝑗2, … , 𝑑𝑗𝐾, 𝑗𝑙 = 𝑎𝑟𝑔 𝑚𝑎𝑥
+𝑗
+𝑆𝑗. 
+The retrieved documents are re -encoded into token embeddings 𝐻𝑟  ∈ ℝ𝑇𝑟×𝑑ℎ and 
+concatenated with the original inputs: 
+𝐻̃ = [𝐻𝑡; 𝐻𝑣; 𝐻𝑟],  
+which serves as the input to the decoder for generation. 
+This retrieval mechanism ensures that the model can ground its predictions in factual, 
+domain-specific financial knowledge, reducing hallucinations and improving 
+interpretability in tasks such as earnings -call summarization, market forecasting, and 
+risk assessment. 
+3.4 Cross-Modal Fusion and Decoder 
+--- PAGE 12 ---
+After obtaining modality -specific embeddings for vision 𝐻𝑣, text 𝐻𝑡, and retrieved 
+knowledge 𝐻𝑟, the model performs cross-modal fusion  to integrate heterogeneous 
+financial signals into a unified representation. 
+We first concatenate all token sequences along the temporal axis: 
+𝐻𝑎𝑙𝑙 = [𝐻𝑡; 𝐻𝑣; 𝐻𝑟] ∈ ℝ(𝑇𝑡+𝑇𝑣+𝑇𝑟)×𝑑ℎ,  
+where [ ; ] denotes sequence concatenation. 
+This sequence is then passed into a transformer-based fusion module  𝐹(⋅) , 
+parameterized by multi-head self-attention layers: 
+𝑍𝑓𝑢𝑠𝑒𝑑 = 𝐹([𝐻𝑡; 𝐻𝑣; 𝐻𝑟]) ∈ ℝ(𝑇𝑡+𝑇𝑣+𝑇𝑟)×𝑑ℎ,  
+Each attention head computes pairwise dependencies across modalities: 
+𝐴𝑡𝑡𝑒𝑛𝑡𝑖𝑜𝑛(𝑄, 𝐾, 𝑉) = 𝑠𝑜𝑓𝑡𝑚𝑎𝑥 (
+𝑄𝐾⊤
+√𝑑𝑘
+) 𝑉, 
+where  𝑄 = 𝐻𝑎𝑙𝑙𝑊𝑄,   𝐾 = 𝐻𝑎𝑙𝑙𝑊𝑘,   𝑉 = 𝐻𝑎𝑙𝑙𝑊𝑣  , and 𝑊𝑄, 𝑊𝑘, 𝑊𝑣 ⊂ ℝ𝑑ℎ×𝑑ℎ are 
+learned projection matrices. 
+The resulting fused representation 𝑍𝑓𝑢𝑠𝑒𝑑 captures dependencies such as: 
+ correlations between chart patterns (𝐻𝑣) and narrative explanations in earnings 
+reports (𝐻𝑡) 
+ alignment between retrieved background documents ( 𝐻𝑟) and current market 
+news. 
+Finally, the decoder 𝐷(⋅), instantiated as a causal language model (e.g., LLaVA or a 
+domain-adapted LLaMA -2), autoregressively generates outputs 𝑌 = 𝑦1, 𝑦2, … , 𝑦𝑇, 
+conditioned on the fused representation: 
+𝑝(𝑌|𝐻𝑡, 𝐻𝑣, 𝐻𝑟) = ∏ 𝑝(𝑦𝑖|𝑦<𝑖, 𝑍𝑓𝑢𝑠𝑒𝑑)
+𝑇
+𝑖=1
+ 
+This generative process allows the system to produce context-aware financial 
+narratives, such as: 
+ event-driven price forecasts (“Given this candlestick pattern and news 
+sentiment, the model predicts a likely short-term downturn”), 
+--- PAGE 13 ---
+ risk assessments (“The retrieved SEC filing highlights liquidity constraints that 
+increase credit risk”), or 
+ decision support outputs tailored for institutional and retail investors. 
+3.5 Training Process and Belief State Optimization 
+The training of the proposed architecture in Year 1 focuses on optimizing the model's 
+ability to synthesize multimodal signals into a reliable Latent Belief State (𝑍𝑓𝑢𝑠𝑒𝑑). To 
+ensure computational efficiency on a single hig h-performance workstation (e.g., RTX 
+5090), we employ Parameter-Efficient Fine-Tuning (PEFT) via QLoRA, updating only 
+the projection layers and specific attention adapters while freezing the backbone 
+MLLM. Each training sample consists of a tuple: 
+(𝑥𝑣, 𝑥𝑡, 𝐷𝑟, 𝑦𝑏𝑒𝑙𝑖𝑒𝑓), 
+where 𝑥𝑣, denotes chart or tabular images,  𝑥𝑡 denotes textual queries (e.g., market 
+news, analyst commentary), 𝐷𝑟 = 𝑑1, … , 𝑑𝐾 represent the top-𝐾 retrieved documents, 
+and 𝑦 is the ground -truth target sequence (e.g., forecast explanation or structured 
+report). 
+(1) Multimodal Alignment Loss(𝐿𝑎𝑙𝑖𝑔𝑛) 
+For each modality, embeddings are projected into the shared space of the decoder. To 
+ensure consistency across modalities, we impose a contrastive alignment loss between 
+image embeddings 𝐻𝑣 and their paired text embeddings 𝐻𝑡: 
+𝐿𝑎𝑙𝑖𝑔𝑛 = − 𝑙𝑜𝑔
+𝑒𝑥 𝑝(⟨𝐻𝑣𝐻𝑡⟩/𝜏)
+∑ 𝑒𝑥𝑝(⟨𝐻𝑣𝐻𝑡′⟩/𝜏)𝑡′
+ 
+where 𝜏 is a temperature parameter. This objective ensures that the Latent Belief State 
+accurately reflects the correlation between technical chart formations and financial 
+news. 
+(2) Evidence Grounding Loss(𝐿𝑔𝑟𝑜𝑢𝑛𝑑) 
+To prevent the model from ignoring the RAG-retrieved documents or hallucinating, we 
+impose a grounding loss. This is based on the KL divergence between the model’s 
+cross-attention weights 𝛼̂  and the oracle relevance scores 𝛼∗  of the retrieved 
+passages: 
+--- PAGE 14 ---
+𝐿𝑔𝑟𝑜𝑢𝑛𝑑 = ∑ 𝛼𝑖
+∗log 𝛼𝑖
+∗
+𝛼̂𝑖
+𝐾
+𝑖=1
+. 
+This ensures that the model allocates higher attribution to truly relevant financial 
+documents. 
+(3) Belief Consistency Loss (𝐿𝑏𝑒𝑙𝑖𝑒𝑓) 
+To ensure that the latent representation 𝑍𝑓𝑢𝑠𝑒𝑑 captures not only linguistic syntax but 
+also discriminative financial features required for decision -making, we define the 
+ground-truth target 𝑦𝑏𝑒𝑙𝑖𝑒𝑓 as a composite sequence containing both structured state 
+tokens (e.g., [BULLISH], [HIGH_VOLATILITY]) and narrative explanations. 
+𝐿𝑏𝑒𝑙𝑖𝑒𝑓 = − ∑ 𝑙𝑜𝑔 𝑝𝜃(𝑦𝑏𝑒𝑙𝑖𝑒𝑓,𝑡|𝑦𝑏𝑒𝑙𝑖𝑒𝑓<𝑡, 𝑍𝑓𝑢𝑠𝑒𝑑)
+𝑇𝑦
+𝑡=1
+ 
+where: 
+ 𝑦𝑏𝑒𝑙𝑖𝑒𝑓 includes special classification tokens (e.g., <TREND>, <RISK_LEVEL>) 
+inserted at the beginning of the sequence. 
+ 𝑇𝑦 is the length of the target sequence. 
+Significance: By forcing the model to predict structured indicators alongside the text, 
+this objective compels the latent state 𝑍𝑓𝑢𝑠𝑒𝑑 to encode high-level semantic concepts 
+(e.g., identifying a "reversal pattern" from the chart) rather than merely memorizing 
+surface-level text statistics. This ensures that 𝑍𝑓𝑢𝑠𝑒𝑑 serves as a robust and informative 
+state space for the RL agent in Phase 2. 
+(4) Composite Objective for Phase 1 
+The final joint loss for the first year is formulated as: 
+𝐿 = λ1𝐿𝑎𝑙𝑖𝑔𝑛 + λ2𝐿𝑔𝑟𝑜𝑢𝑛𝑑 + λ3𝐿𝑏𝑒𝑙𝑖𝑒𝑓, 
+Where  λ3 is prioritized to ensure the richness of the belief state, while λ1, and λ2 
+serve as structural constraints to align multimodal and retrieved signals. 
+Second-Year 
+3.6 RL-based Policy Optimization and Unified Interpretability 
+In the second year, the research focus shifts from multimodal perception to 
+strategic decision optimization. We utilize the Latent Belief State ($$) generated in 
+Phase 1 as the environmental state for training a Reinforcement Learning (RL) agent. 
+--- PAGE 15 ---
+This phase aims to develop a policy that is not only profitable but also risk-aware and 
+interpretable. 
+(1) MDP Formulation for Portfolio Management 
+We model the dynamic portfolio management problem as a Markov Decision 
+Process (MDP), defined by the tuple (𝒮, 𝒜, 𝒫, ℛ, 𝛾): 
+ State Space (𝒮): The state at time $t$ is defined as 𝑠𝑡 = [𝑍𝑓𝑢𝑠𝑒𝑑,𝑡, ℎ𝑡−1], where 
+𝑍𝑓𝑢𝑠𝑒𝑑,𝑡 is the latent belief vector extracted from the MLLM in Phase 1, and 
+ℎ𝑡−1 represents the agent’s current portfolio holdings. This decoupled design 
+allows the RL agent to leverage high-level semantic insights without the 
+computational burden of processing raw multimodal data directly. 
+ Action Space (𝒜): The action 𝑎𝑡 ∈ ℝ𝑁 corresponds to the target portfolio 
+weight vector for $N$ assets, subject to the constraint ∑ |𝑁
+𝑖=1 𝑎𝑖,𝑡| = 1 
+(assuming a fully invested portfolio with potential for short selling, if permitted). 
+ Transition Dynamics (𝒫): The environment evolves according to real market 
+data dynamics, 𝑠𝑡+1 ∼ 𝒫(𝑠𝑡+1|𝑠𝑡, 𝑎𝑡). 
+(2) Policy Optimization via Proximal Policy Optimization (PPO) 
+To ensure stable convergence in the noisy financial environment, we employ the 
+Proximal Policy Optimization (PPO) algorithm. PPO optimizes a clipped surrogate 
+objective function to prevent destructive policy updates: 
+ℒ𝐶𝐿𝐼𝑃(𝜃) = 𝔼̂𝑡[min(𝑟𝑡(𝜃)Â𝑡,clip(𝑟𝑡(𝜃), 1 − 𝜖, 1 + 𝜖)Â𝑡)] 
+where: 
+ 𝜃denotes the policy parameters. 
+ 𝑟𝑡(𝜃) =
+𝜋𝜃(𝑎𝑡|𝑠𝑡)
+𝜋𝜃𝑜𝑙𝑑(𝑎𝑡|𝑠𝑡) is the probability ratio between the new and old policies. 
+ 𝐴̂𝑡 is the estimated advantage function. 
+ 𝜖 is a hyperparameter that bounds the update step size. 
+(3) Risk-Sensitive Reward Shaping ($\mathcal{R}$) 
+Unlike standard RL applications that maximize raw cumulative returns, financial 
+decision-making requires strict risk control. We propose a composite Risk-Sensitive 
+Reward Function: 
+--- PAGE 16 ---
+ℛ𝑡 = 𝜇(𝑅𝑝) − 𝜆1 ⋅ 𝜎(𝑅𝑝) − 𝜆2 ⋅ MDD𝑡 − 𝜂 ⋅ TC𝑡 
+where: 
+ 𝜇(𝑅𝑝) and 𝜎(𝑅𝑝) represent the expected return and volatility of the portfolio, 
+respectively. 
+ MDD𝑡 (Maximum Drawdown): Penalizes strategies that incur unacceptable 
+losses from peak equity. 
+ TC𝑡 (Transaction Costs): Accounts for trading friction to prevent the agent 
+from excessive churning (over-trading).(4) Unified Explainability: Integrated 
+Gradients for Policy 
+To attribute the RL agent's decisions back to the original multimodal inputs, we 
+implement Integrated Gradients (IG). This method satisfies the axiom of 
+completeness, ensuring that the attribution scores sum up to the difference in the 
+model output relative to a baseline. The attribution for the 𝑖-th feature of the input 𝑥 
+(i.e., components of 𝑍𝑓𝑢𝑠𝑒𝑑) is calculated as: 
+Attribution𝑖(𝑥) = (𝑥𝑖 − 𝑥𝑖
+′) × ∫ ∂𝜋(𝑎𝑡|𝑥′ + 𝛼(𝑥 − 𝑥′))
+∂𝑥𝑖
+1
+𝛼=0
+𝑑𝛼 
+where 𝑥′ is a baseline reference (e.g., a zero vector). This mechanism allows us to 
+quantify the marginal contribution of each modality—whether a specific visual chart 
+pattern or a retrieved SEC filing—to the final portfolio rebalancing decision, thereby 
+ensuring regulatory transparency. 
+4. Anticipated Challenges and Potential Solutions 
+Implementing a multimodal financial AI system that integrates MLLM, RAG, and 
+Reinforcement Learning (RL) presents significant technical challenges. We have 
+identified four primary risks and formulated concrete mitigation strategies to ensure 
+project feasibility, particularly under the constraints of single -node high-performance 
+computing resources. Main challenges and potential solutions shown as table 2.
+--- PAGE 17 ---
+Anticipated Challenge Proposed Solution & Mitigation Strategy 
+1. Computational Resource Constraints 
+(Hardware Limitation) 
+Training or fine-tuning Large Multimodal 
+Models (e.g., LLaVA, Llama-3-Vision) 
+typically requires multi-GPU clusters. 
+Running MLLM inference and RL simulation 
+simultaneously on a single workstation (e.g., 
+RTX 5090) poses a risk of GPU memory 
+exhaustion (OOM). 
+(1) Parameter-Efficient Fine-Tuning (PEFT): Instead of full-parameter fine-tuning, 
+we will employ QLoRA (Quantized Low-Rank Adaptation), which freezes the 
+backbone model and updates only a small set of adapter weights. This reduces VRAM 
+usage by up to 60%. 
+(2) Decoupled Architecture: As designed in the methodology, we decouple 
+Perception (Year 1) from Decision (Year 2). The heavy MLLM is used offline to pre-
+compute Latent Belief States (𝑍𝑓𝑢𝑠𝑒𝑑), while the online RL agent trains on these 
+lightweight vectors, ensuring computational efficiency. 
+2. Instability of RL Convergence in Noisy 
+Environments 
+Financial markets are characterized by low 
+signal-to-noise ratios. Directly mapping high-
+dimensional multimodal inputs to trading 
+actions often leads to non-convergence or the 
+learning of trivial policies (e.g., always 
+holding cash). 
+(1) Frozen Belief State Pre-training: By using the frozen 𝑍𝑓𝑢𝑠𝑒𝑑 from Year 1, we 
+reduce the dimensionality of the state space for the RL agent, stabilizing the learning 
+process. 
+(2) Curriculum Learning: We will implement a curriculum learning strategy, starting 
+the RL agent in simplified market environments (e.g., low volatility periods) and 
+gradually introducing complex scenarios (e.g., market crashes) to improve robustness. 
+(3) PPO Clipping: Utilizing PPO (Proximal Policy Optimization) ensures that policy 
+updates are bounded, preventing catastrophic forgetting during training. 
+--- PAGE 18 ---
+Anticipated Challenge Proposed Solution & Mitigation Strategy 
+3. RAG Hallucination & Irrelevant 
+Retrieval 
+The RAG module might retrieve irrelevant 
+documents (noise) or outdated financial news, 
+causing the MLLM to generate 
+"hallucinated" market beliefs that mislead 
+the RL agent. 
+(1) Hybrid Search & Re-ranking: We will combine keyword search (BM25) with 
+semantic dense retrieval, followed by a Cross-Encoder Re-ranker to filter out 
+irrelevant documents before feeding them to the MLLM. 
+(2) Grounding Loss: As defined in Section 3.5, the Evidence Grounding Loss 
+(ℒ𝑔𝑟𝑜𝑢𝑛𝑑) explicitly penalizes the model if it attends to retrieved chunks that do not 
+match the oracle relevance labels, enforcing factual consistency. 
+4. Difficulty in Cross-Modal 
+Interpretability 
+Explaining why an RL agent made a decision 
+based on a "fused latent vector" is abstract. 
+Traditional Grad-CAM is visual-only and does 
+not account for the textual or retrieval logic 
+behind a portfolio rebalance. 
+(1) Integrated Gradients (IG): We will apply IG to the policy network in Phase 2, 
+calculating the attribution scores back to the specific dimensions of the Belief State 
+(𝑍𝑓𝑢𝑠𝑒𝑑). 
+(2) Hierarchical Explanation: We will trace the high-attribution dimensions of 𝑍𝑓𝑢𝑠𝑒𝑑 
+back to the original inputs (e.g., "Dimension 54 was triggered by the 'Head-and-
+Shoulders' pattern in the Vision Encoder"). This creates a transparent chain of reasoning 
+from raw data to final trade. 
+--- PAGE 19 ---
+(三) 預期完成之工作項目及成果。請分年列述：1.預期完成之工作項目。2.對於
+參與之工作人員，預期可獲之訓練。3.預期完成之研究成果 （如實務應用績
+效、期刊論文、研討會論文、專書、技術報告、專利或技術移轉等質與量之
+預期成果）。4.學術研究、國家發展及其他應用方面預期之貢獻。 
+本計畫旨在構建一套具備「決策層級解釋性」的多模態金融強化學習系統。透
+過兩年期的分階段執行，我們預期在技術研發、人才培育與學術貢獻上達成以
+下具體目標： 
+1. 預期完成之工作項目 
+第一年：多模態感知與潛在信念表徵建構 (Perception & Belief Construction) 
+本年度重點在於解決異質金融數據的對齊與事實基礎（Grounding）問題，產出
+可供決策使用的潛在信念狀態（Latent Belief State, 𝑍𝑓𝑢𝑠𝑒𝑑）。 
+ 數據工程與清洗： 建立涵蓋 K 線圖、財報表格（視覺模態）與新聞、
+分析師報告（文字模態）的對齊資料集 。 
+ 檢索增強（RAG）模組開發： 部署向量資料庫（如 Milvus），索引 
+SEC Filings 與總經報告，並實作基於語義檢索的證據提取機制 。 
+ 信念建構模型訓練： 採用參數高效微調（PEFT/QLoRA）技術，在單機
+（RTX 5090）環境下訓練多模態編碼器與投影層，優化對比損失
+（Contrastive Loss）與證據一致性損失（Grounding Loss） 。 
+ 表徵效能驗證： 針對 𝑍𝑓𝑢𝑠𝑒𝑑 進行診斷性分類測試（Diagnostic 
+Classification），驗證其在市場情緒分類與事件抽取上的準確度。 
+第二年：強化學習決策優化與統一解釋性 (Decision & Transparency) 
+本年度重點在於利用第一年的信念表徵訓練決策代理人，並建立全鏈路的解釋
+機制。 
+ RL 環境構建： 設計基於 𝑍𝑓𝑢𝑠𝑒𝑑 的馬可夫決策過程（MDP），定義風
+險敏感（Risk-Sensitive）的獎勵函數 。 
+ 策略網路訓練： 使用 PPO 演算法訓練投資組合管理代理人，並導入課
+程學習（Curriculum Learning）以提升模型在極端行情下的穩健性。 
+ 跨模態歸因分析： 開發整合梯度（Integrated Gradients）模組，計算不
+同模態（圖、文、檢索證據）對最終交易動作（Action）的貢獻度 。 
+ 系統整合與回測： 完成全系統整合，並進行嚴謹的歷史回測
+（Backtesting），比較夏普比率（Sharpe Ratio）與最大回撤 MDD）等績
+效指標。 
+--- PAGE 20 ---
+整體執行計畫甘特圖如下圖所示 : 
+圖表說明： 
+ Q1-Q4： 代表每年的四個季度（1-3 月, 4-6 月, 7-9 月, 10-12 月）。 
+ 深色區塊 (█)： 代表該任務的主要執行與高強度工作期間。 
+ 淺色區塊 (░)： 代表準備階段、收尾或持續性的維護工作。 
+ 關鍵相依性 (→)： 注意 Task 1.3/1.4 結束後，Task 2.1 才開始高強度運
+作，體現了兩年期的銜接。 
+分
+年 
+工作項目 (Task 
+Description) 
+Year 1 (第一年) 感知與信念建構 
+(Phase 1) 
+Year 2 第二年：決策優化與解釋性 
+(Phase 2) 
+ 季別 (Quarter) Q1 Q2 Q3 Q4 Q1 Q2 Q3 Q4 
+1.1 
+多模態數據蒐集、
+清洗與對齊 (Data 
+Pipeline) 
+████ ██░░ ░░░░      
+1.2 
+RAG 向量資料庫
+建置與檢索優化 
+(RAG Setup) 
+░░██ ████ ██░░      
+1.3 
+MLLM 信念編碼
+器訓練 
+(PEFT/QLoRA) 
+ ░░██ ████ ██░░     
+1.4 
+潛在表徵 (Zfused) 
+效能驗證與診斷 
+  ░░██ ████ ░░░░    
+2.1 
+RL 環境構建與獎
+勵函數設計 (MDP 
+Setup) 
+   ░░░░ ████ ██░░   
+2.2 
+強化學習策略代理
+人訓練 (PPO Agent 
+Training) 
+    ░░██ ████ ██░░  
+2.3 
+跨模態歸因解釋模
+組開發 (Integrated 
+Gradients) 
+     ░░██ ████ ██░░ 
+2.4 
+全系統整合、歷史
+回測與績效評估 
+(System Test) 
+      ░░██ ████ 
+--- PAGE 21 ---
+III. 
+計畫管理與成果發
+表 (General) 
+        
+3.1 
+定期進度會議與產
+學交流 
+░░░░ ░░░░ ░░░░ ░░░░ ░░░░ ░░░░ ░░░░ ░░░░ 
+3.2 
+論文撰寫、投稿與
+期末報告彙整 
+ ░░░░ ░░██ ████  ░░░░ ░░██ ████ 
+2. 對於參與之工作人員，預期可獲之訓練 
+本計畫涉及深度學習、自然語言處理與計量金融的交叉領域，參與之研究生與
+研究助理將獲得以下關鍵技能訓練： 
+ 大型模型微調與優化技術： 學習 LoRA/QLoRA 等高效率訓練技術，以
+及 Transformer 架構的底層實作能力。 
+ 檢索增強生成 (RAG) 實務： 掌握向量資料庫建置、語義搜尋優化及處
+理長文本（Long-context）金融文獻的實務經驗。 
+ 強化學習 (RL) 與金融工程： 深入理解 PPO/SAC 等演算法原理，並
+學習如何將金融風險指標轉化為數學上的獎勵函數（Reward 
+Shaping）。 
+ 跨領域溝通與學術寫作： 培養將 AI 技術應用於金融場景的轉譯能力，
+並訓練撰寫高品質國際會議論文與技術報告。 
+3. 預期完成之研究成果 
+質化成果： 
+ 原創性架構： 提出首個將 MLLM 視為「信念構造者（Belief 
+Constructor）」並結合 RL 進行序列決策的金融 AI 框架 。 
+ 可解釋性突破： 建立一套能從「決策結果」回推至「視覺/文本證據」
+的歸因機制，解決傳統金融黑盒子的信任問題 。 
+量化成果 (KPI)： 
+ 學術論文： 預計發表 1-2 篇 高影響力國際期刊（如 IEEE TNNLS, 
+Expert Systems with Applications 或 Finance 領域頂刊）或 1-2 篇 頂尖
+國際研討會論文（如 AAAI, IJCAI, ICAIF）。 
+ 技術報告： 完成年度計畫結案報告 2 份，詳細記錄模型架構、實驗參
+數與回測數據。 
+4. 學術研究、國家發展及其他應用方面預期之貢獻 
+--- PAGE 22 ---
+學術研究貢獻： 
+ 建立多模態金融 RL 基準 (Benchmark)： 本計畫提出的評估指標與資
+料處理流程，將為後續研究提供標準化的比較基準 。 
+ 深化 MLLM 在決策領域的應用： 證實 MLLM 不僅能用於生成文
+字，更能作為高維度狀態空間的壓縮器，拓展了 Generative AI 在控制
+領域的應用邊界。 
+國家發展與產業應用貢獻： 
+ 推動 RegTech (監管科技) 發展： 本計畫開發的解釋性模組可應用於金
+融監理，協助主管機關自動化審查演算法交易的邏輯合規性，降低系統
+性風險 。 
+ 提升金融科技競爭力： 透過訓練具備「避險意識」的 AI 代理人，可協
+助國內投信投顧業者開發新一代的智能理財（Robo-Advisor）系統，提
+升資產管理效率。 
+ 培育 AI + Finance 雙語人才： 透過本計畫培育的跨領域人才，將成為
+台灣發展 AI 金融科技產業的中堅力量，填補目前產業界對高階 AI 金
+融工程師的迫切需求。 
+ 
+Reference 
+[1]  Xu, Z., Chen, Z., Zhang, Y., Song, Y., Wan, X., & Li, G. (2023). Bridging vision and language 
+encoders: Parameter -efficient tuning for referring image segmentation. In Proceedings of the 
+IEEE/CVF International Conference on Computer Vision (pp. 17503 -17512). 
+[2]  OpenAI. (2025). GPT -5.2 [Large language model]. https://openai.com/index/introducing -gpt-5-
+2/ :contentReference[oaicite:7]{index=7} 
+[3]  Lewis, P., Perez, E., Piktus, A., Petroni, F., Karpukhin, V., Goyal, N., ... & Kiela, D. (2020). 
+Retrieval-augmented gene ration for knowledge -intensive nlp tasks. Advances in neural 
+information processing systems, 33, 9459-9474. 
+[4]  Huang, A. H., Wang, H., & Yang, Y. (2023). FinBERT: A large language model for extracting 
+information from financial text. Contemporary Accounting Research, 40(2), 806-841. 
+[5]  Hazourli, A. (2022). Financialbert-a pretrained language model for financial text mining. Research 
+Gate, 2. 
+[6]  Mehtab, S., & Sen, J. (2020, November). Stock price prediction using CNN and LSTM-based deep 
+learning models. In 2020 Inter national Conference on Decision Aid Sciences and Application 
+(DASA) (pp. 447-453). IEEE. 
+--- PAGE 23 ---
+[7]  Seun, E., & Olawunmi Asake, A. (2024). Stock Price Prediction: Evaluating The Efficacy Of CNN, 
+LSTM, CNN-LSTM, and CNN-BILSTM Models. International Journal of Computing and Digital 
+Systems, 16(1), 1-10. 
+[8]  Joshi, S., Mahanthi, B. L., Pokkuluri, K. S., Ninawe, S. S., & Sahu, R. (2025). Integrating LSTM 
+and CNN for Stock Market Prediction: A Dynamic Machine Learning Approach. Journal of 
+Artificial Intelligence and Technology, 5, 168-179. 
+[9]  Wooh, M., & Cho, P. (2025). Integrating Vision Transformer and Time –Frequency Analysis for 
+Stock Volatility Prediction. Mathematics, 13(23), 3787. 
+[10]  Li, Y., Wang, X., & Guo, Y. (2024). CNN-Trans-SPP: A small Transformer with CNN for stock 
+price prediction. Electronic Research Archive, 32(12). 
+[11]  Charkhestani, A., & Esfahanipour, A. Behaviorally informed deep reinforcement learning for 
+portfolio optimization with loss aversion and overconfidence. Scientific reports. 
+[12]  He, J., Hua, C., Zhou, C., & Zhen g, Z. (2025). Reinforcement-Learning Portfolio Allocation with 
+Dynamic Embedding of Market Information. arXiv preprint arXiv:2501.17992.  
+[13]  Niu, H., Li, S., & Li, J. (2022, October). MetaTrader: An reinforcement learning approach 
+integrating diverse policies for portfolio optimization. In Proceedings of the 31st ACM 
+international conference on information & knowledge management (pp. 1573 -1583). 
+[14]  Pawar, A. A., Muskawar, V. P., & Tiku, R. (2024). Portfolio Management using Deep 
+Reinforcement Learning. arXiv preprint arXiv:2405.01604. 
+[15]  Fischer, T., & Krauss, C. (2018). Deep learning with long short -term memory networks for 
+financial market predictions. European journal of operational research, 270(2), 654-669. 
+[16]  Bao, W., Cao, Y., Yang, Y., Che, H., Huang, J., & Wen, S . (2025). Data-driven stock forecasting 
+models based on neural networks: A review. Information Fusion, 113, 102616. 
+[17]  Zeng, Z., Kaur, R., Siddagangappa, S., Rahimi, S., Balch, T., & Veloso, M. (2023). Financial time 
+series forecasting using cnn and transformer. arXiv preprint arXiv:2304.04912. 
+[18]  Cheng, Y., Xu, Z., Chen, Y., Wang, Y., Lin, Z., & Liu, J. (2025, July). A deep learning framework 
+integrating CNN and BiLSTM for financial systemic risk analysis and prediction. In Proceedings 
+of the 2025 International Conference on Economic Management and Big Data Application (pp. 
+270-274). 
+[19]  Xiao, J., Deng, T., & Bi, S. (2024, August). Comparative analysis of LSTM, GRU, and transformer 
+models for stock price prediction. In proceedings of the international conference on d igital 
+economy, blockchain and artificial intelligence (pp. 103-108). 
+[20]  Lezmi, E., & Xu, J. (2023). Time series forecasting with transformer models and application to 
+asset management. Available at SSRN 4375798. 
+[21]  Li, S., Schulwol, Z. B., & Miikkulainen, R. (2 025). Transformer Based Time -Series Forecasting 
+for Stock. arXiv preprint arXiv:2502.09625. 
+[22]  Wooh, M., & Cho, P. (2025). Integrating Vision Transformer and Time –Frequency Analysis for 
+Stock Volatility Prediction. Mathematics, 13(23), 3787. 
+--- PAGE 24 ---
+[23]  Kabir, M. R., Bha dra, D., Ridoy, M., & Milanova, M. (2025). LSTM –transformer-based robust 
+hybrid deep learning model for financial time series forecasting. Sci, 7(1), 7. 
+[24]  Jiang, Z., Xu, D., & Liang, J. (2017). A deep reinforcement learning framework for the financial 
+portfolio management problem. arXiv preprint arXiv:1706.10059. 
+[25]  Wang, J., Hai, M., & Li, H. (2024). A Deep Reinforcement Learning Model for Portfolio 
+Management based on Weight Adjustment. Procedia Computer Science, 242, 356-363. 
+[26]  Yu, J., & Chang, K. C. (2025). Sm art Tangency Portfolio: Deep Reinforcement Learning for 
+Dynamic Rebalancing and Risk –Return Trade -Off. International Journal of Financial Studies, 
+13(4), 227. 
+[27]  Soleymani, F., & Paquet, E. (2021). Deep graph convolutional reinforcement learning for financial 
+portfolio management–DeepPocket. Expert Systems with Applications, 182, 115127. 
+[28]  Wu, S., Irsoy, O., Lu, S., Dabravolski, V., Dredze, M., Gehrmann, S., ... & Mann, G. (2023). 
+Bloomberggpt: A large language model for finance. arXiv preprint arXiv:2303.17564.  
+[29]  Liu, X. Y., Wang, G., Yang, H., & Zha, D. (2023). Fingpt: Democratizing internet-scale data for 
+financial large language models. arXiv preprint arXiv:2307.10485. 
+[30]  Gao, Y., Xiong, Y., Gao, X., Jia, K., Pan, J., Bi, Y., ... & Wang, H. (2023). Retrieval -augmented 
+generation for large language models: A survey. arXiv preprint arXiv:2312.10997, 2(1).  
+[31]  Gondhalekar, C., Patel, U., & Yeh, F. C. (2025). MultiFinRAG: An Optimized Multimodal 
+Retrieval-Augmented Generation (RAG) Framework for Financial Question Answerin g. arXiv 
+preprint arXiv:2506.20821. 
+[32]  Zhao, S., Jin, Z., Li, S., & Gao, J. (2025). FinRAGBench -V: A Benchmark for Multimodal RAG 
+with Visual Citation in the Financial Domain. arXiv preprint arXiv:2505.17471. 
+[33]  Unnikrishnan, A. (2024). Financial news -driven llm  reinforcement learning for portfolio 
+management. arXiv preprint arXiv:2411.11059. 
