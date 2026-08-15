@@ -13,9 +13,8 @@ py -m module_a_data.preprocess.chart_generator --ticker AAPL --limit 100
 # 依股價畫 K 線圖，存成 data/raw/charts/AAPL/{日期}.png（--limit 100 = 先測前 100 天，拿掉就是全部）
 
 py -m module_a_data.crawler.fetch_filings --ticker AAPL --start 2021-01-01
-# 抓 SEC 財報（10-K/10-Q，原生 requests 版），存到 data/raw/filings/AAPL/
-# 這是現役版本。fetch_filings_edgartools.py 是保留的候選方案（decisions.md 待確認事項），
-# 目前沒有在用，不用跑它。
+# 抓 SEC 財報（10-K/10-Q，原生 requests + SEC EDGAR 官方 API），存到 data/raw/filings/AAPL/
+# 只有這一支，edgartools 候選方案已刪除（decisions.md #41）。
 
 py -m module_a_data.crawler.fetch_news_alpaca --ticker AAPL --start 2021-01-01 --end 2026-08-09
 # 新聞（Alpaca News API，decisions.md #27，取代原本的 fetch_news.py/yfinance 只抓近期新聞）。

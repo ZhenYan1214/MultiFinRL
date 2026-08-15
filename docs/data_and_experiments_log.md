@@ -10,7 +10,7 @@
 | K 線圖 | 用 OHLCV 自畫（mplfinance，20 日窗口） | `chart_generator.py` | 同上，1386 張（頭尾幾天因窗口不足缺圖） | 2026-08-09 延伸完成 |
 | 新聞（近期） | yfinance | `fetch_news.py` | 僅最新 8~10 則，歷史價值低 | 可用，範圍小 |
 | 新聞（歷史回補） | Alpaca News API（來源 Benzinga，官方 API 非爬蟲） | `fetch_news_alpaca.py` | AAPL 2021-01-01 ~ 2026-08-08，15,989 則 / 1,459 天 | 2026-08 新增，已抽樣驗證為真實全文 |
-| 財報 10-K/10-Q | SEC EDGAR（官方 API，原生 requests） | `fetch_filings.py` | 22 份，2021 ~ 2026 | 可用；現役版本。`fetch_filings_edgartools.py` 是保留的候選方案，目前資料實際上不是它產出的，未在使用（decisions.md #31） |
+| 財報 10-K/10-Q | SEC EDGAR（官方 API，原生 requests） | `fetch_filings.py` | 22 份，2021 ~ 2026 | 可用；唯一版本，`fetch_filings_edgartools.py` 候選方案已刪除（decisions.md #41，取代 #31） |
 | 法說會逐字稿 | foolcalls（Motley Fool） | `fetch_transcripts.py` | 尚未抓取 | 待辦——sandbox 連不上，需本機執行 |
 
 **已放棄的路徑**（保留記錄，程式碼已刪除）：FNSPID 爬蟲工具與 FNSPID 現成 HuggingFace dataset，兩者都驗證不可行（自動化偵測擋爬蟲、頁面改版、dataset 全文欄位是空的）。詳見 `docs/decisions.md` #26、`docs/spec_a_news_backfill.md`。

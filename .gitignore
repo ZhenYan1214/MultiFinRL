@@ -35,3 +35,8 @@ runs/
 
 # secrets
 .env
+
+# 第三方 clone 下來的工具原始碼，自帶獨立版控紀錄，不進本專案版控（見 fetch_transcripts.py 檔頭）
+# 目前 foolcalls/ 這 10 個檔案已經被追蹤進 git 了，加這行不會自動移除，
+# 需要另外執行 git rm -r --cached foolcalls/ 才會真的取消追蹤
+foolcalls/
