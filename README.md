@@ -63,7 +63,17 @@ MultiFinRL/
 │   ├── data_format.md               # data contract between A / B / C
 │   ├── decisions.md                 # decision log, including open questions
 │   ├── data_and_experiments_log.md  # data sources and classification results over time
-│   └── conduct_script.md            # copy-paste command cheat sheet, A → B → C
+│   ├── conduct_script.md            # copy-paste command cheat sheet, A → B → C
+│   ├── project_status_2026-08.md    # current status vs. the formal proposal, section by section
+│   ├── spec_a_news_backfill.md      # spec: historical news backfill (closed — see decisions.md #26/#27)
+│   ├── spec_b_event_extraction_llm.md  # spec: LLM-based event extraction
+│   ├── spec_c_accuracy_diagnostics.md  # spec: classification accuracy diagnostics
+│   ├── tickets_a_news_backfill.md
+│   ├── tickets_c_accuracy_diagnostics.md
+│   └── reference/
+│       ├── 115WFAA310699_CM03.pdf              # the formal grant proposal — source of truth
+│       ├── 115WFAA310699_CM03_extracted_text.txt
+│       └── README.md
 ├── samples/
 │   ├── DataStruct.example.json      # example of A's output format
 │   └── vectors_index.example.json   # example of B's output format
@@ -71,19 +81,21 @@ MultiFinRL/
 │   ├── schemas.py                   # validates records against the data contract
 │   ├── paths.py                     # path constants
 │   └── utils.py
+├── foolcalls/                        # vendored third-party earnings-call transcript scraper (see fetch_transcripts.py)
 ├── module_a_data/                   # Track A — data engineering
 │   ├── README.md
 │   ├── crawler/
 │   │   ├── fetch_ohlcv.py           # OHLCV via yfinance
 │   │   ├── fetch_news.py            # recent news
 │   │   ├── fetch_news_alpaca.py     # historical news backfill via Alpaca News API
-│   │   ├── fetch_filings.py         # SEC EDGAR filings
-│   │   └── fetch_transcripts.py     # earnings-call transcripts
+│   │   ├── fetch_filings.py         # SEC EDGAR filings (10-K/10-Q only, no 8-K — see decisions.md #41)
+│   │   ├── fetch_transcripts.py     # earnings-call transcripts
+│   │   └── fetch_macro.py           # ETF/index macro data — scaffold only, not implemented (decisions.md #38)
 │   ├── preprocess/
 │   │   ├── chart_generator.py       # mplfinance candlestick charts, 20-day window
-│   │   ├── text_cleaner.py          # HTML/noise cleanup
+│   │   ├── text_cleaner.py          # HTML/noise cleanup (news + filing-specific iXBRL/hidden-content stripping)
 │   │   └── chunker.py               # document chunking (≤512 tokens)
-│   ├── labeling.py                  # BULLISH / BEARISH / NEUTRAL label generation
+│   ├── labeling.py                  # BULLISH / BEARISH / NEUTRAL label generation (quantile thresholds)
 │   └── build_dataset.py             # assembles the daily JSON records
 ├── module_b_encoder/                # Track B — encoders + RAG + event extraction
 │   ├── README.md
@@ -93,7 +105,9 @@ MultiFinRL/
 │   ├── rag/
 │   │   ├── vector_db.py             # FAISS index over filing/transcript chunks
 │   │   └── retriever.py             # top-K retrieval -> H_r
-│   ├── event_extraction.py          # event extraction: keyword (default) or --method llm, spec_b_event_extraction_llm.md
+│   ├── event_extraction.py          # keyword or --method llm; standalone Track A data-quality check, does not touch Z_fused
+│   ├── event_ground_truth_llm.py    # LLM-assisted ground truth labeling for event_extraction.py
+│   ├── event_ground_truth_prompt.py # shared prompt used by the above and event_extraction.py --method llm
 │   ├── llm_client.py                 # shared LLM-calling helpers (claude/openai/deepseek)
 │   └── generate_vectors.py          # main entry point: produces H_v / H_t / H_r per day
 ├── module_c_fusion/                 # Track C — fusion, validation, RL, backtest
@@ -103,7 +117,8 @@ MultiFinRL/
 │   │   ├── train.py                 # trains the fusion model, exports Z_fused
 │   │   └── consolidate.py           # merges per-day Z_fused into one index file
 │   ├── validation/
-│   │   └── classifier.py            # held-out classification test on Z_fused
+│   │   ├── classifier.py            # diagnostic probe: Z_fused -> market sentiment (3-class)
+│   │   └── event_validation_head.py # diagnostic probe: Z_fused -> event types (7-class multi-label)
 │   ├── rl/
 │   │   ├── env.py                   # PPO environment and reward function
 │   │   └── train_ppo.py
@@ -111,11 +126,12 @@ MultiFinRL/
 │       └── backtest.py              # cumulative return, Sharpe ratio, max drawdown
 ├── scripts/
 │   └── run_pipeline.py              # runs A -> B -> C end to end
-└── data/                            # not tracked in git; synced locally/via cloud storage
+└── data/                            # not tracked in git except data/labels/; synced locally/via cloud storage
     ├── raw/                         # Track A's raw inputs (ohlcv, charts, news, filings, transcripts)
     ├── processed/dataset/           # Track A's deliverable: one JSON per day
     ├── vectors/                     # Track B's deliverable: .npy vectors + index JSON
-    └── outputs/                     # Track C's output: model checkpoints, Z_fused, backtest reports
+    ├── outputs/                     # Track C's output: model checkpoints, Z_fused, backtest reports
+    └── labels/                      # ground truth labels (event ground truth) — the one data/ subfolder tracked in git
 ```
 
 ## Data Flow
@@ -144,14 +160,14 @@ Full definition in `docs/data_format.md`; the handoff points are:
 
 Operational today, on AAPL:
 
-- Data (A): OHLCV, charts, recent news, and historical news (via the Alpaca News API, 2021–2026) are all in place. Filings are fetched via `edgartools`. Earnings-call transcripts are not yet fetched — the crawler exists but has never completed an end-to-end run.
+- Data (A): OHLCV, charts, recent news, and historical news (via the Alpaca News API, 2021–2026) are all in place. Filings (10-K/10-Q only, no 8-K) are fetched via the SEC EDGAR official API (`fetch_filings.py`); an alternate `edgartools`-based fetcher was evaluated as a candidate but never actually produced any data and has been removed (`docs/decisions.md` #31, #41). Earnings-call transcripts are not yet fetched — the crawler exists but has never completed an end-to-end run.
 - Encoding (B): ViT and FinBERT encoders and FAISS-based RAG retrieval are working. Event extraction has a 149-day LLM-labeled ground truth (`data/labels/event_ground_truth/`) and two extraction methods: the default keyword rules (precision/recall/F1 0.162 / 0.868 / 0.273 on AAPL) and an LLM-based method (`--method llm`, `docs/spec_b_event_extraction_llm.md`) that measured 0.742 / 0.605 / 0.667 on the same 149-day sample (f1 +144%); a full 1381-day run has completed, with 401 days showing at least one detected event.
 - Fusion and validation (C): the Cross-Modal Transformer, held-out classification validation, event validation head (multi-label probe of Z_fused against the same ground truth, micro F1 0.229 on AAPL), PPO training, and backtesting (buy-and-hold / rule-based / PPO strategies) all run end to end. Class-weighted training is the current default after diagnostic testing showed it was necessary for the model to learn anything from the news input at all.
 
 Known gaps, tracked in `docs/decisions.md`, not yet started:
 
 - QLoRA fine-tuning and the three composite training losses (alignment, evidence grounding, belief consistency) described in the original proposal — training currently uses a simpler classification proxy loss instead.
-- A generative decoder that turns `Z_fused` into a structured narrative — requires new ground-truth text data from Track A that does not exist yet.
+- A generative decoder that turns `Z_fused` into a structured narrative — requires new ground-truth text data from Track A that does not exist yet. Conceptually, `classifier.py` and `event_validation_head.py` (both already implemented, see above) are the simplified stand-ins for what this decoder's belief-token output would eventually do (`docs/decisions.md` #43) — building the real decoder would let it absorb both, but that hasn't happened, and the two probes remain separate scripts predicting different targets in the meantime.
 - Cross-modal interpretability (Integrated Gradients on the PPO policy).
 - A domain-gap comparison for ViT on candlestick charts vs. its natural-image pretraining (flagged as a question since early on, never run).
 - Curriculum learning for PPO training.
