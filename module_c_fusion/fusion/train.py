@@ -52,12 +52,14 @@ def log_run(mode: str, ticker: str, n_days: int, epochs: int, batch: int, lr: fl
     print(f"[train] 訓練紀錄 -> {TRAIN_LOG}")
 
 
-def load_day(ticker: str, date: str, ablate_news: bool = False):
+def load_day(ticker: str, date: str, ablate_news: bool = False, ablate_vision: bool = False):
     """讀 B 的一天向量，回傳 (h_v, h_t, h_r) numpy。
 
-    ablate_news=True 時，H_t 讀進來後在記憶體裡直接歸零（不改動磁碟上的檔案）。
-    這是 docs/spec_c_accuracy_diagnostics.md 的新聞歸零對照實驗用的，
-    只影響這次執行的結果，不會留下任何需要事後還原的殘留狀態。"""
+    ablate_news=True 時，H_t 讀進來後在記憶體裡直接歸零；ablate_vision=True 時，
+    H_v（K 線圖）比照辦理歸零——這是 ViT domain gap 對照實驗用的（decisions.md #46，
+    沿用 #28 新聞歸零對照實驗同一套手法，這次換成歸零視覺輸入，比較「有無 K 線圖」對
+    分類準確度的影響）。兩者皆只影響這次執行的記憶體內容，不改動磁碟上的向量檔案，
+    不會留下任何需要事後還原的殘留狀態。"""
     d = paths.vector_dir(ticker, date)
     index = read_json(d / "index.json")
     schemas.validate_vector_index(index)
@@ -66,6 +68,8 @@ def load_day(ticker: str, date: str, ablate_news: bool = False):
     h_r = np.load(d / "H_r.npy")
     if ablate_news:
         h_t = np.zeros_like(h_t)
+    if ablate_vision:
+        h_v = np.zeros_like(h_v)
     return (h_v, h_t, h_r)
 
 
@@ -123,14 +127,15 @@ def train(model, batches, epochs: int, lr: float, device: str, class_weights=Non
     return clf_head, losses
 
 
-def export_z_fused(model, ticker: str, days, device: str, batch: int = 8, ablate_news: bool = False):
+def export_z_fused(model, ticker: str, days, device: str, batch: int = 8,
+                   ablate_news: bool = False, ablate_vision: bool = False):
     """對所有日期輸出 Z_fused 到 data/outputs/z_fused/。"""
     model.eval()
     out_dir = paths.OUTPUTS / "z_fused" / ticker
     out_dir.mkdir(parents=True, exist_ok=True)
     with torch.no_grad():
         for date, _y in days:
-            h_v, h_t, h_r = load_day(ticker, date, ablate_news=ablate_news)
+            h_v, h_t, h_r = load_day(ticker, date, ablate_news=ablate_news, ablate_vision=ablate_vision)
             z = model(
                 torch.from_numpy(h_v[None]).to(device),
                 torch.from_numpy(h_t[None]).to(device),
@@ -151,6 +156,9 @@ def main():
     ap.add_argument("--lr", type=float, default=1e-4)
     ap.add_argument("--ablate_news", action="store_true",
                     help="診斷用：H_t 讀進來後在記憶體歸零，不影響磁碟上的向量檔案（見 spec_c_accuracy_diagnostics.md）")
+    ap.add_argument("--ablate_vision", action="store_true",
+                    help="診斷用：H_v（K 線圖）讀進來後在記憶體歸零，不影響磁碟上的向量檔案"
+                         "（ViT domain gap 對照實驗，見 decisions.md #46）")
     ap.add_argument("--weighted", action="store_true",
                     help="診斷用：訓練 loss 依類別出現頻率加權，預設關閉（見 spec_c_accuracy_diagnostics.md）")
     args = ap.parse_args()
@@ -177,7 +185,8 @@ def main():
         batches = []
         for i in range(0, len(days), args.batch):
             chunk = days[i:i + args.batch]
-            arrs = [load_day(args.ticker, d, ablate_news=args.ablate_news) for d, _ in chunk]
+            arrs = [load_day(args.ticker, d, ablate_news=args.ablate_news, ablate_vision=args.ablate_vision)
+                   for d, _ in chunk]
             batches.append((
                 np.stack([a[0] for a in arrs]),
                 np.stack([a[1] for a in arrs]),
@@ -194,7 +203,8 @@ def main():
             print(f"[train] 類別加權啟用，權重（BEARISH/NEUTRAL/BULLISH 順序）={weights.tolist()}")
 
         _, losses = train(model, batches, args.epochs, args.lr, device, class_weights=class_weights)
-        export_z_fused(model, args.ticker, days, device, ablate_news=args.ablate_news)
+        export_z_fused(model, args.ticker, days, device,
+                       ablate_news=args.ablate_news, ablate_vision=args.ablate_vision)
 
         # 整段時間範圍都產完了，自動彙整成單一索引檔，供分類驗證/回測/RL 訓練直接讀取
         from module_c_fusion.fusion.consolidate import build_index, save_index
@@ -203,7 +213,8 @@ def main():
             save_index(args.ticker, index_data)
 
         date_range = [days[0][0], days[-1][0]] if days else None
-        note = f"news={'off' if args.ablate_news else 'on'}, weighted={args.weighted}"
+        note = (f"news={'off' if args.ablate_news else 'on'}, "
+               f"vision={'off' if args.ablate_vision else 'on'}, weighted={args.weighted}")
         log_run("real", args.ticker, len(days), args.epochs, args.batch, args.lr, losses,
                date_range=date_range, note=note)
 

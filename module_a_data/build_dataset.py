@@ -43,17 +43,39 @@ def collect_news(ticker: str, date: str) -> list[dict]:
 
 
 def collect_filing_chunks(ticker: str, date: str, max_tokens: int) -> list[dict]:
-    """「最新一份沿用到下一份發布為止」：取 filing_date <= date 的最新一份，切 Chunk。"""
+    """10-K/10-Q 當背景、8-K 當補充事件，兩者並存，不互相覆蓋（decisions.md #41/#44/#45）。
+
+    10-K/10-Q：維持原本「取最新一份沿用到下一份發布為止」的邏輯，不變。
+    8-K：只列「比目前背景這份 10-K/10-Q 還新」的部分，每則標上「N 天前」前綴（比照新聞
+    days_ago 的做法，見 #21），讓模型自己從文字學相關性強度衰減，不用額外規則判斷還算不算
+    新事件。用「背景 10-K/10-Q 之後」當篩選邊界，一旦有新一份 10-K/10-Q 發布，背景更新，
+    舊的 8-K 自然被排除，不會無上限地累積下去。
+    """
     index_path = paths.RAW_FILINGS / ticker / "index.json"
     if not index_path.exists():
         return []
-    valid = [f for f in read_json(index_path)["filings"] if f["filing_date"] <= date]
-    if not valid:
-        return []
-    latest = max(valid, key=lambda f: f["filing_date"])
-    html = (paths.RAW_FILINGS / ticker / latest["file"]).read_text(encoding="utf-8", errors="ignore")
-    return make_chunks(ticker, latest["form"], latest["filing_date"], clean(html),
-                       max_tokens, date_key="filing_date")
+    filings = read_json(index_path)["filings"]
+
+    periodic = [f for f in filings if f["form"] in ("10-K", "10-Q") and f["filing_date"] <= date]
+    chunks: list[dict] = []
+    background_since = None
+    if periodic:
+        latest = max(periodic, key=lambda f: f["filing_date"])
+        background_since = latest["filing_date"]
+        html = (paths.RAW_FILINGS / ticker / latest["file"]).read_text(encoding="utf-8", errors="ignore")
+        chunks += make_chunks(ticker, latest["form"], latest["filing_date"], clean(html),
+                              max_tokens, date_key="filing_date")
+
+    eight_k = [f for f in filings if f["form"] == "8-K" and f["filing_date"] <= date
+              and (background_since is None or f["filing_date"] > background_since)]
+    d0 = dt.date.fromisoformat(date)
+    for f in sorted(eight_k, key=lambda f: f["filing_date"]):
+        days_ago = (d0 - dt.date.fromisoformat(f["filing_date"])).days
+        html = (paths.RAW_FILINGS / ticker / f["file"]).read_text(encoding="utf-8", errors="ignore")
+        text = f"[{days_ago} 天前的重大訊息揭露 8-K] {clean(html)}"
+        chunks += make_chunks(ticker, f["form"], f["filing_date"], text,
+                              max_tokens, date_key="filing_date")
+    return chunks
 
 
 def collect_transcript_chunks(ticker: str, date: str, max_tokens: int) -> list[dict]:

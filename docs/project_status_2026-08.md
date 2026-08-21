@@ -38,7 +38,7 @@ RL 環境構建（MDP）、PPO 策略代理人訓練、跨模態歸因解釋模�
 
 | PDF 元件 | 對應程式碼 | 現況 |
 |---|---|---|
-| 3.1 Vision encoder (H_v) | `module_b_encoder/encoders/vision_encoder.py` | 已實作，但用通用 ImageNet 預訓練 ViT（`google/vit-base-patch16-224`），**不是**計畫書要求的財經圖表語料預訓練版本，完全凍結、無領域調整。已知落差（`#10`、`#36`），domain gap 對照實驗建議過但尚未執行 |
+| 3.1 Vision encoder (H_v) | `module_b_encoder/encoders/vision_encoder.py` | 已實作，但用通用 ImageNet 預訓練 ViT（`google/vit-base-patch16-224`），**不是**計畫書要求的財經圖表語料預訓練版本，完全凍結、無領域調整。已知落差（`#10`、`#36`）；domain gap 對照實驗已執行（`#46`）：拿掉 K 線圖 macro f1 掉 51%，現有 ViT 貢獻很大，不是沒用，落差仍在但不是「拖累」，換編碼器的迫切性降低、邊際效益待評估 |
 | 3.2 Text encoder (H_t) | `module_b_encoder/encoders/text_encoder.py` | 已實作，用 FinBERT（`ProsusAI/finbert`），符合計畫書建議選項之一 |
 | 3.3 RAG (H_r) | `module_b_encoder/rag/retriever.py`、`vector_db.py` | 已實作，做法（query 加權合併、相似度檢索、top-K 重新編碼）符合計畫書 3.3 節描述；K=3 |
 | 3.4 Cross-Modal Fusion (Z_fused) | `module_c_fusion/fusion/model.py` | 已實作，Transformer 融合 H_v/H_t/H_r（結構符合公式），但 H_t/H_r 先各自 mean-pool 成單一 token 再進融合層（簡化版，控制序列長度） |
@@ -59,8 +59,10 @@ RL 環境構建（MDP）、PPO 策略代理人訓練、跨模態歸因解釋模�
 
 **已解決（2026-08，見上方架構釐清）**：負責人先前提案的「三版本 Z_fused 消融實驗」（把事件抽取結果當作第四個輸入 H_e，無/關鍵字/LLM 三版本比較，寫進論文的相關性分析）**確認不做**。原始動機是想讓獨立於 Z_fused 之外的 `event_extraction.py` 跟系統核心產生關聯，但這個關聯已經被計畫書 page 19 明訂、且早已實作完成的「診斷性分類測試」（`classifier.py` + `event_validation_head.py`）滿足，不需要額外把事件抽取結果做成第四輸入。原本待負責人回覆的三個疑慮（比較的準確度定義、LLM ground truth 的 circularity、H_r 誤解）隨提案不做而一併失去討論意義。詳見 `decisions.md` #42、#43。
 
+**已回覆，處理方式已確定，但要不要做仍待評估**：
+- 財報是否要新增 8-K（重大訊息即時揭露）抓取——王崇穎轉述張教授回覆，處理方式有兩個選項：(1) 覆蓋過去（8-K 直接取代沿用中的舊 filing 內容）(2) 用 Text encoder 做 fusion，新舊內容都保留、加 Prefix Prompt 讓模型判斷時間順序。**要不要做仍待團隊評估**，非緊急，但技術方案已經確定（`decisions.md` #41、#44）
+
 **目前還在等回覆／待評估（非緊急）**：
-- 財報是否要新增 8-K（重大訊息即時揭露）抓取，補上目前 10-K/10-Q 抓不到的即時事件——已問負責人，尚未收到回覆（`decisions.md` #41）
 - 「事件」的定義是否該涵蓋 K 線圖技術型態（頭肩頂、W 底反轉等），不只是現有事件驗證頭測的七類商業事件——張教授討論架構圖時舉的例子，跟現有分類定義不同，待團隊評估（`decisions.md` 待確認事項表）
 
 ## 4. 二次查證記錄（逐項對照程式碼實際內容，非憑印象）
