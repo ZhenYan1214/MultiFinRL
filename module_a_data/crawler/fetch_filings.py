@@ -1,4 +1,4 @@
-"""從 SEC EDGAR 下載財報文件（10-K / 10-Q），存到 data/raw/filings/{TICKER}/。
+"""從 SEC EDGAR 下載財報文件（10-K / 10-Q / 8-K），存到 data/raw/filings/{TICKER}/。
 
 使用 SEC 官方 API（免費、無需金鑰，但必須帶 User-Agent 表明身分）：
   1. company_tickers.json     -> ticker 轉 CIK
@@ -8,6 +8,11 @@
 輸出：
   data/raw/filings/{TICKER}/index.json                 # filing 清單（型別/日期/檔名）
   data/raw/filings/{TICKER}/{TYPE}_{DATE}.html          # 原始文件
+
+8-K（重大訊息即時揭露）：decisions.md #41/#44/#45——10-K/10-Q 走「取最新一份沿用到下一
+份發布為止」的背景邏輯不變，8-K 在 build_dataset.py 的 collect_filing_chunks() 另外處理
+成標時間戳記的補充事件 chunk，不會互相覆蓋，這裡只負責把三種表格都抓下來、寫進同一份
+index.json，下游自己依 form 分流。
 
 用法：
     python -m module_a_data.crawler.fetch_filings --ticker AAPL --start 2021-01-01
@@ -22,7 +27,7 @@ from shared.utils import write_json
 
 # SEC 要求 User-Agent 含聯絡方式，請改成自己的
 HEADERS = {"User-Agent": "MultiFinRL research project XXXXXXXXX@gmail.com"}
-FORMS = {"10-K", "10-Q"}
+FORMS = {"10-K", "10-Q", "8-K"}
 
 
 def ticker_to_cik(ticker: str) -> str:

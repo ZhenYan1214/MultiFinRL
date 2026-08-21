@@ -34,6 +34,7 @@ gymnasium
 stable-baselines3
 matplotlib
 scikit-learn
+captum              # Integrated Gradients，見 module_c_fusion/explainability/integrated_gradients.py
 
 # --- Module B: event_ground_truth_llm.py 建 ground truth、
 # event_extraction.py --method llm 要打 LLM API 時才需要，見 docs/spec_b_event_extraction_llm.md ---
