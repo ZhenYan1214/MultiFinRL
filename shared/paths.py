@@ -40,3 +40,10 @@ def event_extraction_llm_cache_path(ticker: str) -> Path:
     相同但語意不同——這是機器抽取的結果，不是答案卷，不進版本控制（見 .gitignore data/outputs/）。
     """
     return OUTPUTS / "metrics" / "event_extraction_llm_cache" / f"{ticker}.json"
+
+
+def y_belief_path(ticker: str) -> Path:
+    """decoder 訓練目標 y_belief 路徑：{date: y_belief 文字}。是答案卷，進版本控制，
+    見 module_c_fusion/decoder/generate_y_belief.py。
+    """
+    return LABELS / "y_belief" / f"{ticker}.json"
