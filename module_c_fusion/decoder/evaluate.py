@@ -102,6 +102,12 @@ def main():
          f"（正數代表微調確實有幫助，數字越大代表幫助越明顯）")
 
     # --- (2) 實際生成 + 結構化標籤準確率 ---
+    # eval_loss()（從 train.py 借來用）算完 loss 後會呼叫 decoder.train()（train.py 原本
+    # 的用途是訓練中途驗證完要繼續訓練，這裡沒有要繼續訓練，忘記切回來會導致 LoRA
+    # dropout（lora_dropout=0.05）在生成時是啟用的，破壞 greedy decoding 應有的決定性、
+    # 也會讓生成品質變差（inference 應該用完整的 adapter，不該隨機丟棄一部分）——
+    # 一定要在生成前手動切回 eval 模式。
+    finetuned.eval()
     n_gen = min(args.n_generate, len(test_rows))
     print(f"[decoder.evaluate] 對前 {n_gen} 天實際生成文字，比對 <TREND>/<RISK_LEVEL> 標籤...")
     gen_records = []

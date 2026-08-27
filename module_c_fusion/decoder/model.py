@@ -60,6 +60,9 @@ def load_backbone(base_model_name: str = "meta-llama/Llama-2-7b-hf",
 
     model = AutoModelForCausalLM.from_pretrained(
         base_model_name, quantization_config=bnb_config, device_map={"": 0},
+        attn_implementation="sdpa",  # 明確指定用 PyTorch 內建的 scaled-dot-product-attention，
+        # 不用另外裝 flash-attn（裝的過程容易在 Windows 上出包），比預設可能退回的 eager
+        # attention 快、且省記憶體，是內建在 PyTorch 裡的功能，沒有額外依賴風險
     )
     model = prepare_model_for_kbit_training(model)
     lora_config = LoraConfig(
@@ -76,11 +79,44 @@ def load_backbone(base_model_name: str = "meta-llama/Llama-2-7b-hf",
     return tokenizer, model
 
 
+def load_backbone_for_resume(checkpoint_dir, base_model_name: str = "meta-llama/Llama-2-7b-hf"):
+    """跟 load_backbone() 幾乎一樣（4-bit 量化 + prepare_model_for_kbit_training），差別是
+    LoRA adapter 不是重新隨機初始化，是讀 checkpoint_dir/lora_adapter 裡上次訓練存的權重
+    接著練——train.py 的 `--resume` 用這個，不是從頭 get_peft_model()。
+
+    `is_trainable=True` 是關鍵：PeftModel.from_pretrained() 預設載入的 adapter 是不可訓練
+    的（給推論用，梯度不會流過去），要接著訓練一定要明確指定，否則 loss.backward() 後
+    optimizer.step() 完全不會更新到任何參數，訓練會「看起來正常跑、實際上甚麼都沒學到」
+    ——這是 2026-08 WebSearch 查證過的 PEFT 官方用法，不是憑印象猜的。
+    """
+    from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
+    from peft import PeftModel, prepare_model_for_kbit_training
+
+    bnb_config = BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_quant_type="nf4",
+        bnb_4bit_compute_dtype=torch.bfloat16,
+    )
+    tokenizer = AutoTokenizer.from_pretrained(base_model_name)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    model = AutoModelForCausalLM.from_pretrained(
+        base_model_name, quantization_config=bnb_config, device_map={"": 0},
+        attn_implementation="sdpa",
+    )
+    model = prepare_model_for_kbit_training(model)
+    model = PeftModel.from_pretrained(model, checkpoint_dir / "lora_adapter", is_trainable=True)
+    model.print_trainable_parameters()
+    return tokenizer, model
+
+
 def load_base_only(base_model_name: str = "meta-llama/Llama-2-7b-hf"):
     """4-bit 量化載入 LLaMA-2，完全不掛 LoRA——給評估腳本當「微調前」的對照組用
     （見 evaluate.py，比較微調前後的差異，而不是只看微調後的絕對數字）。
     """
     from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
+    from peft import prepare_model_for_kbit_training
 
     bnb_config = BitsAndBytesConfig(
         load_in_4bit=True,
@@ -93,6 +129,12 @@ def load_base_only(base_model_name: str = "meta-llama/Llama-2-7b-hf"):
     model = AutoModelForCausalLM.from_pretrained(
         base_model_name, quantization_config=bnb_config, device_map={"": 0},
     )
+    # 跟 load_backbone() 用同一個處理：把 lm_head 等關鍵層轉成 float32 做數值穩定，
+    # 順便讓 dtype 跟我們手動組的 inputs_embeds（float32，見 ZFusedDecoder.forward）
+    # 保持一致——不呼叫這個的話 lm_head 會停在原本讀進來的 fp16，跟注入的 float32
+    # embeds 相乘時會報 dtype 不一致的錯（mat1 float != mat2 Half）。
+    # 這裡不會真的拿去訓練（eval 都在 no_grad 底下跑），只是借用它的 dtype 處理。
+    model = prepare_model_for_kbit_training(model)
     return tokenizer, model
 
 
@@ -135,10 +177,16 @@ class ZFusedDecoder(nn.Module):
                                  device=attention_mask.device, dtype=attention_mask.dtype)
         full_mask = torch.cat([prefix_mask, attention_mask], dim=1)
 
-        # prefix 是條件輸入不是預測目標，label 設 -100 讓 HF 內建的 cross-entropy 跳過這段
+        # prefix 是條件輸入不是預測目標，label 設 -100 讓 HF 內建的 cross-entropy 跳過這段。
+        # padding 位置也要蓋成 -100：tokenizer.pad_token 跟 eos_token 是同一個 token，
+        # 如果不蓋掉，padding 區段會變成「看到 eos 預測下一個還是 eos」這種 trivial、
+        # loss 趨近於 0 的規律，訓練資料裡敘述文字通常遠短於 max_length，padding 佔比很大，
+        # 不蓋掉的話模型會被大量獎勵「盡快輸出 eos」，最後在生成時（沒有 teacher forcing
+        # 硬塞正確 token）直接在第一步就選擇輸出 eos，生成空字串——這正是目前遇到的問題。
+        content_labels = input_ids.masked_fill(attention_mask == 0, -100)
         prefix_labels = torch.full((z_fused.size(0), self.n_prefix_tokens), -100,
                                    device=input_ids.device, dtype=input_ids.dtype)
-        labels = torch.cat([prefix_labels, input_ids], dim=1)
+        labels = torch.cat([prefix_labels, content_labels], dim=1)
 
         out = self.llm(inputs_embeds=inputs_embeds, attention_mask=full_mask, labels=labels)
         return out.loss
@@ -148,7 +196,14 @@ class ZFusedDecoder(nn.Module):
         """給單一一筆 Z_fused（[1, z_dim]），實際生成一段文字（不是算 loss，是真的推論）。
         用 greedy decoding（do_sample=False）而不是隨機抽樣，確保評估時同一份輸入每次
         生成結果都一樣，可重現、可比較（評估用途本來就該用確定性生成，不是創作用途）。
+
+        `@torch.no_grad()` 只關掉梯度計算，不會自動把 module 切成 eval 模式——
+        `torch.no_grad()` 跟 `.eval()` 是兩件獨立的事。LoRA 掛了 `lora_dropout=0.05`，
+        如果呼叫端忘記在呼叫前切 `.eval()`（例如呼叫完 `train.py` 的 `eval_loss()` 之後，
+        它結束時會自動切回 `.train()`），dropout 在生成時還是啟用的，會讓 greedy decoding
+        變得不確定、生成品質也會變差。這裡直接在方法內部強制切一次，不依賴呼叫端記得做。
         """
+        self.eval()
         prefix_embeds = self.projector(z_fused)  # [1, P, H]
         prefix_mask = torch.ones(1, self.n_prefix_tokens, device=z_fused.device, dtype=torch.long)
         out_ids = self.llm.generate(

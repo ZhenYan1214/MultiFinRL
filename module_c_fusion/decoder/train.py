@@ -29,10 +29,16 @@ train/val/test 依時間切分（70/15/15，跟 classifier.py 同一套慣例，
     2. y_belief 已存在：python -m module_c_fusion.decoder.generate_y_belief --ticker AAPL
     3. 本機已 `hf auth login`，且帳號已通過 meta-llama/Llama-2-7b-hf 的存取申請
     4. 有 GPU（本檔預設抓 meta-llama/Llama-2-7b-hf，4-bit 量化約需 5-6GB VRAM，
-       RTX 5060 Ti 16GB 跑得動）
+       RTX 5060 Ti 16GB 跑得動——但只夠跑這一個訓練程序，跑訓練的時候不要同時跑
+       evaluate.py 或其他會佔 GPU 記憶體的程式，兩個一起跑很容易把顯存跟系統一起衝爆）
 
 用法：
     python -m module_c_fusion.decoder.train --ticker AAPL --epochs 3
+
+中途中斷後接續訓練（當機、跳電、不小心關掉終端機都算——8 小時的訓練成本高，
+不能只靠「不會中斷」的僥倖，每個 epoch 結束都會存一份「最新」checkpoint 跟進度，
+不是只有 val loss 創新低才存）：
+    python -m module_c_fusion.decoder.train --ticker AAPL --epochs 3 --resume
 
 本檔案需要 torch/transformers/peft，無法在沒有 GPU 的環境執行，只驗證過語法
 （py_compile），實際訓練需要在你自己機器上跑。重點看兩件事：(1) train loss 跟 val loss
@@ -49,7 +55,7 @@ from transformers import get_cosine_schedule_with_warmup
 from shared import paths
 from shared.utils import load_config, read_json, write_json
 from module_c_fusion.fusion.consolidate import load_index
-from module_c_fusion.decoder.model import ZFusedDecoder, load_backbone
+from module_c_fusion.decoder.model import ZFusedDecoder, load_backbone, load_backbone_for_resume
 
 
 def load_paired_samples(ticker: str) -> list[tuple[str, "np.ndarray", str]]:
@@ -128,6 +134,12 @@ def save_checkpoint(decoder, llm, out_dir) -> None:
 
 
 def main():
+    # 安全的效能優化，不改變訓練語意/結果，只是讓矩陣運算走比較快的路徑，
+    # 對 Ampere/Blackwell 架構的 GPU（含 RTX 5060 Ti）都適用
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
+    torch.backends.cudnn.benchmark = True
+
     cfg = load_config()
     ap = argparse.ArgumentParser()
     ap.add_argument("--ticker", default=cfg["tickers"][0])
@@ -143,39 +155,74 @@ def main():
                     help="y_belief 文字 tokenize 後的長度上限。LLaMA-2 的 tokenizer 對中文"
                          "不友善（一個中文字常常要拆成 2-3 個 token），預設 512 是為了避免"
                          "把敘述文字截斷太多，不是隨便設的數字")
+    ap.add_argument("--resume", action="store_true",
+                    help="從上次中斷的地方接續訓練（讀 decoder_latest/ 裡的 checkpoint 跟"
+                         "進度狀態），不是從頭訓練。第一次跑不要加這個參數")
     args = ap.parse_args()
+
+    out_dir = paths.OUTPUTS / "checkpoints" / "decoder"           # 只存 val loss 最佳的一份，evaluate.py 讀這裡
+    out_dir_latest = paths.OUTPUTS / "checkpoints" / "decoder_latest"  # 每個 epoch 結束都存，給 --resume 用
+    state_path = out_dir_latest / "resume_state.json"
+    report_path = paths.OUTPUTS / "metrics" / "decoder_train_report.json"
 
     samples = load_paired_samples(args.ticker)
     train_rows, val_rows, test_rows = time_split(samples)
     print(f"[decoder.train] {args.ticker}: 共 {len(samples)} 天可訓練樣本（Z_fused ∩ y_belief），"
          f"train={len(train_rows)} val={len(val_rows)} test={len(test_rows)}（依時間序切分，不打散）")
 
-    print(f"[decoder.train] 載入 backbone: {args.base_model}（4-bit 量化 + LoRA 全掛 attention+MLP，backbone 凍結）")
-    tokenizer, llm = load_backbone(args.base_model)
-    decoder = ZFusedDecoder(llm, tokenizer, z_dim=cfg["fusion"]["z_dim"],
-                            n_prefix_tokens=args.n_prefix_tokens)
+    start_epoch = 0
+    best_val = float("inf")
+    best_epoch = None
+    epoch_history = []
+
+    if args.resume:
+        if not state_path.exists():
+            raise SystemExit(f"--resume 但找不到可接續的紀錄：{state_path}，第一次跑不要加 --resume")
+        state = read_json(state_path)
+        start_epoch = state["epoch"]  # 已完成的 epoch 數（例如 1 代表 epoch 1 已經跑完）
+        best_val = state["best_val"]
+        best_epoch = state["best_epoch"]
+        epoch_history = state.get("epoch_history", [])
+        if start_epoch >= args.epochs:
+            raise SystemExit(f"--resume 但已完成的 epoch（{start_epoch}）已經 >= --epochs（{args.epochs}），"
+                             f"沒有剩下的可練——要嘛調高 --epochs，要嘛不要加 --resume")
+        print(f"[decoder.train] --resume：前面已完成 {start_epoch} 個 epoch（best_val={best_val:.4f} "
+             f"@ epoch {best_epoch}），從 epoch {start_epoch + 1} 接著練")
+        tokenizer, llm = load_backbone_for_resume(out_dir_latest, args.base_model)
+        decoder = ZFusedDecoder(llm, tokenizer, z_dim=cfg["fusion"]["z_dim"],
+                                n_prefix_tokens=args.n_prefix_tokens)
+        decoder.projector.load_state_dict(
+            torch.load(out_dir_latest / "projector.pt", map_location=llm.device))
+    else:
+        print(f"[decoder.train] 載入 backbone: {args.base_model}（4-bit 量化 + LoRA 全掛 attention+MLP，backbone 凍結）")
+        tokenizer, llm = load_backbone(args.base_model)
+        decoder = ZFusedDecoder(llm, tokenizer, z_dim=cfg["fusion"]["z_dim"],
+                                n_prefix_tokens=args.n_prefix_tokens)
 
     train_ds = YBeliefDataset(train_rows, tokenizer, max_length=args.max_length)
     val_ds = YBeliefDataset(val_rows, tokenizer, max_length=args.max_length)
-    train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True)
-    val_loader = DataLoader(val_ds, batch_size=args.batch_size, shuffle=False)
+    # pin_memory=True：訓練資料先固定在不可分頁的主機記憶體，搬到 GPU 的速度較快，
+    # 對 CUDA 訓練是標準、無副作用的優化
+    train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, pin_memory=True)
+    val_loader = DataLoader(val_ds, batch_size=args.batch_size, shuffle=False, pin_memory=True)
 
     trainable = [p for p in decoder.parameters() if p.requires_grad]
     optimizer = torch.optim.AdamW(trainable, lr=args.lr)
 
-    total_steps = len(train_loader) * args.epochs
+    # resume 時只針對「剩下還沒練的 epoch」重新算一次 cosine + warmup 排程，不嘗試還原
+    # 中斷前那個 optimizer 的動量狀態（AdamW 的動量本來就會隨訓練持續修正，接續練的前幾步
+    # 稍微不如無縫接軌精準，換來的是 resume 邏輯簡單很多、不容易再出新的 bug——這是刻意的
+    # 取捨，不是漏做）
+    remaining_epochs = args.epochs - start_epoch
+    total_steps = len(train_loader) * remaining_epochs
     scheduler = get_cosine_schedule_with_warmup(
         optimizer,
         num_warmup_steps=int(total_steps * args.warmup_ratio),
         num_training_steps=total_steps,
     )
 
-    out_dir = paths.OUTPUTS / "checkpoints" / "decoder"
-    best_val = float("inf")
-    best_epoch = None
-    epoch_history = []
-
-    for epoch in range(args.epochs):
+    for epoch in range(start_epoch, args.epochs):
+        epoch_num = epoch + 1
         running_train_loss, n_train_steps = 0.0, 0
         for step, batch in enumerate(train_loader):
             optimizer.zero_grad()
@@ -188,32 +235,41 @@ def main():
             scheduler.step()
             running_train_loss += loss.item()
             n_train_steps += 1
-            print(f"  epoch {epoch + 1}/{args.epochs} step {step} "
+            print(f"  epoch {epoch_num}/{args.epochs} step {step} "
                  f"L_belief={loss.item():.4f} lr={scheduler.get_last_lr()[0]:.2e}")
 
         train_l = running_train_loss / max(n_train_steps, 1)
         val_l = eval_loss(decoder, val_loader, llm.device)
-        print(f"[decoder.train] epoch {epoch + 1}/{args.epochs} 結束 -> "
+        print(f"[decoder.train] epoch {epoch_num}/{args.epochs} 結束 -> "
              f"train_L_belief(avg)={train_l:.4f} val_L_belief={val_l:.4f}")
-        epoch_history.append({"epoch": epoch + 1, "train_loss_avg": train_l, "val_loss": val_l})
+        epoch_history.append({"epoch": epoch_num, "train_loss_avg": train_l, "val_loss": val_l})
 
         if val_l < best_val:
             best_val = val_l
-            best_epoch = epoch + 1
+            best_epoch = epoch_num
             save_checkpoint(decoder, llm, out_dir)
-            print(f"[decoder.train] val loss 創新低（{val_l:.4f}），checkpoint 已更新 -> {out_dir}")
+            print(f"[decoder.train] val loss 創新低（{val_l:.4f}），最佳 checkpoint 已更新 -> {out_dir}")
 
-    print(f"[decoder.train] 訓練結束，最終存檔的是 epoch {best_epoch}（val_L_belief={best_val:.4f} 最低的那次）")
+        # 不論這個 epoch 是不是最佳，都存一份「最新」checkpoint + 進度狀態。8 小時的訓練
+        # 成本太高，不能只靠「電腦不會當機、不會跳電、不會不小心關掉終端機」的僥倖——
+        # 存了這份，中途中斷的話下次加 --resume 就能接著練，不用整個從頭重來
+        save_checkpoint(decoder, llm, out_dir_latest)
+        write_json({"epoch": epoch_num, "best_val": best_val, "best_epoch": best_epoch,
+                   "epoch_history": epoch_history}, state_path)
 
-    report = {
-        "ticker": args.ticker,
-        "n_train": len(train_rows), "n_val": len(val_rows), "n_test": len(test_rows),
-        "test_period": [test_rows[0][0], test_rows[-1][0]] if test_rows else [],
-        "best_epoch": best_epoch, "best_val_loss": best_val,
-        "epoch_history": epoch_history,
-    }
-    report_path = paths.OUTPUTS / "metrics" / "decoder_train_report.json"
-    write_json(report, report_path)
+        # 訓練報告也改成每個 epoch 都覆寫一次（原本只在訓練全部結束後才寫），
+        # 中途中斷也留得下目前為止的紀錄，不會甚麼都沒有
+        report = {
+            "ticker": args.ticker,
+            "n_train": len(train_rows), "n_val": len(val_rows), "n_test": len(test_rows),
+            "test_period": [test_rows[0][0], test_rows[-1][0]] if test_rows else [],
+            "best_epoch": best_epoch, "best_val_loss": best_val,
+            "epoch_history": epoch_history,
+        }
+        write_json(report, report_path)
+
+    print(f"[decoder.train] 訓練結束，最佳 checkpoint 是 epoch {best_epoch}"
+         f"（val_L_belief={best_val:.4f} 最低的那次）-> {out_dir}")
     print(f"[decoder.train] 訓練報告 -> {report_path}")
 
 
