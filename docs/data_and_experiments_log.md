@@ -11,11 +11,11 @@
 | 新聞（近期） | yfinance | `fetch_news.py` | 僅最新 8~10 則，歷史價值低 | 可用，範圍小 |
 | 新聞（歷史回補） | Alpaca News API（來源 Benzinga，官方 API 非爬蟲） | `fetch_news_alpaca.py` | AAPL 2021-01-01 ~ 2026-08-08，15,989 則 / 1,459 天 | 2026-08 新增，已抽樣驗證為真實全文 |
 | 財報 10-K/10-Q | SEC EDGAR（官方 API，原生 requests） | `fetch_filings.py` | 22 份，2021 ~ 2026 | 可用；唯一版本，`fetch_filings_edgartools.py` 候選方案已刪除（decisions.md #41，取代 #31） |
-| 法說會逐字稿 | foolcalls（Motley Fool） | `fetch_transcripts.py` | 尚未抓取 | 待辦——sandbox 連不上，需本機執行 |
+| 法說會逐字稿 | Alpha Vantage API（官方，取代原本從未成功端到端跑過的 foolcalls） | `fetch_transcripts.py` | 待本機執行後補上實際涵蓋範圍 | 2026-08 改用 Alpha Vantage，`foolcalls/` 已移除，見 decisions.md #67 |
 
-**已放棄的路徑**（保留記錄，程式碼已刪除）：FNSPID 爬蟲工具與 FNSPID 現成 HuggingFace dataset，兩者都驗證不可行（自動化偵測擋爬蟲、頁面改版、dataset 全文欄位是空的）。詳見 `docs/decisions.md` #26、`docs/spec_a_news_backfill.md`。
+**已放棄的路徑**（保留記錄，程式碼已刪除）：FNSPID 爬蟲工具與 FNSPID 現成 HuggingFace dataset，兩者都驗證不可行（自動化偵測擋爬蟲、頁面改版、dataset 全文欄位是空的）。詳見 `docs/decisions.md` #26。
 
-**已解決的落差**：OHLCV/K 線圖原本只到 2025-12-30、新聞已回補到 2026-08-08 的範圍不對齊問題，已於 2026-08-09 延伸 OHLCV/圖表到 2026-08-07 解決（`configs/config.yaml` 的 `date_range.end` 同步更新）。**下一步**：`build_dataset.py` → `generate_vectors.py` → `fusion.train` → `classifier.py` 都還沒針對新範圍重跑，目前的模型/分類結果仍是舊範圍（2021-02 ~ 2025-12）的結果，要重跑整條 pipeline 才能真正用到延伸出來的新聞。
+**已解決的落差**：OHLCV/K 線圖原本只到 2025-12-30、新聞已回補到 2026-08-08 的範圍不對齊問題，已於 2026-08-09 延伸 OHLCV/圖表到 2026-08-07 解決（`configs/config.yaml` 的 `date_range.end` 同步更新）。整條 pipeline（`build_dataset.py` → `generate_vectors.py` → `fusion.train` → `classifier.py`）已針對延伸後的新範圍重跑過（decoder 訓練用的 Z_fused/y_belief 交集樣本數 1381 天即為此次重跑後的結果，見 `docs/decisions.md` decoder 相關條目）。
 
 ## 二、B/C 實驗結果紀錄（分類驗證準確率）
 

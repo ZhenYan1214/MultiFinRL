@@ -20,10 +20,10 @@ py -m module_a_data.crawler.fetch_news_alpaca --ticker AAPL --start 2021-01-01 -
 # 新聞（Alpaca News API，decisions.md #27，取代原本的 fetch_news.py/yfinance 只抓近期新聞）。
 # 需要 .env 設定 ALPACA_API_KEY / ALPACA_API_SECRET（見檔頭說明）
 
-py -m module_a_data.crawler.fetch_transcripts --ticker AAPL --start 2021-01-01 --max_pages 200
-# 抓法說會逐字稿（foolcalls，decisions.md #25）；foolcalls 本身不是正式套件、
-# 且目前 GitHub 版本有個 import 會直接壞掉的 bug，安裝步驟跟修法見檔頭說明
-# 這支依賴的第三方套件不穩定，跑失敗不影響其他步驟（transcript_chunks 留空即可）
+py -m module_a_data.crawler.fetch_transcripts --ticker AAPL --start 2021-01-01 --end 2026-08-09
+# 抓法說會逐字稿（Alpha Vantage API，取代原本不穩定的 foolcalls 第三方爬蟲）
+# 需要 .env 設定 ALPHA_VANTAGE_API_KEY；免費方案速率限制較嚴，建議加 --delay 12.0
+# 跑失敗不影響其他步驟（transcript_chunks 留空即可）
 
 py -m module_a_data.build_dataset --ticker AAPL --limit 100
 # 把以上所有資料彙整成一天一筆的 JSON，存到 data/processed/dataset/AAPL/
@@ -43,6 +43,7 @@ py -m module_b_encoder.generate_vectors --ticker AAPL --limit 100
 py -m module_b_encoder.event_extraction --ticker AAPL
 # 從新聞/財報文字抽財經事件（獨立於 Z_fused 的分析，不影響 B/C 的向量或訓練），
 # 報告存到 data/outputs/metrics/event_extraction_report.json
+# --method llm 可切換成 LLM 版（需 API 金鑰，見 docs/spec_b_event_extraction_llm.md）
 ```
 
 ## C：Fusion + 驗證 + RL + 回測
@@ -59,8 +60,16 @@ py -m module_c_fusion.fusion.train --ticker AAPL --weighted
 py -m module_c_fusion.validation.classifier --ticker AAPL --weighted
 # 用 Z_fused 做情緒分類驗證，準確率存到 data/outputs/metrics/classification_report.json
 
+py -m module_c_fusion.validation.event_validation_head --ticker AAPL
+# 用 Z_fused 做事件類型多標籤驗證（7 類），需要 data/labels/event_ground_truth/AAPL.json
+
 py -m module_c_fusion.rl.train_ppo --ticker AAPL
 # 訓練 PPO 投資組合配置 agent，存到 data/outputs/checkpoints/ppo_agent.zip
+# --curriculum 開啟 curriculum learning（依滾動波動度分階段訓練，decisions.md #52~#55）
+
+py -m module_c_fusion.explainability.integrated_gradients --ticker AAPL
+# 對訓練好的 PPO policy 做跨模態歸因（captum Integrated Gradients），
+# 需要先有 Z_fused 跟 ppo_agent.zip，輸出到 data/outputs/explainability/
 
 py -m module_c_fusion.backtest.backtest --ticker AAPL --strategy buy_and_hold
 # 回測策略一：全程滿倉（baseline 對照組）
@@ -70,6 +79,22 @@ py -m module_c_fusion.backtest.backtest --ticker AAPL --strategy rule_based
 
 py -m module_c_fusion.backtest.backtest --ticker AAPL --strategy ppo
 # 回測策略三：用訓練好的 PPO agent 決定持股比例（RL 組，跟上面兩組比較績效）
+```
+
+## Decoder：Z_fused → 結構化市場敘述（計畫書 3.4/3.5 節，需 GPU）
+
+```bash
+py -m module_c_fusion.decoder.generate_y_belief --ticker AAPL --limit 50
+# 先用 --limit 50 測試品質，人工看過幾筆再拿掉 --limit 跑全量（需 DeepSeek API 金鑰）
+# 訓練目標存到 data/labels/y_belief/AAPL.json，支援中斷續跑
+
+py -m module_c_fusion.decoder.train --ticker AAPL --epochs 3
+# QLoRA 微調 LLaMA-2-7b（4-bit + LoRA 全掛 attention+MLP），需要先有 Z_fused 跟 y_belief
+# 跑訓練時不要同時跑其他吃 GPU 的程式（VRAM 預算吃緊，見 decisions.md #63）
+# 中途中斷可加 --resume 從上次的 epoch 接續訓練，不用整個重來
+
+py -m module_c_fusion.decoder.evaluate --ticker AAPL --n_generate 30
+# 在 test set 上驗證：微調前後 loss 差異、結構化標籤準確率；--llm_judge 可選（會花 API 費用）
 ```
 
 ## pipeline：一次串完 A→B→C（整合階段用，平常各自開發不用跑這個）

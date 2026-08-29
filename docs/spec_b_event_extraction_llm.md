@@ -1,6 +1,6 @@
 # Spec：事件抽取改成 LLM-based
 
-狀態：規劃完成，尚未實作（來源：2026-08 grill-me 討論，接續 `docs/decisions.md` #32/#33 的關鍵字方法結果）
+狀態：**已實作**（`module_b_encoder/event_extraction.py --method llm`），149 天 ground truth 測試 f1=0.667，明顯優於關鍵字方法（f1=0.273），見 `docs/decisions.md` #35。全量 1381 天結果對事件抽取的定位（Track A 資料品質附屬分析，非驗證 Z_fused 的系統模組，見 #35/#37）沒有加分，不需要再投入。以下為原始設計文件，保留作實作依據與程式碼註解引用（`event_extraction.py` 檔頭直接指到這份文件）。
 
 ## Problem Statement
 

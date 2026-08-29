@@ -100,8 +100,8 @@ def train(model, batches, epochs: int, lr: float, device: str, class_weights=Non
     """batches: [(h_v, h_t, h_r, y)]，皆為 numpy。回傳 (clf_head, 每個 epoch 的平均 loss 列表)。
 
     class_weights（可選）：長度 3、依 LABEL_TO_ID 順序排列的 tensor，
-    用於 docs/spec_c_accuracy_diagnostics.md 的類別加權對照實驗，預設 None（不加權，
-    行為與加入這個選項之前完全一樣）。"""
+    用於類別加權對照實驗（結果見 docs/decisions.md #28、docs/data_and_experiments_log.md
+    第三節），預設 None（不加權，行為與加入這個選項之前完全一樣）。"""
     model.to(device).train()
     clf_head = nn.Linear(model.head.out_features, 3).to(device)
     opt = torch.optim.AdamW(list(model.parameters()) + list(clf_head.parameters()), lr=lr)
@@ -155,12 +155,12 @@ def main():
     ap.add_argument("--batch", type=int, default=4)
     ap.add_argument("--lr", type=float, default=1e-4)
     ap.add_argument("--ablate_news", action="store_true",
-                    help="診斷用：H_t 讀進來後在記憶體歸零，不影響磁碟上的向量檔案（見 spec_c_accuracy_diagnostics.md）")
+                    help="診斷用：H_t 讀進來後在記憶體歸零，不影響磁碟上的向量檔案（結果見 docs/decisions.md #28）")
     ap.add_argument("--ablate_vision", action="store_true",
                     help="診斷用：H_v（K 線圖）讀進來後在記憶體歸零，不影響磁碟上的向量檔案"
                          "（ViT domain gap 對照實驗，見 decisions.md #46）")
     ap.add_argument("--weighted", action="store_true",
-                    help="診斷用：訓練 loss 依類別出現頻率加權，預設關閉（見 spec_c_accuracy_diagnostics.md）")
+                    help="診斷用：訓練 loss 依類別出現頻率加權，預設關閉（結果見 docs/decisions.md #28）")
     args = ap.parse_args()
 
     torch.manual_seed(cfg["seed"])
