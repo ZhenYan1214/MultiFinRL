@@ -42,28 +42,36 @@ RL 環境構建（MDP）、PPO 策略代理人訓練、跨模態歸因解釋模�
 | 3.2 Text encoder (H_t) | `module_b_encoder/encoders/text_encoder.py` | 已實作，用 FinBERT（`ProsusAI/finbert`），符合計畫書建議選項之一 |
 | 3.3 RAG (H_r) | `module_b_encoder/rag/retriever.py`、`vector_db.py` | 已實作，做法（query 加權合併、相似度檢索、top-K 重新編碼）符合計畫書 3.3 節描述；K=3 |
 | 3.4 Cross-Modal Fusion (Z_fused) | `module_c_fusion/fusion/model.py` | 已實作，Transformer 融合 H_v/H_t/H_r（結構符合公式），但 H_t/H_r 先各自 mean-pool 成單一 token 再進融合層（簡化版，控制序列長度） |
-| 3.4 Decoder（LLaVA/LLaMA-2 生成敘述） | 無 | **未實作**。已知必要（`#29`），屬第一階段，需 A 端先產出結構化敘述標準答案（y_belief）才能訓練，待老師確認優先順序 |
-| 3.5 Training（QLoRA + L_align + L_ground + L_belief） | `module_c_fusion/fusion/train.py` | **簡化版**：目前只用市場情緒分類的 cross-entropy loss 端到端訓練融合層，程式檔頭本身已註明「L_align + L_ground + L_belief 為後續強化」。三個 PDF 指定的 loss 皆未實作。因為沒有真正的大型 MLLM backbone，QLoRA/PEFT 也未使用 |
+| 3.4 Decoder（LLaVA/LLaMA-2 生成敘述） | `module_c_fusion/decoder/`（`model.py`/`train.py`/`evaluate.py`/`generate_y_belief.py`） | **已實作第一版並完成訓練+評估**（`#57`~`#64`）：QLoRA 微調 LLaMA-2，以 Z_fused 當 soft-prompt 前綴生成 `<TREND>`/`<RISK_LEVEL>` + 敘述文字。結果：格式正確率 100%、loss delta 1.966（微調 vs 未微調 backbone，證明有實質效果）、RISK_LEVEL 準確率 90%、**TREND 準確率僅 46.7%**（反映 Z_fused 對股價方向訊號有限這個全專案既有瓶頸，非 decoder 獨有，見下方 `#64`）。只做 `L_belief` 一項 loss，`L_align`/`L_ground` 仍未實作；敘述文字品質（LLM-as-judge）尚未驗證 |
+| 3.5 Training（QLoRA + L_align + L_ground + L_belief） | `module_c_fusion/fusion/train.py`（融合層）vs `module_c_fusion/decoder/train.py`（decoder） | **要分兩塊看，不是同一件事**：融合層（`fusion/train.py`，產出 Z_fused）依然是簡化版，只用市場情緒分類的 cross-entropy loss，未用 QLoRA，三個 PDF loss 皆未實作，維持原判斷不變；**decoder（`decoder/train.py`）現在已經是真正的 QLoRA**（4-bit 量化 + LoRA 掛全部 linear 層，`#59` 依 2026 年業界共識調整過訓練細節），但只實作 `L_belief` 一項，`L_align`/`L_ground` 仍缺（需要聯合訓練 encoder／需要不存在的 oracle relevance scores，見 `model.py` 檔頭） |
 | 3.6 MDP / PPO | `module_c_fusion/rl/env.py`、`train_ppo.py` | 已實作，state=[Z_fused, 前期持倉]、reward=報酬−λ_vol×波動−λ_mdd×回撤−交易成本，跟計畫書公式對得上；目前僅單股+現金二維動作空間，多資產未擴充 |
-| Curriculum learning | 無 | **未實作**（`#29`），`train_ppo.py` 直接用全部歷史資料訓練 |
-| Integrated Gradients（跨模態歸因） | 無 | **未實作**（`#29`），屬第二階段，待老師確認優先順序 |
+| Curriculum learning | `module_c_fusion/rl/train_ppo.py`（`--curriculum`） | **已實作並驗證有效**（`#52`~`#55`）：依滾動波動度分階段訓練，階段步數依難度遞增分配。第一版均分步數訓出「永遠空手」的退化 policy（policy collapse），排查後改用難度加權步數修好，最終跟 baseline 打平（Sharpe 皆 0.67） |
+| Integrated Gradients（跨模態歸因） | `module_c_fusion/explainability/integrated_gradients.py` | **已實作並驗證有意義**（`#49`、`#56`）：captum + 零向量 baseline，套在訓練好的 PPO policy 的動作分布 mean 上。第一次在退化 policy（curriculum collapse 那版）上跑出來的結果不可信，**在修好的健康 policy 上重跑後確認有意義**：768 維裡 373 維（48.6%）有實質貢獻，維度間差異化明確（top10/bottom10 相差約 4 個數量級） |
 | 回測（Sharpe/MDD） | `module_c_fusion/backtest/backtest.py` | 已實作，三種策略對照（buy_and_hold/rule_based/ppo），僅支援單一股票，多資產投組未擴充（`#29`） |
 | Z_fused 表徵效能驗證（市場情緒） | `module_c_fusion/validation/classifier.py` | 已實作 |
 | Z_fused 表徵效能驗證（事件抽取，page 19 明訂） | `module_c_fusion/validation/event_validation_head.py` | 已實作，5 類 micro f1=0.229，計畫書 page 19 明確要求（`#34`、`#37`） |
 | 事件抽取（`event_extraction.py`，讀 A 原始資料） | `module_b_encoder/event_extraction.py` | 已實作（keyword + LLM 兩種方法），但**計畫書無此項目依據**，定位為 Track A 資料品質檢查的附屬分析（`#35`、`#37`），非系統模組 |
 | ETF/指數總經資料 | `module_a_data/crawler/fetch_macro.py` | 只有骨架（`NotImplementedError`），教授已確認方向（CPI/PCE/點陣圖，`#38`），目前計畫仍以 AAPL 個股為主，未實際擴充 |
+| 財報 8-K（重大訊息即時揭露） | `module_a_data/crawler/fetch_filings.py`、`build_dataset.py` | **已實作並本機真實資料驗證通過**（`#41`/`#44`/`#45`/`#47`）：10-K/10-Q 維持「取最新一份沿用到下一份發布為止」當背景，8-K 另外標時間戳記當補充事件、不覆蓋背景。曾一度發生 8-K 資料沒有真正流入 Z_fused（B/C 沒有在資料重建後重跑），已補跑修正（`#50`/`#51`）；市場情緒分類／事件驗證頭兩個既有診斷指標變化在雜訊量級，看不出明顯影響，不代表功能本身有問題 |
 
-**2026-08 架構釐清（`#43`，取代下方原本記錄的「三版本消融實驗」討論）**：上表「3.4 Decoder」跟「Z_fused 表徵效能驗證（市場情緒／事件抽取）」這三列，**概念上是同一個元件**——Decoder（計畫書 3.4/3.5 節，訓練時 belief token 如 `[BULLISH]`/`[HIGH_VOLATILITY]` 本身就在做市場情緒判斷）、`classifier.py`（市場情緒分類）、`event_validation_head.py`（事件類型分類）三者功能意圖一致，只是實現方式不同。`classifier.py`／`event_validation_head.py` 一直都是 Decoder+L_belief 這整套機制**尚未做出來之前的簡化代打版本**，不是三個各自獨立設計出來的東西，架構圖已合併成一個框呈現這個關係。**但程式碼層級沒有變動**：Decoder 依然完全未實作，`classifier.py`／`event_validation_head.py` 依然是兩支獨立程式、各自訓練不同目標（市場情緒 3 類 vs 事件類型 7 類多標籤），現在還不能合併成一支——只有等 Decoder 真正做出來、belief token 設計涵蓋兩者的判斷目標，才可能在程式碼層級真正整合。
+**2026-08 架構釐清（`#43`，取代下方原本記錄的「三版本消融實驗」討論）**：架構圖上把「分類驗證」「事件驗證頭」「Decoder」三個框合併成一個——三者功能意圖一致（都是從 Z_fused 判斷市場情緒/事件），只是實現方式不同。`classifier.py`／`event_validation_head.py` 原本是 Decoder+L_belief 這整套機制尚未做出來之前的簡化代打版本；**這個狀態已經改變**——Decoder 現在已經實際做出來並訓練+評估完成（見上表 3.4 列、`#57`~`#64`），但**程式碼層級三者仍是各自獨立的程式**，`classifier.py`／`event_validation_head.py` 沒有被 Decoder 取代或合併，三者分別預測不同目標（市場情緒 3 類／事件類型 7 類多標籤／結構化敘述+風險等級），現階段仍需要三者並存，不是合併成一支。
 
-## 3. 目前進行中、尚未定案的討論
+## 3. 近期進度總覽（`#44`~`#64`，取代原本記錄的討論）
 
-**已解決（2026-08，見上方架構釐清）**：負責人先前提案的「三版本 Z_fused 消融實驗」（把事件抽取結果當作第四個輸入 H_e，無/關鍵字/LLM 三版本比較，寫進論文的相關性分析）**確認不做**。原始動機是想讓獨立於 Z_fused 之外的 `event_extraction.py` 跟系統核心產生關聯，但這個關聯已經被計畫書 page 19 明訂、且早已實作完成的「診斷性分類測試」（`classifier.py` + `event_validation_head.py`）滿足，不需要額外把事件抽取結果做成第四輸入。原本待負責人回覆的三個疑慮（比較的準確度定義、LLM ground truth 的 circularity、H_r 誤解）隨提案不做而一併失去討論意義。詳見 `decisions.md` #42、#43。
+**8-K 財報缺口**：已解決，見上表新增列。
 
-**已回覆，處理方式已確定，但要不要做仍待評估**：
-- 財報是否要新增 8-K（重大訊息即時揭露）抓取——王崇穎轉述張教授回覆，處理方式有兩個選項：(1) 覆蓋過去（8-K 直接取代沿用中的舊 filing 內容）(2) 用 Text encoder 做 fusion，新舊內容都保留、加 Prefix Prompt 讓模型判斷時間順序。**要不要做仍待團隊評估**，非緊急，但技術方案已經確定（`decisions.md` #41、#44）
+**三版本 Z_fused 消融實驗**：已解決，確認不做，見 `#42`、`#43`（詳見上方架構釐清）。
 
-**目前還在等回覆／待評估（非緊急）**：
-- 「事件」的定義是否該涵蓋 K 線圖技術型態（頭肩頂、W 底反轉等），不只是現有事件驗證頭測的七類商業事件——張教授討論架構圖時舉的例子，跟現有分類定義不同，待團隊評估（`decisions.md` 待確認事項表）
+**`#48` 使用者裁示不再等老師表態，四項落差按工程成本自行排序動工，目前進度**：
+1. **Integrated Gradients**——已完成並驗證有意義，見上表、`#49`、`#56`。
+2. **Curriculum learning**——已完成並驗證有效（跟 baseline 打平），見上表、`#52`~`#55`。
+3. **多資產回測**——**仍未動工**，需要先擴充第二支股票的完整 A/B/C 資料才有意義測試，資料成本高於程式碼成本，排序在後。
+4. **生成式 decoder**——**已完成第一版訓練+評估**，見上表、`#57`~`#64`。過程中連續修過三個真實 bug（GPU 未被實際使用、label 未遮罩 padding 導致生成空字串、LoRA dropout 推論時未關閉），且有一次因為同時跑兩個 GPU 程式導致當機、被迫中斷訓練。最終結果：格式正確率 100%、loss delta 1.966（微調有實質效果）、RISK_LEVEL 準確率 90%、TREND 準確率僅 46.7%（反映的是 Z_fused 對股價方向訊號有限這個全專案既有瓶頸，不是 decoder 獨有的缺陷）；`L_align`/`L_ground` 兩個 loss 仍未實作，敘述文字品質（LLM-as-judge）尚未驗證，建議下一步優先補上。
+
+**其他**：
+- ViT domain gap 對照實驗已執行（`#46`）：拿掉 K 線圖 macro f1 掉 51%，現有 ViT 貢獻很大，換編碼器的迫切性降低（但邊際效益可能仍大，待評估）。
+- Technical Indicators 是否要獨立視覺化：`#58` 更正 `#40` 的錯誤結論，PDF 正文（第7頁）確實有把 technical indicators 列為 visual input 範例，但正式規格未 formalize，待團隊評估怎麼實作。
+- 「事件」的定義是否該涵蓋 K 線圖技術型態（頭肩頂、W 底反轉等）——張教授討論架構圖時舉的例子，跟現有事件驗證頭測的七類商業事件不同，待團隊評估，非緊急。
 
 ## 4. 二次查證記錄（逐項對照程式碼實際內容，非憑印象）
 
@@ -75,14 +83,16 @@ RL 環境構建（MDP）、PPO 策略代理人訓練、跨模態歸因解釋模�
 - **回測 Sharpe/MDD**：讀 `backtest.py` 原始碼確認 `sharpe_ratio()`、`max_drawdown()` 兩個函式的計算邏輯正確（年化 Sharpe 用 252 個交易日、MDD 用累積峰值回撤），對應計畫書 page 19「比較夏普比率與最大回撤」的要求。
 - **文字編碼器**：讀 `text_encoder.py` 確認用 `ProsusAI/finbert`，是計畫書 3.2 節列的三個建議選項之一（FinBERT／FinancialBERT／domain-adapted LLaMA/BLOOM）；池化方式用 mean pooling，也是計畫書 3.2 節明講「可以是 [CLS] 或 mean pooling」允許的其中一種，不是隨便選的。
 - **市場情緒診斷分類**：讀 `classifier.py` 確認輸入真的是 `Z_fused`（透過 `load_index`/`load_z_and_labels`），不是誤用其他向量，對應計畫書 page 19「表徵效能驗證」市場情緒的部分。
-- **Integrated Gradients／curriculum learning**：`grep -rin "captum|integrated.gradient|curriculum"` 掃過全部程式碼，完全沒有找到，確認兩項都是真的零實作，不是我之前漏看。
+- **Integrated Gradients／curriculum learning**（此段為 2026-08 較早的查證記錄，當時確認零實作；**現況已改變**，兩項都已在 `#49`~`#56` 實作並驗證完成，見上表最新狀態，此段保留作為時間點紀錄，不代表目前現況）。
 
-以上皆為這一輪重新查證的結果，跟第 2 節的判斷一致，沒有發現需要修正的地方。
+以上皆為當時那一輪重新查證的結果，跟第 2 節的判斷一致；後續 `#44`~`#64` 的新進度已補充在上方對照表與第 3 節，此節本身不再逐項更新。
 
 **補充：PDF 圖片內容查證（`#40`）**。用 `pypdf` 掃過全部 24 頁，確認整份計畫書只有 1 張內嵌圖片（page 8，Figure 1 架構圖），已直接抽出查看，內容跟正文架構描述一致，沒有矛盾之處。新發現一個較輕微的細節：Figure 1 把 Visual Inputs 畫成「Candlestick Charts」與「Technical Indicators」兩個獨立方框，暗示技術指標可能也要單獨視覺化，正文 3.1 節沒有這樣明講；目前 `chart_generator.py` 只產生 K 線圖，沒有另外做技術指標視覺化，是否要補上待團隊評估，非緊急。Table 1、Table 2、page 20-21 甘特圖皆為文字/區塊字元排版，非圖片，先前純文字擷取已完整涵蓋，確認沒有遺漏。
 
-## 5. 一句話總結現況
+## 5. 一句話總結現況（2026-08 更新，取代先前版本）
 
-第一階段（感知與信念建構）的核心管線——A 的資料收集/標籤、B 的三種編碼器（H_v/H_t/H_r）、C 的融合模型（Z_fused）、兩種表徵效能驗證（市場情緒分類 + 事件診斷分類）——全部跑通且有實測數字；第二階段（RL 決策）的 PPO/reward/回測骨架也已建好、隨時可跑。真正的落差集中在三處：(1) 視覺編碼器沒有做領域預訓練（3.1 節要求 vs 現況）；(2) 訓練沒有用計畫書指定的三個 loss（L_align/L_ground/L_belief）和 QLoRA，是簡化版分類訓練；(3) 生成式 decoder、跨模態可解釋性（Integrated Gradients）、curriculum learning、多資產回測，四項都還沒動工，已知必要但待老師確認優先順序後再排入排程。
+第一階段（感知與信念建構）的核心管線——A 的資料收集/標籤（含 8-K）、B 的三種編碼器（H_v/H_t/H_r）、C 的融合模型（Z_fused）、兩種表徵效能驗證（市場情緒分類 + 事件診斷分類）——全部跑通且有實測數字；第二階段（RL 決策）的 PPO/reward/回測、**curriculum learning**、**Integrated Gradients** 也都已實作並驗證完成；**生成式 decoder 也已完成第一版訓練+評估**（QLoRA 微調 LLaMA-2，格式正確率 100%、loss delta 1.966、RISK_LEVEL 準確率 90%，但 TREND 準確率僅 46.7%）。
 
-**2026-08 補充**：上述落差 (2)(3) 裡的「decoder 未實作」，經 `#43` 釐清後有了更精確的理解——現有的 `classifier.py`（市場情緒分類）跟 `event_validation_head.py`（事件驗證頭）並不是跟 decoder 無關的獨立功能，而是 decoder+L_belief 這整套機制蓋出來之前的**簡化代打版本**，功能意圖一致。這只是概念上/架構圖上的釐清，實際的落差（decoder 完全未實作）沒有改變，仍待老師確認優先順序。
+**目前真正還沒動工的，只剩一項**：多資產回測（`backtest.py` 仍僅支援單一股票，需要先擴充第二支股票的完整資料才有意義測試）。
+
+**已知但非「未做」、屬於品質/深度落差的部分**：(1) 視覺編碼器沒有做領域預訓練（3.1 節要求 vs 現況），但 `#46` 實測顯示現有 ViT 貢獻其實很大，換編碼器的迫切性下降；(2) Decoder 只做了 `L_belief` 一項 loss，`L_align`/`L_ground` 仍缺；(3) Decoder 的敘述文字品質（LLM-as-judge）尚未驗證；(4) TREND（市場方向）預測偏弱是全專案共通的既有瓶頸（`classifier.py` 跟 decoder 表現一致地弱），不是單一模組的問題，根源可能在 Z_fused 本身對股價方向的訊號含量有限。
