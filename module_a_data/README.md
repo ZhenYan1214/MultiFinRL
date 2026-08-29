@@ -8,8 +8,8 @@
 1. Download historical OHLCV data via yfinance (`crawler/fetch_ohlcv.py`).
 2. Render a 20-trading-day candlestick chart per day with mplfinance, saved as 224×224 RGB PNG (`preprocess/chart_generator.py`).
 3. Fetch daily financial news and clean HTML/noise (`crawler/fetch_news.py` for recent news, `crawler/fetch_news_alpaca.py` for historical backfill via the Alpaca News API, `preprocess/text_cleaner.py` for cleanup).
-4. Download SEC EDGAR filings and earnings-call transcripts, chunked to ≤512 tokens (`crawler/fetch_filings.py`, `crawler/fetch_transcripts.py`, `preprocess/chunker.py`).
-5. Generate BULLISH / BEARISH / NEUTRAL labels from the 5-trading-day forward return vs. same-day close, ±2% thresholds (`labeling.py`).
+4. Download SEC EDGAR filings (10-K/10-Q as background, 8-K as timestamped supplementary events that don't overwrite the background — see `docs/decisions.md` #41/#44/#45) and earnings-call transcripts, chunked to ≤512 tokens (`crawler/fetch_filings.py`, `crawler/fetch_transcripts.py`, `preprocess/chunker.py`). ETF/index macro data (`crawler/fetch_macro.py`) is scaffolded but not implemented (`docs/decisions.md` #38).
+5. Generate BULLISH / BEARISH / NEUTRAL labels from the 5-trading-day forward return vs. same-day close, using quantile thresholds over the full return distribution (each class ends up close to 1/3 of days) rather than a fixed percentage — see `docs/decisions.md` #30. The old fixed ±2% version is kept as `labeling.py`'s `make_label_fixed_threshold()` for ablation comparisons only.
 6. Assemble everything into one JSON record per day (`build_dataset.py`).
 7. **Deliver an initial 50–100 sample days early** so B and C can start development against real formats sooner.
 
