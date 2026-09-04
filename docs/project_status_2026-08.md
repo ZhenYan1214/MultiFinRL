@@ -56,7 +56,7 @@ RL 環境構建（MDP）、PPO 策略代理人訓練、跨模態歸因解釋模�
 
 **2026-08 架構釐清（`#43`，取代下方原本記錄的「三版本消融實驗」討論）**：架構圖上把「分類驗證」「事件驗證頭」「Decoder」三個框合併成一個——三者功能意圖一致（都是從 Z_fused 判斷市場情緒/事件），只是實現方式不同。`classifier.py`／`event_validation_head.py` 原本是 Decoder+L_belief 這整套機制尚未做出來之前的簡化代打版本；**這個狀態已經改變**——Decoder 現在已經實際做出來並訓練+評估完成（見上表 3.4 列、`#57`~`#64`），但**程式碼層級三者仍是各自獨立的程式**，`classifier.py`／`event_validation_head.py` 沒有被 Decoder 取代或合併，三者分別預測不同目標（市場情緒 3 類／事件類型 7 類多標籤／結構化敘述+風險等級），現階段仍需要三者並存，不是合併成一支。
 
-## 3. 近期進度總覽（`#44`~`#64`，取代原本記錄的討論）
+## 3. 近期進度總覽（`#44`~`#65`，取代原本記錄的討論）
 
 **8-K 財報缺口**：已解決，見上表新增列。
 
@@ -65,29 +65,29 @@ RL 環境構建（MDP）、PPO 策略代理人訓練、跨模態歸因解釋模�
 **`#48` 使用者裁示不再等老師表態，四項落差按工程成本自行排序動工，目前進度**：
 1. **Integrated Gradients**——已完成並驗證有意義，見上表、`#49`、`#56`。
 2. **Curriculum learning**——已完成並驗證有效（跟 baseline 打平），見上表、`#52`~`#55`。
-3. **多資產回測**——**仍未動工**，需要先擴充第二支股票的完整 A/B/C 資料才有意義測試，資料成本高於程式碼成本，排序在後。
+3. **多資產回測**——**仍未動工**，需要先擴充第二支股票的完整 A/B/C 資料才有意義測試，資料成本高於程式碼成本，排序在後；目前規劃用這個擴充順便驗證「TREND 準確率偏弱是不是資料量問題」這個假設（見下方第 5 節）。
 4. **生成式 decoder**——**已完成第一版訓練+評估**，見上表、`#57`~`#64`。過程中連續修過三個真實 bug（GPU 未被實際使用、label 未遮罩 padding 導致生成空字串、LoRA dropout 推論時未關閉），且有一次因為同時跑兩個 GPU 程式導致當機、被迫中斷訓練。最終結果：格式正確率 100%、loss delta 1.966（微調有實質效果）、RISK_LEVEL 準確率 90%、TREND 準確率僅 46.7%（反映的是 Z_fused 對股價方向訊號有限這個全專案既有瓶頸，不是 decoder 獨有的缺陷）；`L_align`/`L_ground` 兩個 loss 仍未實作，敘述文字品質（LLM-as-judge）尚未驗證，建議下一步優先補上。
 
 **其他**：
 - ViT domain gap 對照實驗已執行（`#46`）：拿掉 K 線圖 macro f1 掉 51%，現有 ViT 貢獻很大，換編碼器的迫切性降低（但邊際效益可能仍大，待評估）。
-- Technical Indicators 是否要獨立視覺化：`#58` 更正 `#40` 的錯誤結論，PDF 正文（第7頁）確實有把 technical indicators 列為 visual input 範例，但正式規格未 formalize，待團隊評估怎麼實作。
+- Technical Indicators 是否要獨立視覺化：**已解決（`#65`）**。王崇穎確認要做——用原本的 K 線價格資料計算指標（不用挑很多）、額外做成一張圖跟 K 線圖一起合併進 H_v；不急，之後再排入即可，若有時間可變成論文的討論/比較範疇。另確認 Table 1「technical patterns」（頭肩頂等圖形型態）跟「technical indicators」（RSI/MACD 數字指標）是兩個不同概念，解決了 `#58` 留下的疑問。
 - 「事件」的定義是否該涵蓋 K 線圖技術型態（頭肩頂、W 底反轉等）——張教授討論架構圖時舉的例子，跟現有事件驗證頭測的七類商業事件不同，待團隊評估，非緊急。
 
 ## 4. 二次查證記錄（逐項對照程式碼實際內容，非憑印象）
 
 上面第 2 節「已實作」的每一項，這次都重新直接讀了程式碼原文（不是靠記憶）交叉核對，結果：
 
-- **QLoRA/PEFT**：`grep -rin "lora|qlora|peft"` 掃過 A/B/C/shared 全部程式碼，只有 `fusion/train.py` 檔頭註解提到「後續強化」，沒有任何實際實作，確認完全沒做。
+- **QLoRA/PEFT**：`fusion/train.py`（分類訓練）本身仍未使用；但 `decoder/train.py`/`decoder/model.py` 已實作（2026-08 新增），4-bit 量化 + LoRA（掛全部 attention+MLP 線性層）微調 LLaMA-2-7b，`peft`/`bitsandbytes` 是真的被呼叫、不是占位程式碼，且已完成第一輪完整訓練+評估（見上表 3.4 列、`#57`~`#64`）。
 - **PPO**：`train_ppo.py` 讀原始碼確認真的呼叫 `from stable_baselines3 import PPO`、`PPO("MlpPolicy", env, ...)`，不是假的或占位程式碼。
 - **Reward 公式**：`env.py` 逐項比對計畫書公式 `R_t = μ(Rp) − λ1·σ(Rp) − λ2·MDD_t − η·TC_t`：程式碼的 `reward = r_portfolio − lambda_vol*vol − lambda_mdd*drawdown`，其中 `r_portfolio` 已扣除 `turnover*cost`（對應 TC 項）。**一個精確的落差要指出**：計畫書的 μ(Rp) 是「預期報酬」的統計量，程式碼直接用單步「已實現報酬」代入，不是真的算期望值——這是強化學習常見的合理簡化（單步 reward 本來就是即時訊號，不是要求先算好分布再代入），不算錯誤，但跟公式不是逐字對應，這裡精確講出來。
 - **回測 Sharpe/MDD**：讀 `backtest.py` 原始碼確認 `sharpe_ratio()`、`max_drawdown()` 兩個函式的計算邏輯正確（年化 Sharpe 用 252 個交易日、MDD 用累積峰值回撤），對應計畫書 page 19「比較夏普比率與最大回撤」的要求。
 - **文字編碼器**：讀 `text_encoder.py` 確認用 `ProsusAI/finbert`，是計畫書 3.2 節列的三個建議選項之一（FinBERT／FinancialBERT／domain-adapted LLaMA/BLOOM）；池化方式用 mean pooling，也是計畫書 3.2 節明講「可以是 [CLS] 或 mean pooling」允許的其中一種，不是隨便選的。
 - **市場情緒診斷分類**：讀 `classifier.py` 確認輸入真的是 `Z_fused`（透過 `load_index`/`load_z_and_labels`），不是誤用其他向量，對應計畫書 page 19「表徵效能驗證」市場情緒的部分。
-- **Integrated Gradients／curriculum learning**（此段為 2026-08 較早的查證記錄，當時確認零實作；**現況已改變**，兩項都已在 `#49`~`#56` 實作並驗證完成，見上表最新狀態，此段保留作為時間點紀錄，不代表目前現況）。
+- **Integrated Gradients／curriculum learning**：兩者皆已實作（`explainability/integrated_gradients.py`、`rl/train_ppo.py` 的 `--curriculum`），對應 `#49`/`#56`、`#52`~`#55`。
 
-以上皆為當時那一輪重新查證的結果，跟第 2 節的判斷一致；後續 `#44`~`#64` 的新進度已補充在上方對照表與第 3 節，此節本身不再逐項更新。
+以上皆為這一輪重新查證的結果，跟第 2 節的判斷一致；`#44`~`#65` 的新進度已補充在上方對照表與第 3 節。
 
-**補充：PDF 圖片內容查證（`#40`）**。用 `pypdf` 掃過全部 24 頁，確認整份計畫書只有 1 張內嵌圖片（page 8，Figure 1 架構圖），已直接抽出查看，內容跟正文架構描述一致，沒有矛盾之處。新發現一個較輕微的細節：Figure 1 把 Visual Inputs 畫成「Candlestick Charts」與「Technical Indicators」兩個獨立方框，暗示技術指標可能也要單獨視覺化，正文 3.1 節沒有這樣明講；目前 `chart_generator.py` 只產生 K 線圖，沒有另外做技術指標視覺化，是否要補上待團隊評估，非緊急。Table 1、Table 2、page 20-21 甘特圖皆為文字/區塊字元排版，非圖片，先前純文字擷取已完整涵蓋，確認沒有遺漏。
+**補充：PDF 圖片內容查證（`#40`，Technical Indicators 疑問已於 `#65` 解決）**。用 `pypdf` 掃過全部 24 頁，確認整份計畫書只有 1 張內嵌圖片（page 8，Figure 1 架構圖），內容跟正文架構描述一致，沒有矛盾之處。Figure 1 把 Visual Inputs 畫成「Candlestick Charts」與「Technical Indicators」兩個獨立方框，這個疑問已由王崇穎確認（`#65`）：用原本 K 線資料算指標、另外做成一張圖合併進 H_v，非緊急項目。Table 1、Table 2、page 20-21 甘特圖皆為文字/區塊字元排版，非圖片，先前純文字擷取已完整涵蓋。
 
 ## 5. 一句話總結現況（2026-08 更新，取代先前版本）
 
@@ -95,4 +95,6 @@ RL 環境構建（MDP）、PPO 策略代理人訓練、跨模態歸因解釋模�
 
 **目前真正還沒動工的，只剩一項**：多資產回測（`backtest.py` 仍僅支援單一股票，需要先擴充第二支股票的完整資料才有意義測試）。
 
-**已知但非「未做」、屬於品質/深度落差的部分**：(1) 視覺編碼器沒有做領域預訓練（3.1 節要求 vs 現況），但 `#46` 實測顯示現有 ViT 貢獻其實很大，換編碼器的迫切性下降；(2) Decoder 只做了 `L_belief` 一項 loss，`L_align`/`L_ground` 仍缺；(3) Decoder 的敘述文字品質（LLM-as-judge）尚未驗證；(4) TREND（市場方向）預測偏弱是全專案共通的既有瓶頸（`classifier.py` 跟 decoder 表現一致地弱），不是單一模組的問題，根源可能在 Z_fused 本身對股價方向的訊號含量有限。
+**已知但非「未做」、屬於品質/深度落差的部分**：(1) 視覺編碼器沒有做領域預訓練（3.1 節要求 vs 現況），但 `#46` 實測顯示現有 ViT 貢獻其實很大，換編碼器的迫切性下降；(2) Decoder 只做了 `L_belief` 一項 loss，`L_align`/`L_ground` 仍缺；(3) Decoder 的敘述文字品質（LLM-as-judge）尚未驗證；(4) TREND（市場方向）預測偏弱是全專案共通的既有瓶頸（`classifier.py` 跟 decoder 表現一致地弱），不是單一模組的問題，根源可能在 Z_fused 本身對股價方向的訊號含量有限——`#66`（多股票擴充實驗，計畫中）會進一步檢驗這個假設。
+
+**待辦（下一步，見對話紀錄與 `docs/decisions.md` 最新條目）**：(1) 補跑 `evaluate.py --llm_judge` 驗證敘述文字品質，成本低、不用重新訓練；(2) 決定要不要投入多股票（AAPL+NVDA+MSFT）擴充實驗，驗證 TREND 偏弱是否為資料量問題；(3) `fetch_transcripts.py` 已改用 Alpha Vantage API（`#67`），待本機實際執行取得真實法說會逐字稿資料。

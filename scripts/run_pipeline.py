@@ -9,8 +9,9 @@
     python scripts/run_pipeline.py --ticker AAPL               # 真跑一次完整流程
     python scripts/run_pipeline.py --ticker AAPL --limit 50    # 只處理前 50 天（測試用）
     python scripts/run_pipeline.py --ticker AAPL --skip_transcripts
-        # 跳過法說會逐字稿抓取（foolcalls 是不穩定的第三方套件，抓失敗會中斷整條 pipeline，
-        # 需要快速跑通其他部分時可以跳過；transcript_chunks 留空不影響其他步驟）
+        # 跳過法說會逐字稿抓取（fetch_transcripts.py 現在改用 Alpha Vantage API，需要
+        # ALPHA_VANTAGE_API_KEY，且免費方案有速率限制；還沒設定金鑰或想快速跑通其他部分時
+        # 可以跳過；transcript_chunks 留空不影響其他步驟）
 """
 import argparse
 import subprocess
@@ -36,7 +37,7 @@ def main():
     ap.add_argument("--limit", type=int, default=None,
                     help="真實模式：K 線圖/dataset/向量各階段筆數上限（測試用，拿掉就是全量）")
     ap.add_argument("--skip_transcripts", action="store_true",
-                    help="跳過法說會逐字稿抓取（foolcalls 套件不穩定時用）")
+                    help="跳過法說會逐字稿抓取（沒有 ALPHA_VANTAGE_API_KEY 或想快速跑通其他部分時用）")
     ap.add_argument("--no_weighted", action="store_true",
                     help="C 訓練/驗證預設帶 --weighted（decisions.md #28 定案），"
                          "加這個旗標可以跑不加權的對照組")

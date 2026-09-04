@@ -53,7 +53,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ticker", default="AAPL")
     ap.add_argument("--weighted", action="store_true",
-                    help="診斷用：依訓練集類別出現頻率加權，預設關閉（見 spec_c_accuracy_diagnostics.md）")
+                    help="診斷用：依訓練集類別出現頻率加權，預設關閉（結果見 docs/decisions.md #28）")
     args = ap.parse_args()
 
     rows = load_z_and_labels(args.ticker)

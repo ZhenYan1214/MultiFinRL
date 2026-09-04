@@ -1,43 +1,185 @@
-"""下載法說會逐字稿，存到 data/raw/transcripts/{TICKER}/。
+"""使用 Alpha Vantage API 下載法說會逐字稿，存到 data/raw/transcripts/{TICKER}/。
 
-docs/decisions.md #25：老師同意先試用 foolcalls（fool.com 爬蟲）這類開源工具。
+取代原本用 foolcalls（fool.com 爬蟲）的版本——foolcalls 不是正式上架的套件、原始碼本身
+有壞掉的 import、且從未成功端到端跑出過真實資料（見 docs/decisions.md #25，`--start`/
+`--max_pages` 那個版本）。改用 Alpha Vantage 官方 API，穩定、有官方文件保障。
 
-foolcalls 的限制：它不能像「輸入 ticker 就查得到」那樣使用，
-fool.com 的逐字稿清單頁是全公司混在一起、按時間排序，不能只查單一 ticker。
-所以做法是：翻清單頁（一頁可能有很多公司、很多不是我們要的），
-用 ticker 是否出現在 URL 裡（例如 .../q3-2020-earnings-call-tran.aspx
-裡的 "krus" 這段對應 KRUS）過濾出我們要的那幾篇，其餘丟棄。
-翻頁是由新到舊，遇到比 --start 更早的日期就停止，不用整個網站翻完。
+API 端點：
+  - EARNINGS_CALL_TRANSCRIPT: 抓取指定公司與季度的法說會逐字稿及發言人內容
+  - EARNINGS（輔助）: 取得季度財報發布日（reportedDate），作為精準的 event_date
+
+環境變數：
+  ALPHA_VANTAGE_API_KEY=你的 API key（或 ALPHAVANTAGE_API_KEY）
+  可在專案根目錄的 .env 檔案中設定，或透過命令列參數 --api_key 傳入。
 
 輸出格式（與 fetch_filings 對齊，供 build_dataset 讀取）：
-  data/raw/transcripts/{TICKER}/index.json              # 清單（event_date/檔名）
-  data/raw/transcripts/{TICKER}/EC_{YYYY-MM-DD}.txt      # 純文字逐字稿
-
-安裝：foolcalls 在 PyPI 上沒有上架、GitHub 上也沒有 setup.py/pyproject.toml，
-不能直接 pip install。已經把它整個複製到本專案根目錄的 foolcalls/
-（跟 shared/ 同一層），可以直接 `from foolcalls.scrapers import ...`，不用再自己 clone。
-還需要 `pip install boto3 lxml`（foolcalls 內部 import 用到，即使不用它的 S3 功能）。
-
-已修好的問題（2026-07 測試時發現）：foolcalls 目前 GitHub 上的 scrapers.py
-會 import 一個叫 extractors_v2 的模組，但整個 repo 裡根本沒有這個檔案，
-不修就連 import 都會直接失敗（跟網路、跟我們的程式碼都無關，是 foolcalls
-本身目前壞掉了）。已經在 foolcalls/extractors_v2.py 補上一行
-`from foolcalls.extractors import *` 當 stub，import 就不會再炸掉
-（scrape_transcript_v2 只是備援用的次要路徑，本來就很少被呼叫到，
-用 v1 的邏輯頂著沒有太大影響）。
+  data/raw/transcripts/{TICKER}/index.json              # 清單（event_date / quarter / 檔名）
+  data/raw/transcripts/{TICKER}/EC_{YYYY-MM-DD}.txt     # 純文字逐字稿
 
 用法：
-    python -m module_a_data.crawler.fetch_transcripts --ticker AAPL --start 2021-01-01 --max_pages 200
+  python -m module_a_data.crawler.fetch_transcripts --ticker AAPL
+  python -m module_a_data.crawler.fetch_transcripts --ticker AAPL --start 2021-01-01 --end 2026-08-09
+
+免費方案有速率限制（約 5 次/分鐘），--delay 預設 1.0 秒對免費方案太快，
+遇到大量重試訊息時改成 --delay 12.0。
 """
 import argparse
-import re
+import datetime as dt
+import os
+import time
+
+import requests
 
 from shared import paths
-from shared.utils import write_json, read_json
+from shared.utils import load_config, read_json, write_json
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
+BASE_URL = "https://www.alphavantage.co/query"
 
 
-def save_transcript(ticker: str, event_date: str, text: str) -> None:
-    """統一儲存介面：來源不論是誰，最後都呼叫這個函式落地。"""
+def get_api_key(cli_key: str | None = None) -> str:
+    """取得 Alpha Vantage API Key（優先順序：CLI 參數 > ALPHA_VANTAGE_API_KEY > ALPHAVANTAGE_API_KEY）。"""
+    key = cli_key or os.environ.get("ALPHA_VANTAGE_API_KEY") or os.environ.get("ALPHAVANTAGE_API_KEY")
+    if not key:
+        raise RuntimeError(
+            "缺少 Alpha Vantage API Key！請在專案根目錄的 .env 檔案中設定 "
+            "ALPHA_VANTAGE_API_KEY=your_key，或透過 --api_key 傳入。"
+        )
+    return key
+
+
+def generate_quarters(start: str, end: str) -> list[str]:
+    """根據起訖日期（YYYY-MM-DD），產生所有涵蓋的季度清單（例如 ['2021Q1', '2021Q2', ...]）。"""
+    d_start = dt.date.fromisoformat(start)
+    d_end = dt.date.fromisoformat(end)
+    start_q = (d_start.month - 1) // 3 + 1
+    end_q = (d_end.month - 1) // 3 + 1
+    quarters = []
+    y, q = d_start.year, start_q
+    while (y < d_end.year) or (y == d_end.year and q <= end_q):
+        quarters.append(f"{y}Q{q}")
+        q += 1
+        if q > 4:
+            q = 1
+            y += 1
+    return quarters
+
+
+def fetch_earnings_calendar(ticker: str, api_key: str) -> dict[str, str]:
+    """呼叫 EARNINGS 端點取得歷史財報公布日（reportedDate），建立 quarter -> event_date 的對照表。"""
+    params = {
+        "function": "EARNINGS",
+        "symbol": ticker,
+        "apikey": api_key,
+    }
+    quarter_to_date: dict[str, str] = {}
+    try:
+        resp = requests.get(BASE_URL, params=params, timeout=30)
+        if resp.status_code != 200:
+            return quarter_to_date
+        data = resp.json()
+        quarterly = data.get("quarterlyEarnings", [])
+        for item in quarterly:
+            fiscal_end = item.get("fiscalDateEnding")
+            reported_date = item.get("reportedDate")
+            if fiscal_end and reported_date:
+                f_dt = dt.date.fromisoformat(fiscal_end)
+                q_num = (f_dt.month - 1) // 3 + 1
+                q_key = f"{f_dt.year}Q{q_num}"
+                quarter_to_date[q_key] = reported_date
+    except Exception as e:
+        print(f"[fetch_transcripts] 查詢 EARNINGS 日曆時發生錯誤（將使用預估日期）: {e}")
+    return quarter_to_date
+
+
+def default_quarter_event_date(quarter: str) -> str:
+    """若無精確公布日，回傳預設的估算公布日（通常為該季結束次月下旬）。"""
+    y = int(quarter[:4])
+    q = int(quarter[-1])
+    month_day_map = {
+        1: (4, 25),   # Q1 財報約 4 月底公布
+        2: (7, 25),   # Q2 財報約 7 月底公布
+        3: (10, 25),  # Q3 財報約 10 月底公布
+        4: (1, 25),   # Q4 財報約次年 1 月底公布
+    }
+    if q == 4:
+        return f"{y + 1}-01-25"
+    m, d = month_day_map[q]
+    return f"{y}-{m:02d}-{d:02d}"
+
+
+def transcript_to_text(data: dict) -> str:
+    """將 Alpha Vantage 的逐字稿 JSON 轉換成純文字格式。"""
+    symbol = data.get("symbol", "")
+    quarter = data.get("quarter", "")
+    parts = [f"{symbol} {quarter} Earnings Call Transcript\n"]
+
+    raw_transcript = data.get("transcript")
+    if isinstance(raw_transcript, list):
+        for item in raw_transcript:
+            if isinstance(item, dict):
+                speaker = item.get("speaker") or item.get("name") or "Speaker"
+                title = item.get("title") or item.get("role") or ""
+                speaker_tag = f"{speaker} ({title})" if title else speaker
+                content = item.get("content") or item.get("text") or item.get("statement") or ""
+                parts.append(f"{speaker_tag}: {content}")
+            else:
+                parts.append(str(item))
+    elif isinstance(raw_transcript, str):
+        parts.append(raw_transcript)
+
+    return "\n\n".join(p for p in parts if p)
+
+
+def fetch_transcript_by_quarter(
+    ticker: str,
+    quarter: str,
+    api_key: str,
+    max_retries: int = 3,
+    retry_delay: float = 5.0,
+) -> dict | None:
+    """呼叫 EARNINGS_CALL_TRANSCRIPT 取得單季逐字稿。"""
+    params = {
+        "function": "EARNINGS_CALL_TRANSCRIPT",
+        "symbol": ticker,
+        "quarter": quarter,
+        "apikey": api_key,
+    }
+    for attempt in range(max_retries):
+        try:
+            resp = requests.get(BASE_URL, params=params, timeout=30)
+            if resp.status_code == 429:
+                print(f"[fetch_transcripts] 遭遇速率限制 (429)，等待 {retry_delay} 秒後重試...")
+                time.sleep(retry_delay)
+                continue
+            resp.raise_for_status()
+            data = resp.json()
+
+            # 檢查 Alpha Vantage 特殊提示訊息（如額度限制或頻率過高）
+            if "Information" in data or "Note" in data:
+                info_msg = data.get("Information") or data.get("Note")
+                print(f"[fetch_transcripts] API 提示訊息: {info_msg}，等待 {retry_delay} 秒重試...")
+                time.sleep(retry_delay)
+                continue
+            if "Error Message" in data:
+                print(f"[fetch_transcripts] {ticker} {quarter} 無法取得逐字稿: {data['Error Message']}")
+                return None
+            if not data.get("transcript"):
+                return None
+            return data
+        except requests.RequestException as e:
+            print(f"[fetch_transcripts] {ticker} {quarter} 連線錯誤（第 {attempt + 1} 次）: {e}")
+            time.sleep(retry_delay)
+    return None
+
+
+def save_transcript(ticker: str, event_date: str, quarter: str, text: str) -> None:
+    """統一儲存格式：產出 EC_{event_date}.txt 並更新 index.json。"""
     out_dir = paths.RAW_TRANSCRIPTS / ticker
     out_dir.mkdir(parents=True, exist_ok=True)
     fname = f"EC_{event_date}.txt"
@@ -46,97 +188,87 @@ def save_transcript(ticker: str, event_date: str, text: str) -> None:
     index_path = out_dir / "index.json"
     index = {"ticker": ticker, "transcripts": []}
     if index_path.exists():
-        from shared.utils import read_json
         index = read_json(index_path)
-    entries = [t for t in index["transcripts"] if t["event_date"] != event_date]
-    entries.append({"event_date": event_date, "file": fname})
+    # 去重並依 event_date 排序
+    entries = [t for t in index.get("transcripts", []) if t["event_date"] != event_date]
+    entries.append({"event_date": event_date, "quarter": quarter, "file": fname})
     index["transcripts"] = sorted(entries, key=lambda t: t["event_date"])
     write_json(index, index_path)
-    print(f"[fetch_transcripts] {ticker} {event_date} -> {out_dir / fname}")
+    print(f"[fetch_transcripts] {ticker} {quarter} ({event_date}) -> {out_dir / fname}")
 
 
-def _extract_event_date(url: str) -> str | None:
-    """URL 路徑裡有 /YYYY/MM/DD/，直接取出當作 event_date，比解析頁面 metadata 可靠。"""
-    m = re.search(r"/(\d{4})/(\d{2})/(\d{2})/", url)
-    if not m:
-        return None
-    y, mo, d = m.groups()
-    return f"{y}-{mo}-{d}"
+def fetch_all_transcripts(
+    ticker: str,
+    start: str,
+    end: str,
+    api_key: str,
+    delay_sec: float = 1.0,
+) -> int:
+    """按季度依序下載指定時間範圍內的所有逐字稿（支援斷點續抓）。"""
+    quarters = generate_quarters(start, end)
+    print(f"[fetch_transcripts] 開始處理 {ticker}，範圍 {start} ~ {end}，共 {len(quarters)} 個季度: {quarters}")
 
+    # 讀取現有索引以跳過已抓取的季度
+    out_dir = paths.RAW_TRANSCRIPTS / ticker
+    index_path = out_dir / "index.json"
+    existing_quarters = set()
+    if index_path.exists():
+        existing_index = read_json(index_path)
+        existing_quarters = {t.get("quarter") for t in existing_index.get("transcripts", []) if t.get("quarter")}
 
-def _matches_ticker(url: str, ticker: str) -> bool:
-    """URL slug 裡用連字號包住的小寫 ticker 當關鍵字比對，減少誤判（見檔案開頭說明）。"""
-    return f"-{ticker.lower()}-" in url.lower()
+    # 取得歷史財報公布日期對照表
+    quarter_calendar = fetch_earnings_calendar(ticker, api_key)
 
+    saved_count = 0
+    for q in quarters:
+        if q in existing_quarters:
+            print(f"[fetch_transcripts] {ticker} {q} 已存在，跳過")
+            continue
 
-def _transcript_to_text(parsed: dict) -> str:
-    """把 scrape_transcript() 回傳的結構化 dict 攤平成一段純文字，供 chunker.py 使用。
+        print(f"[fetch_transcripts] 正在抓取 {ticker} {q}...")
+        data = fetch_transcript_by_quarter(ticker, q, api_key)
+        if not data:
+            print(f"[fetch_transcripts] {ticker} {q} 無資料或下載失敗")
+            time.sleep(delay_sec)
+            continue
 
-    scrape_transcript() 回傳的 'call_transcript' 欄位是逐句/逐段的清單，
-    每個元素的確切欄位名稱依 foolcalls 版本而定，這裡用防禦性寫法：
-    有 speaker 就標出來，有 text/content 類欄位就接上，其餘型別直接字串化，
-    確保不論欄位名稱怎麼變，至少不會整支腳本壞掉。
-    """
-    parts = []
-    title = parsed.get("title") or parsed.get("call_title")
-    if title:
-        parts.append(str(title))
+        event_date = quarter_calendar.get(q) or default_quarter_event_date(q)
 
-    transcript = parsed.get("call_transcript") or []
-    for item in transcript:
-        if isinstance(item, dict):
-            speaker = item.get("speaker") or item.get("name") or ""
-            text = item.get("text") or item.get("content") or item.get("statement") or ""
-            parts.append(f"{speaker}: {text}" if speaker else str(text))
-        else:
-            parts.append(str(item))
-    return "\n".join(p for p in parts if p)
+        # 防呆：這一季的財報公布日還沒到（不論是 EARNINGS 日曆查到的真實日期，還是沒查到
+        # 時用的估算日期），代表這場法說會實際上還沒開。Alpha Vantage 對這種「還沒發生」的
+        # 季度，觀察到會回傳看似正常、格式正確、但內容是合成／推測出來的逐字稿（不是空
+        # 資料、也不是明確的錯誤訊息），必須主動擋掉，否則會把假資料當成真實資料存進
+        # pipeline（實際發生過一次：AAPL 2026Q3，估算日期 2026-10-25，當時系統日期
+        # 2026-09-02，尚未開完，但 API 仍回傳一份內容詳實、格式正確的「逐字稿」）。
+        if event_date > dt.date.today().isoformat():
+            print(f"[fetch_transcripts] {ticker} {q} 的公布日 {event_date} 尚未到（今天 "
+                  f"{dt.date.today().isoformat()}），這場法說會實際上還沒開，Alpha Vantage 回傳的內容"
+                  f"疑似合成／推測資料，已跳過不儲存")
+            time.sleep(delay_sec)
+            continue
 
+        text = transcript_to_text(data)
+        if text:
+            save_transcript(ticker, event_date, q, text)
+            saved_count += 1
+        time.sleep(delay_sec)
 
-def fetch_ticker_transcripts(ticker: str, start: str, max_pages: int) -> int:
-    """由新到舊翻 fool.com 的逐字稿清單頁，篩出這支股票的，早於 start 就停止翻頁。"""
-    import requests
-    from foolcalls.scrapers import scrape_transcript_urls_by_page, scrape_transcript
-
-    n = 0
-    for page in range(max_pages):
-        urls = scrape_transcript_urls_by_page(page)
-        if not urls:
-            break  # 翻到底了
-
-        page_dates = [d for u in urls if (d := _extract_event_date(u))]
-        stop_after_this_page = bool(page_dates) and max(page_dates) < start
-
-        for url in urls:
-            if not _matches_ticker(url, ticker):
-                continue
-            event_date = _extract_event_date(url)
-            if not event_date or event_date < start:
-                continue
-            resp = requests.get(url, timeout=30)
-            if resp.status_code != 200:
-                continue
-            parsed = scrape_transcript(resp.content)
-            text = _transcript_to_text(parsed)
-            if text:
-                save_transcript(ticker, event_date, text)
-                n += 1
-
-        if stop_after_this_page:
-            print(f"[fetch_transcripts] 第 {page} 頁日期已早於 --start，停止翻頁")
-            break
-    return n
+    return saved_count
 
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--ticker", default="AAPL")
-    ap.add_argument("--start", default="2021-01-01")
-    ap.add_argument("--max_pages", type=int, default=200,
-                    help="最多翻幾頁清單頁（fool.com 全公司混排，翻太少可能漏掉這支股票的逐字稿）")
+    cfg = load_config()
+    ap = argparse.ArgumentParser(description="使用 Alpha Vantage 下載法說會逐字稿")
+    ap.add_argument("--ticker", default=cfg["tickers"][0])
+    ap.add_argument("--start", default=cfg["date_range"]["start"])
+    ap.add_argument("--end", default=cfg["date_range"]["end"])
+    ap.add_argument("--api_key", default=None, help="Alpha Vantage API Key（未提供則讀取環境變數）")
+    ap.add_argument("--delay", type=float, default=1.0, help="每次 API 請求間隔秒數（免費方案建議設為 12.0 秒）")
     args = ap.parse_args()
-    n = fetch_ticker_transcripts(args.ticker, args.start, args.max_pages)
-    print(f"[fetch_transcripts] {args.ticker}: 共存 {n} 篇 -> {paths.RAW_TRANSCRIPTS / args.ticker}")
+
+    api_key = get_api_key(args.api_key)
+    n = fetch_all_transcripts(args.ticker, args.start, args.end, api_key, args.delay)
+    print(f"[fetch_transcripts] {args.ticker}: 本次共新增 {n} 篇逐字稿 -> {paths.RAW_TRANSCRIPTS / args.ticker}")
 
 
 if __name__ == "__main__":

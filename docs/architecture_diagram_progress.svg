@@ -1,0 +1,361 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2490" height="3918" viewBox="0 0 2490 3918">
+<defs>
+  <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path d="M 0 0 L 10 5 L 0 10 z" fill="#1a1a1a"/>
+  </marker>
+</defs>
+<rect x="0" y="0" width="2490" height="3918" fill="#ffffff"/>
+<g transform="translate(35.0,50.0)">
+<rect x="-5.0" y="127.0" width="2100.0" height="747.3" rx="18" ry="18" fill="#f4f6f9" stroke="#a8b3c2" stroke-width="1.5"/>
+<rect x="20.0" y="889.3" width="2090.0" height="1243.0" rx="18" ry="18" fill="#f4f6f9" stroke="#a8b3c2" stroke-width="1.5"/>
+<rect x="20.0" y="2147.3" width="2090.0" height="1518.5" rx="18" ry="18" fill="#f4f6f9" stroke="#a8b3c2" stroke-width="1.5"/>
+<rect x="709.0" y="141.0" width="648.0" height="326.0" rx="14" ry="14" fill="none" stroke="#333333" stroke-width="1.3" stroke-dasharray="3,3"/>
+<rect x="805.0" y="0.0" width="480.0" height="91.0" rx="10" ry="10" fill="#eef3ff" stroke="#2a4d8f" stroke-width="2.2" opacity="1.0"/>
+<text x="1045.0" y="28.0" font-size="14.5" font-weight="bold" text-anchor="middle" fill="#1a1a1a" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">使用者 / 研究者</text>
+<text x="1045.0" y="50.0" font-size="12.3" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">指定股票 ticker ＋ 時間範圍 date_range</text>
+<text x="1045.0" y="67.5" font-size="12.3" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">（讀取 configs/config.yaml）</text>
+<rect x="1325.0" y="8.0" width="22.0" height="22.0" rx="4" ry="4" fill="#fff7e6" stroke="#8a5a00" stroke-width="2" opacity="1.0"/>
+<text x="1355.0" y="24.0" font-size="13" font-weight="normal" text-anchor="start" fill="#8a5a00" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">＝ 尚未完成／待補（其餘皆已完成）</text>
+<path d="M 1045.0 91.0 L 1045.0 141.0" stroke="#1a1a1a" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+<text x="60.0" y="149.0" font-size="20" font-weight="bold" text-anchor="start" fill="#3a4a63" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">Module A：資料工程與前處理　｜　第一階段</text>
+<text x="180.0" y="177.0" font-size="13.5" font-weight="bold" text-anchor="middle" fill="#555555" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">① 股價</text>
+<rect x="15.0" y="187.0" width="330.0" height="102.8" rx="10" ry="10" fill="#ffffff" stroke="#333333" stroke-width="2.2" opacity="1.0"/>
+<text x="180.0" y="215.0" font-size="14" font-weight="bold" text-anchor="middle" fill="#1a1a1a" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">抓取股價</text>
+<text x="180.0" y="237.0" font-size="11.6" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">fetch_ohlcv.py</text>
+<text x="180.0" y="252.6" font-size="11.6" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">yfinance</text>
+<text x="180.0" y="268.2" font-size="11.6" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">下載歷史 OHLCV</text>
+<rect x="15.0" y="319.8" width="330.0" height="139.0" rx="10" ry="10" fill="#ffffff" stroke="#333333" stroke-width="2.2" opacity="1.0"/>
+<text x="180.0" y="347.8" font-size="14" font-weight="bold" text-anchor="middle" fill="#1a1a1a" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">產生 K 線圖</text>
+<text x="180.0" y="369.8" font-size="11.6" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">chart_generator.py</text>
+<text x="180.0" y="385.4" font-size="11.6" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">mplfinance</text>
+<text x="180.0" y="401.0" font-size="11.6" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">20 個交易日窗口</text>
+<text x="180.0" y="416.6" font-size="11.6" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">224×224 RGB PNG</text>
+<text x="180.0" y="436.2" font-size="11.299999999999999" font-weight="normal" text-anchor="middle" fill="#555555" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif" font-style="italic">→ data/raw/charts/{TICKER}/{date}.png</text>
+<path d="M 180.0 289.8 L 180.0 319.8" stroke="#1a1a1a" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+<text x="534.0" y="177.0" font-size="13.5" font-weight="bold" text-anchor="middle" fill="#555555" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">② 新聞</text>
+<rect x="369.0" y="187.0" width="330.0" height="118.4" rx="10" ry="10" fill="#ffffff" stroke="#333333" stroke-width="2.2" opacity="1.0"/>
+<text x="534.0" y="215.0" font-size="14" font-weight="bold" text-anchor="middle" fill="#1a1a1a" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">抓取新聞</text>
+<text x="534.0" y="237.0" font-size="11.6" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">fetch_news_alpaca.py</text>
+<text x="534.0" y="252.6" font-size="11.6" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">Alpaca News API</text>
+<text x="534.0" y="268.2" font-size="11.6" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">來源 Benzinga，官方 API 非爬蟲</text>
+<text x="534.0" y="283.8" font-size="11.6" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">歷史回補</text>
+<rect x="369.0" y="335.4" width="330.0" height="134.0" rx="10" ry="10" fill="#ffffff" stroke="#333333" stroke-width="2.2" opacity="1.0"/>
+<text x="534.0" y="363.4" font-size="14" font-weight="bold" text-anchor="middle" fill="#1a1a1a" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">清洗＋標記</text>
+<text x="534.0" y="385.4" font-size="11.6" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">text_cleaner.py</text>
+<text x="534.0" y="401.0" font-size="11.6" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">清除 HTML／雜訊</text>
+<text x="534.0" y="416.6" font-size="11.6" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">併入 days_ago：</text>
+<text x="534.0" y="432.2" font-size="11.6" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">「[N days ago] headline. content」</text>
+<text x="534.0" y="447.8" font-size="11.6" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">交給模型自行判斷相關性</text>
+<path d="M 534.0 305.4 L 534.0 335.4" stroke="#1a1a1a" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+<text x="1033.0" y="155.0" font-size="15" font-weight="bold" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">③ 財報（filings）</text>
+<text x="883.0" y="177.0" font-size="12" font-weight="bold" text-anchor="end" fill="#666666" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">10-K／10-Q（背景資料）</text>
+<text x="1183.0" y="177.0" font-size="12" font-weight="bold" text-anchor="start" fill="#666666" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">8-K（即時事件）</text>
+<rect x="743.0" y="187.0" width="280.0" height="101.0" rx="10" ry="10" fill="#ffffff" stroke="#333333" stroke-width="2.2" opacity="1.0"/>
+<text x="883.0" y="215.0" font-size="13" font-weight="bold" text-anchor="middle" fill="#1a1a1a" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">抓取 10-K／10-Q</text>
+<text x="883.0" y="237.0" font-size="11" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">fetch_filings.py</text>
+<text x="883.0" y="252.0" font-size="11" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">SEC EDGAR 官方 API</text>
+<text x="883.0" y="267.0" font-size="11" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">原生 requests（非 edgartools）</text>
+<rect x="743.0" y="316.0" width="280.0" height="131.0" rx="10" ry="10" fill="#ffffff" stroke="#333333" stroke-width="2.2" opacity="1.0"/>
+<text x="883.0" y="344.0" font-size="13" font-weight="bold" text-anchor="middle" fill="#1a1a1a" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">切段＋背景化</text>
+<text x="883.0" y="366.0" font-size="11" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">chunker.py</text>
+<text x="883.0" y="381.0" font-size="11" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">切成 ≤512 token 段落</text>
+<text x="883.0" y="396.0" font-size="11" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">規則：取最新一份</text>
+<text x="883.0" y="411.0" font-size="11" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">沿用到下一份發布為止</text>
+<text x="883.0" y="426.0" font-size="11" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">（長期背景資料）</text>
+<path d="M 883.0 288.0 L 883.0 316.0" stroke="#1a1a1a" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+<rect x="1043.0" y="187.0" width="280.0" height="101.0" rx="10" ry="10" fill="#ffffff" stroke="#333333" stroke-width="2.2" opacity="1.0"/>
+<text x="1183.0" y="215.0" font-size="13" font-weight="bold" text-anchor="middle" fill="#1a1a1a" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">抓取 8-K</text>
+<text x="1183.0" y="237.0" font-size="11" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">fetch_filings.py（同一支程式）</text>
+<text x="1183.0" y="252.0" font-size="11" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">SEC EDGAR 官方 API</text>
+<text x="1183.0" y="267.0" font-size="11" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">8-K 重大訊息即時揭露</text>
+<rect x="1043.0" y="316.0" width="280.0" height="131.0" rx="10" ry="10" fill="#ffffff" stroke="#333333" stroke-width="2.2" opacity="1.0"/>
+<text x="1183.0" y="344.0" font-size="13" font-weight="bold" text-anchor="middle" fill="#1a1a1a" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">切段＋時間戳記</text>
+<text x="1183.0" y="366.0" font-size="11" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">chunker.py</text>
+<text x="1183.0" y="381.0" font-size="11" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">切成 ≤512 token 段落</text>
+<text x="1183.0" y="396.0" font-size="11" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">規則：標記精確時間戳記</text>
+<text x="1183.0" y="411.0" font-size="11" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">當補充事件，只在當天生效</text>
+<text x="1183.0" y="426.0" font-size="11" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">不覆蓋 10-K／10-Q 背景</text>
+<path d="M 1183.0 288.0 L 1183.0 316.0" stroke="#1a1a1a" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+<text x="1532.0" y="177.0" font-size="13.5" font-weight="bold" text-anchor="middle" fill="#555555" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">④ 法說會逐字稿</text>
+<rect x="1367.0" y="187.0" width="330.0" height="134.0" rx="10" ry="10" fill="#ffffff" stroke="#333333" stroke-width="2.2" opacity="1.0"/>
+<text x="1532.0" y="215.0" font-size="14" font-weight="bold" text-anchor="middle" fill="#1a1a1a" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">抓取法說會逐字稿</text>
+<text x="1532.0" y="237.0" font-size="11.6" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">fetch_transcripts.py</text>
+<text x="1532.0" y="252.6" font-size="11.6" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">Alpha Vantage API：</text>
+<text x="1532.0" y="268.2" font-size="11.6" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">EARNINGS_CALL_TRANSCRIPT（逐字稿本體）</text>
+<text x="1532.0" y="283.8" font-size="11.6" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">＋ EARNINGS（輔助取得精確公布日）</text>
+<text x="1532.0" y="299.4" font-size="11.6" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">取代原本從未成功執行過的 foolcalls</text>
+<rect x="1367.0" y="351.0" width="330.0" height="87.2" rx="10" ry="10" fill="#ffffff" stroke="#333333" stroke-width="2.2" opacity="1.0"/>
+<text x="1532.0" y="379.0" font-size="14" font-weight="bold" text-anchor="middle" fill="#1a1a1a" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">切段</text>
+<text x="1532.0" y="401.0" font-size="11.6" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">chunker.py</text>
+<text x="1532.0" y="416.6" font-size="11.6" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">切成 ≤512 token 段落</text>
+<path d="M 1532.0 321.0 L 1532.0 351.0" stroke="#1a1a1a" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+<text x="1886.0" y="177.0" font-size="13.5" font-weight="bold" text-anchor="middle" fill="#555555" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">⑤ 標籤生成</text>
+<rect x="1721.0" y="187.0" width="330.0" height="134.0" rx="10" ry="10" fill="#ffffff" stroke="#333333" stroke-width="2.2" opacity="1.0"/>
+<text x="1886.0" y="215.0" font-size="14" font-weight="bold" text-anchor="middle" fill="#1a1a1a" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">產生漲跌標籤</text>
+<text x="1886.0" y="237.0" font-size="11.6" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">labeling.py</text>
+<text x="1886.0" y="252.6" font-size="11.6" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">讀取同一筆股價資料</text>
+<text x="1886.0" y="268.2" font-size="11.6" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">未來第5交易日收盤 vs 當日收盤報酬</text>
+<text x="1886.0" y="283.8" font-size="11.6" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">用整段期間報酬分布的</text>
+<text x="1886.0" y="299.4" font-size="11.6" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">1/3、2/3 分位數當門檻</text>
+<rect x="1721.0" y="351.0" width="330.0" height="102.8" rx="10" ry="10" fill="#ffffff" stroke="#333333" stroke-width="2.2" opacity="1.0"/>
+<text x="1886.0" y="379.0" font-size="14" font-weight="bold" text-anchor="middle" fill="#1a1a1a" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">輸出標籤</text>
+<text x="1886.0" y="401.0" font-size="11.6" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">BULLISH／NEUTRAL／BEARISH</text>
+<text x="1886.0" y="416.6" font-size="11.6" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">（非固定 ±2% 門檻，</text>
+<text x="1886.0" y="432.2" font-size="11.6" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">見 decisions.md #30）</text>
+<path d="M 1886.0 321.0 L 1886.0 351.0" stroke="#1a1a1a" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+<text x="2240.0" y="177.0" font-size="13.5" font-weight="bold" text-anchor="middle" fill="#555555" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">⑥ ETF／指數總經資料</text>
+<rect x="2075.0" y="187.0" width="330.0" height="139.0" rx="10" ry="10" fill="#fff7e6" stroke="#8a5a00" stroke-width="2.2" opacity="1.0"/>
+<text x="2240.0" y="215.0" font-size="14" font-weight="bold" text-anchor="middle" fill="#1a1a1a" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">抓取總經資料</text>
+<text x="2240.0" y="237.0" font-size="11.6" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">fetch_macro.py</text>
+<text x="2240.0" y="252.6" font-size="11.6" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">① CPI／PCE／非農／Fed 利率（FRED API）</text>
+<text x="2240.0" y="268.2" font-size="11.6" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">② 總經新聞（沿用 fetch_news_alpaca.py 邏輯）</text>
+<text x="2240.0" y="283.8" font-size="11.6" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">③ 聯準會利率點陣圖（圖表，餵給既有 ViT）</text>
+<text x="2240.0" y="303.4" font-size="11.299999999999999" font-weight="normal" text-anchor="middle" fill="#555555" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif" font-style="italic">供未來擴充 ETF／指數股票池使用（decisions.md #38），輸出格式待定</text>
+<rect x="15.0" y="518.8" width="330.0" height="108.5" rx="10" ry="10" fill="#fff7e6" stroke="#8a5a00" stroke-width="2.2" opacity="1.0"/>
+<text x="180.0" y="546.8" font-size="13" font-weight="bold" text-anchor="middle" fill="#1a1a1a" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">Technical Indicators 圖表</text>
+<text x="180.0" y="568.8" font-size="11" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">用既有 K 線價格資料計算指標</text>
+<text x="180.0" y="586.3" font-size="11" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">額外做成一張圖，跟 K 線圖一起合併進 H_v</text>
+<text x="180.0" y="603.8" font-size="11" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">可作論文討論／比較範疇（decisions.md #65）</text>
+<path d="M 180.0 458.8 L 180.0 503.8 L 180.0 503.8 L 180.0 518.8" stroke="#1a1a1a" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+<rect x="715.0" y="717.3" width="660.0" height="131.0" rx="10" ry="10" fill="#ffffff" stroke="#333333" stroke-width="2.2" opacity="1.0"/>
+<text x="1045.0" y="745.3" font-size="14.5" font-weight="bold" text-anchor="middle" fill="#1a1a1a" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">彙整：build_dataset.py</text>
+<text x="1045.0" y="767.3" font-size="12.3" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">把股價／K線圖／新聞／10-K・10-Q／8-K／法說會／標籤</text>
+<text x="1045.0" y="784.8" font-size="12.3" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">組成一筆「股票＋交易日」的每日 JSON</text>
+<text x="1045.0" y="802.3" font-size="12.3" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">每筆須通過 shared/schemas.py 的 validate_daily_record()</text>
+<text x="1045.0" y="823.8" font-size="12.0" font-weight="normal" text-anchor="middle" fill="#555555" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif" font-style="italic">輸出：data/processed/dataset/{TICKER}/{date}.json （data_format.md 第1節，8個欄位）</text>
+<path d="M 180.0 458.8 L 180.0 613.9 L 809.3 613.9 L 809.3 717.3" stroke="#1a1a1a" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+<path d="M 534.0 469.4 L 534.0 618.1 L 903.6 618.1 L 903.6 717.3" stroke="#1a1a1a" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+<path d="M 883.0 447.0 L 883.0 609.2 L 997.9 609.2 L 997.9 717.3" stroke="#1a1a1a" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+<path d="M 1183.0 447.0 L 1183.0 609.2 L 1092.1 609.2 L 1092.1 717.3" stroke="#1a1a1a" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+<path d="M 1532.0 438.2 L 1532.0 605.7 L 1186.4 605.7 L 1186.4 717.3" stroke="#1a1a1a" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+<path d="M 1886.0 453.8 L 1886.0 611.9 L 1280.7 611.9 L 1280.7 717.3" stroke="#1a1a1a" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+<path d="M 1045.0 848.3 L 1045.0 903.3" stroke="#1a1a1a" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+<text x="60.0" y="911.3" font-size="20" font-weight="bold" text-anchor="start" fill="#3a4a63" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">Module B：特徵萃取與向量化　｜　第一階段</text>
+<text x="445.0" y="939.3" font-size="13.5" font-weight="bold" text-anchor="middle" fill="#555555" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">① Vision Encoder</text>
+<rect x="165.0" y="949.3" width="560.0" height="158.0" rx="10" ry="10" fill="#ffffff" stroke="#333333" stroke-width="2.2" opacity="1.0"/>
+<text x="445.0" y="977.3" font-size="14.5" font-weight="bold" text-anchor="middle" fill="#1a1a1a" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">視覺編碼</text>
+<text x="445.0" y="999.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">vision_encoder.py</text>
+<text x="445.0" y="1016.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">模型：google/vit-base-patch16-224</text>
+<text x="445.0" y="1033.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">（ImageNet 預訓練 ViT）</text>
+<text x="445.0" y="1050.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">input：K 線圖 PNG</text>
+<text x="445.0" y="1067.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">輸出 H_v，shape [197, 768]</text>
+<text x="445.0" y="1084.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">（CLS token + 196 個 patch token）</text>
+<rect x="165.0" y="1137.3" width="560.0" height="124.0" rx="10" ry="10" fill="#fff7e6" stroke="#8a5a00" stroke-width="2.2" opacity="1.0"/>
+<text x="445.0" y="1165.3" font-size="14.5" font-weight="bold" text-anchor="middle" fill="#1a1a1a" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">微調 ViT</text>
+<text x="445.0" y="1187.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">在財經圖表語料上微調現有 ViT，</text>
+<text x="445.0" y="1204.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">或改用 CLIP／financial-domain 預訓練版本</text>
+<text x="445.0" y="1221.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">目標：縮小跟計畫書3.1節要求的落差</text>
+<text x="445.0" y="1238.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">（#46：現有版本貢獻已不小，非從零開始）</text>
+<path d="M 445.0 1107.3 L 445.0 1137.3" stroke="#1a1a1a" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+<text x="1045.0" y="939.3" font-size="13.5" font-weight="bold" text-anchor="middle" fill="#555555" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">② Text Encoder（新聞）</text>
+<rect x="765.0" y="949.3" width="560.0" height="158.0" rx="10" ry="10" fill="#ffffff" stroke="#333333" stroke-width="2.2" opacity="1.0"/>
+<text x="1045.0" y="977.3" font-size="14.5" font-weight="bold" text-anchor="middle" fill="#1a1a1a" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">文字編碼（新聞）</text>
+<text x="1045.0" y="999.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">text_encoder.py</text>
+<text x="1045.0" y="1016.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">模型：ProsusAI/finbert</text>
+<text x="1045.0" y="1033.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">（金融領域預訓練 BERT）</text>
+<text x="1045.0" y="1050.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">input：當日新聞（含 days_ago 前綴）</text>
+<text x="1045.0" y="1067.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">輸出 H_t，shape [512, 768]</text>
+<text x="1045.0" y="1084.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">（不足補 0，超過截斷）</text>
+<rect x="765.0" y="1137.3" width="560.0" height="124.0" rx="10" ry="10" fill="#ffffff" stroke="#333333" stroke-width="2.2" opacity="1.0"/>
+<text x="1045.0" y="1165.3" font-size="14.5" font-weight="bold" text-anchor="middle" fill="#1a1a1a" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">微調 Text Encoder</text>
+<text x="1045.0" y="1187.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">針對本專案語料（新聞／財報／</text>
+<text x="1045.0" y="1204.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">法說會混合文本）做 domain-adaptive 微調</text>
+<text x="1045.0" y="1221.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">（FinBERT 本身已是金融領域預訓練，</text>
+<text x="1045.0" y="1238.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">起點比 ViT 好，落差較小）</text>
+<path d="M 1045.0 1107.3 L 1045.0 1137.3" stroke="#1a1a1a" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+<text x="1645.0" y="939.3" font-size="13.5" font-weight="bold" text-anchor="middle" fill="#555555" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">③ RAG 檢索（財報／法說會語料）</text>
+<rect x="1365.0" y="949.3" width="560.0" height="107.0" rx="10" ry="10" fill="#ffffff" stroke="#333333" stroke-width="2.2" opacity="1.0"/>
+<text x="1645.0" y="977.3" font-size="14.5" font-weight="bold" text-anchor="middle" fill="#1a1a1a" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">建立檢索語料庫</text>
+<text x="1645.0" y="999.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">vector_db.py</text>
+<text x="1645.0" y="1016.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">10-K／10-Q chunk ＋ 8-K chunk</text>
+<text x="1645.0" y="1033.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">＋ 法說會 chunk 全部存入向量資料庫</text>
+<rect x="1365.0" y="1086.3" width="560.0" height="124.0" rx="10" ry="10" fill="#ffffff" stroke="#333333" stroke-width="2.2" opacity="1.0"/>
+<text x="1645.0" y="1114.3" font-size="14.5" font-weight="bold" text-anchor="middle" fill="#1a1a1a" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">建構查詢向量</text>
+<text x="1645.0" y="1136.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">retriever.py：build_query()</text>
+<text x="1645.0" y="1153.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">當天 H_v mean-pool ＋ L2 正規化</text>
+<text x="1645.0" y="1170.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">當天 H_t mean-pool ＋ L2 正規化</text>
+<text x="1645.0" y="1187.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">依 alpha=0.5 加權合併（可調）</text>
+<path d="M 1645.0 1056.3 L 1645.0 1086.3" stroke="#1a1a1a" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+<rect x="1365.0" y="1240.3" width="560.0" height="141.0" rx="10" ry="10" fill="#ffffff" stroke="#333333" stroke-width="2.2" opacity="1.0"/>
+<text x="1645.0" y="1268.3" font-size="14.5" font-weight="bold" text-anchor="middle" fill="#1a1a1a" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">檢索＋重新編碼</text>
+<text x="1645.0" y="1290.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">retriever.py：retrieve()</text>
+<text x="1645.0" y="1307.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">top-K=3 最相似 chunk（相似度排序）</text>
+<text x="1645.0" y="1324.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">用同一個 FinBERT 重新編碼原文</text>
+<text x="1645.0" y="1341.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">輸出 H_r，shape [3, 512, 768]</text>
+<text x="1645.0" y="1358.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">不足時以 0 補齊，chunk_id="PAD"</text>
+<path d="M 1645.0 1210.3 L 1645.0 1240.3" stroke="#1a1a1a" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+<rect x="1365.0" y="1411.3" width="560.0" height="107.0" rx="10" ry="10" fill="#fff7e6" stroke="#8a5a00" stroke-width="2.2" opacity="1.0"/>
+<text x="1645.0" y="1439.3" font-size="14.5" font-weight="bold" text-anchor="middle" fill="#1a1a1a" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">可學習式查詢加權</text>
+<text x="1645.0" y="1461.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">把 build_query() 的固定 alpha=0.5</text>
+<text x="1645.0" y="1478.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">改成可學習權重，或 attention 機制，</text>
+<text x="1645.0" y="1495.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">動態依內容決定 H_v／H_t 的相對重要性</text>
+<path d="M 1645.0 1381.3 L 1645.0 1411.3" stroke="#1a1a1a" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+<rect x="715.0" y="1608.3" width="660.0" height="96.0" rx="10" ry="10" fill="#ffffff" stroke="#333333" stroke-width="2.2" opacity="1.0"/>
+<text x="1045.0" y="1636.3" font-size="14.5" font-weight="bold" text-anchor="middle" fill="#1a1a1a" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">彙整：generate_vectors.py</text>
+<text x="1045.0" y="1658.3" font-size="12.3" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">產出 H_v.npy／H_t.npy／H_r.npy ＋ index.json</text>
+<text x="1045.0" y="1679.8" font-size="12.0" font-weight="normal" text-anchor="middle" fill="#555555" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif" font-style="italic">輸出：data/vectors/{TICKER}/{date}/ （data_format.md 第2節）</text>
+<path d="M 445.0 1107.3 L 445.0 1407.9 L 880.0 1407.9 L 880.0 1608.3" stroke="#1a1a1a" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+<path d="M 1045.0 1107.3 L 1045.0 1407.9 L 1045.0 1407.9 L 1045.0 1608.3" stroke="#1a1a1a" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+<path d="M 1645.0 1381.3 L 1645.0 1517.5 L 1210.0 1517.5 L 1210.0 1608.3" stroke="#1a1a1a" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+<rect x="1445.0" y="1598.3" width="380.0" height="143.5" rx="10" ry="10" fill="#f5f5f5" stroke="#888888" stroke-width="2.2" opacity="1.0"/>
+<text x="1635.0" y="1626.3" font-size="12.8" font-weight="bold" text-anchor="middle" fill="#1a1a1a" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">附屬（非正式產出）：event_extraction.py</text>
+<text x="1635.0" y="1648.3" font-size="11" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">讀 A 的原始文字（不是向量）</text>
+<text x="1635.0" y="1665.8" font-size="11" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">keyword 或 LLM 兩種方法</text>
+<text x="1635.0" y="1683.3" font-size="11" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">判斷 7 類商業事件</text>
+<text x="1635.0" y="1700.8" font-size="11" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">屬於資料品質側寫，非系統模組</text>
+<text x="1635.0" y="1718.3" font-size="11" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">不影響 H_v／H_t／H_r</text>
+<path d="M 1375.0 782.8 L 1415.0 782.8 L 1415.0 1670.0 L 1445.0 1670.0" stroke="#888888" stroke-width="1.5" fill="none" stroke-dasharray="6,5" marker-end="url(#arrow)"/>
+<rect x="1445.0" y="1771.8" width="380.0" height="143.5" rx="10" ry="10" fill="#f5f5f5" stroke="#888888" stroke-width="2.2" opacity="1.0"/>
+<text x="1635.0" y="1799.8" font-size="12.8" font-weight="bold" text-anchor="middle" fill="#1a1a1a" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">前置作業：event_ground_truth_llm.py</text>
+<text x="1635.0" y="1821.8" font-size="11" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">讀 A 的原始文字（新聞／財報／法說會）</text>
+<text x="1635.0" y="1839.3" font-size="11" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">150 天分層抽樣 ＋ LLM 輔助標記（#32）</text>
+<text x="1635.0" y="1856.8" font-size="11" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">Claude／DeepSeek／OpenAI 皆可（llm_client.py）</text>
+<text x="1635.0" y="1874.3" font-size="11" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">供 Module C 的「事件類型驗證」當 ground truth</text>
+<text x="1635.0" y="1891.8" font-size="11" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">輸出：data/labels/event_ground_truth/{ticker}.json</text>
+<path d="M 1635.0 1741.8 L 1635.0 1771.8" stroke="#888888" stroke-width="1.5" fill="none" stroke-dasharray="6,5" marker-end="url(#arrow)"/>
+<rect x="1445.0" y="1945.3" width="380.0" height="161.0" rx="10" ry="10" fill="#f5f5f5" stroke="#888888" stroke-width="2.2" opacity="1.0"/>
+<text x="1635.0" y="1973.3" font-size="12.8" font-weight="bold" text-anchor="middle" fill="#1a1a1a" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">前置作業：generate_y_belief.py</text>
+<text x="1635.0" y="1995.3" font-size="11" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">讀 A 的每日 JSON（news/filing_chunks/</text>
+<text x="1635.0" y="2012.8" font-size="11" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">transcript_chunks/label），不經過 B／C</text>
+<text x="1635.0" y="2030.3" font-size="11" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">TREND 直接沿用 A 的 label，不重猜</text>
+<text x="1635.0" y="2047.8" font-size="11" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">LLM（預設 DeepSeek）只生成 risk_level ＋ narrative</text>
+<text x="1635.0" y="2065.3" font-size="11" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">供 Module C 的 Decoder 當 QLoRA 訓練目標</text>
+<text x="1635.0" y="2082.8" font-size="11" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">輸出：data/labels/y_belief/{ticker}.json，支援中斷續跑</text>
+<path d="M 1635.0 1915.3 L 1635.0 1945.3" stroke="#888888" stroke-width="1.5" fill="none" stroke-dasharray="6,5" marker-end="url(#arrow)"/>
+<path d="M 1045.0 1704.3 L 1045.0 2161.3" stroke="#1a1a1a" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+<text x="60.0" y="2169.3" font-size="20" font-weight="bold" text-anchor="start" fill="#3a4a63" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">Module C：融合、驗證、決策與可解釋性</text>
+<rect x="715.0" y="2207.3" width="660.0" height="131.0" rx="10" ry="10" fill="#ffffff" stroke="#333333" stroke-width="2.2" opacity="1.0"/>
+<text x="1045.0" y="2235.3" font-size="14.5" font-weight="bold" text-anchor="middle" fill="#1a1a1a" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">融合：fusion/model.py</text>
+<text x="1045.0" y="2257.3" font-size="12.3" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">Cross-Modal Transformer</text>
+<text x="1045.0" y="2274.8" font-size="12.3" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">融合 [H_v ; H_t ; H_r]</text>
+<text x="1045.0" y="2292.3" font-size="12.3" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">（H_t／H_r 先各自 mean-pool 成單一 token 再進融合層）</text>
+<text x="1045.0" y="2313.8" font-size="12.0" font-weight="normal" text-anchor="middle" fill="#555555" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif" font-style="italic">訓練：fusion/train.py，分類 cross-entropy（對照 A 的 label），--weighted 為預設</text>
+<path d="M 1045.0 1704.3 L 1045.0 2006.1 L 1045.0 2006.1 L 1045.0 2207.3" stroke="#1a1a1a" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+<rect x="1445.0" y="2202.3" width="420.0" height="143.5" rx="10" ry="10" fill="#fff7e6" stroke="#8a5a00" stroke-width="2.2" opacity="1.0"/>
+<text x="1655.0" y="2230.3" font-size="13" font-weight="bold" text-anchor="middle" fill="#1a1a1a" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">融合層 QLoRA ＋ 複合 loss</text>
+<text x="1655.0" y="2252.3" font-size="11" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">導入 L_align（跨模態對比對齊）</text>
+<text x="1655.0" y="2269.8" font-size="11" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">＋ L_ground（RAG 證據 grounding）</text>
+<text x="1655.0" y="2287.3" font-size="11" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">L_align 需與 B 的 encoder 微調一併進行</text>
+<text x="1655.0" y="2304.8" font-size="11" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">（解凍 encoder 才能讓對齊 loss 有意義）</text>
+<text x="1655.0" y="2322.3" font-size="11" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">L_ground 需要 oracle relevance 標籤</text>
+<path d="M 1375.0 2272.8 L 1445.0 2274.1" stroke="#1a1a1a" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+<rect x="815.0" y="2388.3" width="460.0" height="91.0" rx="10" ry="10" fill="#ffffff" stroke="#333333" stroke-width="2.2" opacity="1.0"/>
+<text x="1045.0" y="2416.3" font-size="18" font-weight="bold" text-anchor="middle" fill="#1a1a1a" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">Z_fused</text>
+<text x="1045.0" y="2438.3" font-size="12.3" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">每日一個 768 維融合向量</text>
+<text x="1045.0" y="2455.8" font-size="12.3" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">consolidate.py 彙整成 {TICKER}_index.npz</text>
+<path d="M 1045.0 2338.3 L 1045.0 2388.3" stroke="#1a1a1a" stroke-width="2.2" fill="none" marker-end="url(#arrow)"/>
+<text x="280.0" y="2539.3" font-size="14" font-weight="bold" text-anchor="middle" fill="#3a4a63" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">【第一階段】表徵效能驗證 1</text>
+<rect x="40.0" y="2573.3" width="480.0" height="124.0" rx="10" ry="10" fill="#ffffff" stroke="#333333" stroke-width="2.2" opacity="1.0"/>
+<text x="280.0" y="2601.3" font-size="14.5" font-weight="bold" text-anchor="middle" fill="#1a1a1a" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">市場情緒分類</text>
+<text x="280.0" y="2623.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">classifier.py</text>
+<text x="280.0" y="2640.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">用 Z_fused 預測</text>
+<text x="280.0" y="2657.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">BULLISH／NEUTRAL／BEARISH</text>
+<text x="280.0" y="2674.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">對照 A 的 label（70/15/15 時間序切分）</text>
+<text x="790.0" y="2539.3" font-size="14" font-weight="bold" text-anchor="middle" fill="#3a4a63" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">【第一階段】表徵效能驗證 2</text>
+<rect x="550.0" y="2573.3" width="480.0" height="195.0" rx="10" ry="10" fill="#ffffff" stroke="#333333" stroke-width="2.2" opacity="1.0"/>
+<text x="790.0" y="2601.3" font-size="14.5" font-weight="bold" text-anchor="middle" fill="#1a1a1a" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">事件類型驗證</text>
+<text x="790.0" y="2623.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">event_validation_head.py</text>
+<text x="790.0" y="2640.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">用 Z_fused 預測 7 類事件（多標籤）</text>
+<text x="790.0" y="2657.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">對照人工標記 event_ground_truth（見 Module B</text>
+<text x="790.0" y="2674.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">event_ground_truth_llm.py 附註）</text>
+<text x="790.0" y="2691.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">micro f1 = 0.229（5 類可評估）</text>
+<text x="790.0" y="2712.3" font-size="11.7" font-weight="normal" text-anchor="middle" fill="#555555" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif" font-style="italic">（診斷用，不驅動下游決策）</text>
+<text x="790.0" y="2728.3" font-size="11.7" font-weight="normal" text-anchor="middle" fill="#555555" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif" font-style="italic">延伸方向：事件定義擴充，涵蓋K線圖技術型態</text>
+<text x="790.0" y="2744.3" font-size="11.7" font-weight="normal" text-anchor="middle" fill="#555555" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif" font-style="italic">（頭肩頂／W底）</text>
+<text x="1300.0" y="2539.3" font-size="14" font-weight="bold" text-anchor="middle" fill="#3a4a63" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">【第一階段】Decoder（信念建構模型）</text>
+<rect x="1060.0" y="2573.3" width="480.0" height="180.0" rx="10" ry="10" fill="#ffffff" stroke="#333333" stroke-width="2.2" opacity="1.0"/>
+<text x="1300.0" y="2601.3" font-size="14.5" font-weight="bold" text-anchor="middle" fill="#1a1a1a" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">QLoRA 微調</text>
+<text x="1300.0" y="2623.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">decoder/train.py ＋ model.py</text>
+<text x="1300.0" y="2640.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">backbone：LLaMA-2-7b-hf</text>
+<text x="1300.0" y="2657.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">4-bit 量化 ＋ LoRA 掛全部</text>
+<text x="1300.0" y="2674.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">attention＋MLP 線性層</text>
+<text x="1300.0" y="2691.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">Z_fused 當 soft-prompt 前綴（input）</text>
+<text x="1300.0" y="2708.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">支援 --resume 中斷續練</text>
+<text x="1300.0" y="2729.3" font-size="11.7" font-weight="normal" text-anchor="middle" fill="#555555" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif" font-style="italic">訓練目標 y_belief 來源：Module B generate_y_belief.py 附註</text>
+<rect x="1060.0" y="2783.3" width="480.0" height="107.0" rx="10" ry="10" fill="#ffffff" stroke="#333333" stroke-width="2.2" opacity="1.0"/>
+<text x="1300.0" y="2811.3" font-size="14.5" font-weight="bold" text-anchor="middle" fill="#1a1a1a" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">生成結構化敘述</text>
+<text x="1300.0" y="2833.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">&lt;TREND&gt;（BULLISH/BEARISH/NEUTRAL）</text>
+<text x="1300.0" y="2850.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">&lt;RISK_LEVEL&gt;（HIGH/LOW）</text>
+<text x="1300.0" y="2867.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">＋ 市場敘述文字</text>
+<path d="M 1300.0 2753.3 L 1300.0 2783.3" stroke="#1a1a1a" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+<rect x="1060.0" y="2920.3" width="480.0" height="107.0" rx="10" ry="10" fill="#ffffff" stroke="#333333" stroke-width="2.2" opacity="1.0"/>
+<text x="1300.0" y="2948.3" font-size="14.5" font-weight="bold" text-anchor="middle" fill="#1a1a1a" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">訓練目標</text>
+<text x="1300.0" y="2970.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">只用 L_belief（生成式 cross-entropy）</text>
+<text x="1300.0" y="2987.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">L_align（模態對齊）－未實作</text>
+<text x="1300.0" y="3004.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">L_ground（RAG 證據 grounding）－未實作</text>
+<path d="M 1300.0 2890.3 L 1300.0 2920.3" stroke="#1a1a1a" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+<rect x="1060.0" y="3057.3" width="480.0" height="163.0" rx="10" ry="10" fill="#ffffff" stroke="#333333" stroke-width="2.2" opacity="1.0"/>
+<text x="1300.0" y="3085.3" font-size="14.5" font-weight="bold" text-anchor="middle" fill="#1a1a1a" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">評估結果</text>
+<text x="1300.0" y="3107.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">decoder/evaluate.py</text>
+<text x="1300.0" y="3124.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">格式正確率 100%</text>
+<text x="1300.0" y="3141.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">loss delta 1.966（微調有實質效果）</text>
+<text x="1300.0" y="3158.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">RISK_LEVEL 準確率 90%</text>
+<text x="1300.0" y="3175.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">TREND 準確率 46.7%</text>
+<text x="1300.0" y="3196.3" font-size="11.7" font-weight="normal" text-anchor="middle" fill="#555555" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif" font-style="italic">另可加 --llm_judge：LLM-as-judge 敘述品質驗證</text>
+<path d="M 1300.0 3027.3 L 1300.0 3057.3" stroke="#1a1a1a" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+<text x="1810.0" y="2539.3" font-size="14" font-weight="bold" text-anchor="middle" fill="#3a4a63" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">【第二階段】RL 環境 ＋ PPO 訓練</text>
+<rect x="1570.0" y="2573.3" width="480.0" height="146.0" rx="10" ry="10" fill="#ffffff" stroke="#333333" stroke-width="2.2" opacity="1.0"/>
+<text x="1810.0" y="2601.3" font-size="14.5" font-weight="bold" text-anchor="middle" fill="#1a1a1a" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">MDP 環境</text>
+<text x="1810.0" y="2623.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">rl/env.py</text>
+<text x="1810.0" y="2640.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">state = [Z_fused, 前期持倉]</text>
+<text x="1810.0" y="2657.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">reward = 報酬 － λ_vol×波動</text>
+<text x="1810.0" y="2674.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">－ λ_mdd×回撤 － 交易成本</text>
+<text x="1810.0" y="2695.3" font-size="11.7" font-weight="normal" text-anchor="middle" fill="#555555" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif" font-style="italic">action space：單股持有／空手；多資產擴充見下方回測部分</text>
+<rect x="1570.0" y="2749.3" width="480.0" height="124.0" rx="10" ry="10" fill="#ffffff" stroke="#333333" stroke-width="2.2" opacity="1.0"/>
+<text x="1810.0" y="2777.3" font-size="14.5" font-weight="bold" text-anchor="middle" fill="#1a1a1a" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">PPO 訓練</text>
+<text x="1810.0" y="2799.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">rl/train_ppo.py</text>
+<text x="1810.0" y="2816.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">stable_baselines3 PPO（MlpPolicy）</text>
+<text x="1810.0" y="2833.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">--curriculum：依滾動波動度分階段</text>
+<text x="1810.0" y="2850.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">訓練，難度加權步數</text>
+<path d="M 1810.0 2719.3 L 1810.0 2749.3" stroke="#1a1a1a" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+<rect x="1570.0" y="2903.3" width="480.0" height="73.0" rx="10" ry="10" fill="#ffffff" stroke="#333333" stroke-width="2.2" opacity="1.0"/>
+<text x="1810.0" y="2931.3" font-size="14.5" font-weight="bold" text-anchor="middle" fill="#1a1a1a" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">輸出</text>
+<text x="1810.0" y="2953.3" font-size="12" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">ppo_agent.zip</text>
+<path d="M 1810.0 2873.3 L 1810.0 2903.3" stroke="#1a1a1a" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+<path d="M 1045.0 2479.3 L 1045.0 2511.7 L 1045.0 2511.7 L 1045.0 2533.3" stroke="#1a1a1a" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+<path d="M 1045.0 2479.3 L 1045.0 2562.0 L 280.0 2562.0 L 280.0 2573.3" stroke="#1a1a1a" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+<path d="M 1045.0 2479.3 L 1045.0 2562.0 L 790.0 2562.0 L 790.0 2573.3" stroke="#1a1a1a" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+<path d="M 1045.0 2479.3 L 1045.0 2562.0 L 1300.0 2562.0 L 1300.0 2573.3" stroke="#1a1a1a" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+<path d="M 1045.0 2479.3 L 1045.0 2562.0 L 1810.0 2562.0 L 1810.0 2573.3" stroke="#1a1a1a" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+<rect x="1570.0" y="3310.3" width="480.0" height="126.0" rx="10" ry="10" fill="#ffffff" stroke="#333333" stroke-width="2.2" opacity="1.0"/>
+<text x="1810.0" y="3338.3" font-size="13.5" font-weight="bold" text-anchor="middle" fill="#1a1a1a" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">可解釋性：Integrated Gradients</text>
+<text x="1810.0" y="3360.3" font-size="11.6" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">explainability/integrated_gradients.py</text>
+<text x="1810.0" y="3377.8" font-size="11.6" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">captum，零向量 baseline</text>
+<text x="1810.0" y="3395.3" font-size="11.6" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">套在 PPO policy 動作分布 mean 上</text>
+<text x="1810.0" y="3412.8" font-size="11.6" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">768 維中 373 維（48.6%）有實質貢獻</text>
+<text x="1810.0" y="3296.3" font-size="12.5" font-weight="bold" text-anchor="middle" fill="#3a4a63" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">【第二階段】</text>
+<path d="M 1810.0 2976.3 L 1810.0 3310.3" stroke="#1a1a1a" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+<rect x="40.0" y="3310.3" width="1500.0" height="131.0" rx="10" ry="10" fill="#ffffff" stroke="#333333" stroke-width="2.2" opacity="1.0"/>
+<text x="790.0" y="3338.3" font-size="15" font-weight="bold" text-anchor="middle" fill="#1a1a1a" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">回測：backtest/backtest.py</text>
+<text x="790.0" y="3360.3" font-size="12.3" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">(1) buy_and_hold － 全程滿倉基準　　(2) rule_based － 用市場情緒分類訊號決定持股</text>
+<text x="790.0" y="3377.8" font-size="12.3" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">(3) ppo － 用訓練好的 PPO agent 決定持股比例</text>
+<text x="790.0" y="3395.3" font-size="12.3" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">輸出：累積報酬／Sharpe Ratio／最大回撤（MDD）</text>
+<text x="790.0" y="3416.8" font-size="12.0" font-weight="normal" text-anchor="middle" fill="#555555" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif" font-style="italic">目前限制：僅支援單一股票持有／空手配置，多資產投資組合配置尚未實作</text>
+<text x="790.0" y="3296.3" font-size="12.5" font-weight="bold" text-anchor="middle" fill="#3a4a63" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">【第二階段】</text>
+<path d="M 280.0 2697.3 L 280.0 3065.1 L 540.0 3065.1 L 540.0 3310.3" stroke="#1a1a1a" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+<path d="M 1810.0 2976.3 L 1810.0 3176.7 L 1040.0 3176.7 L 1040.0 3310.3" stroke="#1a1a1a" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+<rect x="40.0" y="3496.3" width="735.0" height="143.5" rx="10" ry="10" fill="#fff7e6" stroke="#8a5a00" stroke-width="2.2" opacity="1.0"/>
+<text x="407.5" y="3524.3" font-size="13.5" font-weight="bold" text-anchor="middle" fill="#1a1a1a" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">多股票擴充實驗</text>
+<text x="407.5" y="3546.3" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">融合層共用權重聯合訓練：AAPL+NVDA → fusion_AAPL_NVDA.pt</text>
+<text x="407.5" y="3563.8" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">MSFT 完全不參與訓練，用 --apply_checkpoint 套權重測泛化能力</text>
+<text x="407.5" y="3581.3" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">分類頭（clf_head）各股票獨立，classifier.py 分開驗證比較</text>
+<text x="407.5" y="3598.8" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">（決議 #73～75；classifier.py 先測，比 decoder 重訓便宜）</text>
+<text x="407.5" y="3616.3" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">進度：AAPL+NVDA 聯合訓練已完成；MSFT 資料尚未備齊（法說會卡在 API 額度）</text>
+<rect x="805.0" y="3496.3" width="735.0" height="91.0" rx="10" ry="10" fill="#fff7e6" stroke="#8a5a00" stroke-width="2.2" opacity="1.0"/>
+<text x="1172.5" y="3524.3" font-size="13.5" font-weight="bold" text-anchor="middle" fill="#1a1a1a" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">多資產投資組合回測</text>
+<text x="1172.5" y="3546.3" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">backtest.py 擴充支援多股票配置</text>
+<text x="1172.5" y="3563.8" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">需先擴充第二支股票的完整 A／B／C 資料（#29）</text>
+<text x="407.5" y="3482.3" font-size="11.5" font-weight="bold" text-anchor="middle" fill="#3a4a63" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">【第一階段】</text>
+<text x="1172.5" y="3482.3" font-size="11.5" font-weight="bold" text-anchor="middle" fill="#3a4a63" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">【第二階段】</text>
+<path d="M 775.0 3568.1 L 805.0 3541.8" stroke="#1a1a1a" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+<path d="M 790.0 3441.3 L 790.0 3481.3 L 1172.5 3481.3 L 1172.5 3496.3" stroke="#1a1a1a" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+<rect x="665.0" y="3709.8" width="760.0" height="108.5" rx="10" ry="10" fill="#eafbea" stroke="#1a6b1a" stroke-width="2.2" opacity="1.0"/>
+<text x="1045.0" y="3737.8" font-size="17" font-weight="bold" text-anchor="middle" fill="#1a1a1a" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">最終輸出</text>
+<text x="1045.0" y="3759.8" font-size="12.3" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">持股建議 ＋ 績效報告（Sharpe／MDD／累積報酬）</text>
+<text x="1045.0" y="3777.3" font-size="12.3" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">＋ 市場敘述（Decoder 生成文字）</text>
+<text x="1045.0" y="3794.8" font-size="12.3" font-weight="normal" text-anchor="middle" fill="#333333" font-family="Noto Sans CJK TC, Noto Sans CJK SC, sans-serif">＋ 決策歸因分析（Integrated Gradients）</text>
+<path d="M 790.0 3441.3 L 790.0 3602.4 L 918.3 3602.4 L 918.3 3709.8" stroke="#1a1a1a" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+<path d="M 1810.0 3436.3 L 1810.0 3600.4 L 1171.7 3600.4 L 1171.7 3709.8" stroke="#1a1a1a" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+<path d="M 1540.0 3138.8 L 2105.0 3138.8 L 2105.0 3664.8 L 1235.0 3664.8 L 1235.0 3709.8" stroke="#1a1a1a" stroke-width="1.8" fill="none" marker-end="url(#arrow)"/>
+</g>
+</svg>
