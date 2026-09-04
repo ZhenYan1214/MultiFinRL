@@ -57,8 +57,15 @@ def run_fake(cfg, ticker: str, n: int) -> None:
     print(f"[generate_vectors] FAKE {ticker}: {n} days -> {paths.VECTORS / ticker}")
 
 
-def run_real(cfg, ticker: str, limit: int | None) -> None:
-    """第二階段：讀 A 的每日 JSON，跑真模型。"""
+def run_real(cfg, ticker: str, limit: int | None, balance_sources: bool = False) -> None:
+    """第二階段：讀 A 的每日 JSON，跑真模型。
+
+    balance_sources=True 時，H_r 的 top-K 檢索改用按來源分配名額的模式（財報、逐字稿
+    各至少保留 1 個名額，其餘名額才自由競爭），取代純相似度排序（`docs/decisions.md #70`：
+    法說會逐字稿只佔向量庫 25% 的 chunk，卻拿下 75% 的 top-3 結果，懷疑是查詢向量有一半
+    來自新聞、跟逐字稿文體較接近所致，純相似度排序會讓同一種文體壟斷 top-K）。
+    預設關閉，行為與加入這個選項之前完全一樣，方便直接跟不開的版本做 A/B 對照。
+    """
     from module_b_encoder.encoders.vision_encoder import VisionEncoder
     from module_b_encoder.encoders.text_encoder import TextEncoder
     from module_b_encoder.rag.vector_db import ChunkVectorDB
@@ -69,6 +76,7 @@ def run_real(cfg, ticker: str, limit: int | None) -> None:
     k = cfg["rag"]["top_k"]
     alpha = cfg["rag"].get("query_alpha", 0.5)
     db = ChunkVectorDB()
+    quota = {"filing": 1, "transcript": 1} if balance_sources else None
 
     dataset_dir = paths.DATASET / ticker
     files = sorted(dataset_dir.glob("*.json"))
@@ -82,12 +90,13 @@ def run_real(cfg, ticker: str, limit: int | None) -> None:
         schemas.validate_daily_record(record)
         date = record["date"]
 
-        # 當日文件 chunk 進向量庫（隨時間累積，天然避免 look-ahead）
-        db.add_chunks(record["filing_chunks"] + record["transcript_chunks"], text)
+        # 當日文件 chunk 進向量庫（隨時間累積，天然避免 look-ahead），分開加入才有 source 標籤
+        db.add_chunks(record["filing_chunks"], text, source="filing")
+        db.add_chunks(record["transcript_chunks"], text, source="transcript")
 
         h_v = vision.encode(paths.ROOT / record["chart"]["path"])
         h_t = text.encode_news(record["news"])
-        h_r, chunk_ids = retrieve(h_v, h_t, db, text, k, alpha)
+        h_r, chunk_ids = retrieve(h_v, h_t, db, text, k, alpha, quota=quota)
 
         save_vectors(ticker, date, h_v, h_t, h_r, chunk_ids,
                      vision.model_id, text.model_id, k,
@@ -105,12 +114,15 @@ def main():
     ap.add_argument("--fake", action="store_true", help="第一階段：隨機向量測通流程")
     ap.add_argument("--n", type=int, default=10, help="--fake 時產幾天")
     ap.add_argument("--limit", type=int, default=None, help="真實模式只跑前 N 天")
+    ap.add_argument("--balance_sources", action="store_true",
+                    help="RAG top-K 按來源（財報/逐字稿）各保留至少 1 個名額，取代純相似度排序，"
+                         "見 docs/decisions.md #70；預設關閉")
     args = ap.parse_args()
 
     if args.fake:
         run_fake(cfg, args.ticker, args.n)
     else:
-        run_real(cfg, args.ticker, args.limit)
+        run_real(cfg, args.ticker, args.limit, balance_sources=args.balance_sources)
 
 
 if __name__ == "__main__":

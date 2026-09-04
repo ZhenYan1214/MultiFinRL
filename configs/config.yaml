@@ -1,6 +1,6 @@
 # 全域參數，三個模組共同讀取；改動需通知全員
 market: US
-tickers: [AAPL]            # 先固定一檔，跑通後再擴充
+tickers: [AAPL, NVDA, MSFT] # 多股票擴充實驗（決議見 docs/decisions.md），AAPL 仍是預設單股 ticker
 date_range:
   start: "2021-01-01"
   end: "2026-08-09"        # 2026-08 延伸，對齊新聞回補範圍（decisions.md #29）

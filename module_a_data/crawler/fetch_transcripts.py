@@ -233,6 +233,20 @@ def fetch_all_transcripts(
             continue
 
         event_date = quarter_calendar.get(q) or default_quarter_event_date(q)
+
+        # 防呆：這一季的財報公布日還沒到（不論是 EARNINGS 日曆查到的真實日期，還是沒查到
+        # 時用的估算日期），代表這場法說會實際上還沒開。Alpha Vantage 對這種「還沒發生」的
+        # 季度，觀察到會回傳看似正常、格式正確、但內容是合成／推測出來的逐字稿（不是空
+        # 資料、也不是明確的錯誤訊息），必須主動擋掉，否則會把假資料當成真實資料存進
+        # pipeline（實際發生過一次：AAPL 2026Q3，估算日期 2026-10-25，當時系統日期
+        # 2026-09-02，尚未開完，但 API 仍回傳一份內容詳實、格式正確的「逐字稿」）。
+        if event_date > dt.date.today().isoformat():
+            print(f"[fetch_transcripts] {ticker} {q} 的公布日 {event_date} 尚未到（今天 "
+                  f"{dt.date.today().isoformat()}），這場法說會實際上還沒開，Alpha Vantage 回傳的內容"
+                  f"疑似合成／推測資料，已跳過不儲存")
+            time.sleep(delay_sec)
+            continue
+
         text = transcript_to_text(data)
         if text:
             save_transcript(ticker, event_date, q, text)
