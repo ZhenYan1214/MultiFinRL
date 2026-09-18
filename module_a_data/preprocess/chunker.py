@@ -11,7 +11,9 @@ try:
     _tokenizer = AutoTokenizer.from_pretrained("ProsusAI/finbert")
 
     def count_tokens(text: str) -> int:
-        return len(_tokenizer.encode(text, add_special_tokens=True))
+        # 這裡只計數，不會把超長序列送進模型；關閉 tokenizer 對 >512 tokens 的
+        # 誤導性提示，chunk_text() 隨後會負責切到 max_tokens 以內。
+        return len(_tokenizer.encode(text, add_special_tokens=True, verbose=False))
 except Exception:  # transformers 未安裝或下載失敗
     _tokenizer = None
 

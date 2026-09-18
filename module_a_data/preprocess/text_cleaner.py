@@ -10,8 +10,9 @@
       這兩條規則對新聞頁面不會誤傷——新聞 HTML 一般不會有這些財報特有的結構。
 """
 import re
+import warnings
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
 
 # 常見雜訊行（廣告、訂閱提示等，新聞頁面適用），可持續補充
 _NOISE_PATTERNS = [
@@ -27,7 +28,11 @@ _HIDDEN_STYLE_RE = re.compile(r"(?i)display\s*:\s*none|visibility\s*:\s*hidden")
 
 def clean_html(raw_html: str) -> str:
     """去除 HTML 標籤、script/style 等區塊、iXBRL 隱藏標記，回傳純文字。"""
-    soup = BeautifulSoup(raw_html, "lxml")
+    # SEC iXBRL/XHTML 與部分新聞內容可能帶 XML 宣告，但這裡刻意以容錯較好的 HTML
+    # 模式統一清理；只在這次解析期間抑制 BeautifulSoup 的格式提示。
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", XMLParsedAsHTMLWarning)
+        soup = BeautifulSoup(raw_html, "lxml")
     for tag in soup(["script", "style", "nav", "footer", "aside", "ix:header"]):
         tag.decompose()
     for tag in soup.find_all(style=_HIDDEN_STYLE_RE):

@@ -16,6 +16,12 @@ import numpy as np
 from shared import paths, schemas
 from shared.utils import load_config, read_json, write_json
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # 沒裝 python-dotenv 時仍可使用系統環境變數
+
 
 def save_vectors(ticker: str, date: str, h_v, h_t, h_r, chunk_ids: list[str],
                  vision_id: str, text_id: str, top_k: int, source_json: str) -> None:
@@ -68,11 +74,15 @@ def run_real(cfg, ticker: str, limit: int | None, balance_sources: bool = False)
     """
     from module_b_encoder.encoders.vision_encoder import VisionEncoder
     from module_b_encoder.encoders.text_encoder import TextEncoder
+
+    # Apple Silicon 上先載入 FAISS、再初始化 PyTorch/ViT，會在部分版本組合中觸發
+    # 原生層 SIGSEGV。先完成兩個 PyTorch 模型的初始化，再匯入 FAISS。
+    vision = VisionEncoder(cfg["encoders"]["vision"])
+    text = TextEncoder(cfg["encoders"]["text"])
+
     from module_b_encoder.rag.vector_db import ChunkVectorDB
     from module_b_encoder.rag.retriever import retrieve
 
-    vision = VisionEncoder(cfg["encoders"]["vision"])
-    text = TextEncoder(cfg["encoders"]["text"])
     k = cfg["rag"]["top_k"]
     alpha = cfg["rag"].get("query_alpha", 0.5)
     db = ChunkVectorDB()
