@@ -11,6 +11,7 @@ pillow              # PIL.Image，chart_generator.py 存圖、vision_encoder.py 
 # --- Module A: data engineering ---
 yfinance
 mplfinance
+pandas-ta-classic  # 技術指標計算（SMA/EMA/RSI/MACD/Bollinger 等），chart_generator.py
 requests
 beautifulsoup4
 lxml

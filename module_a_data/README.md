@@ -26,7 +26,9 @@ build_dataset last, to assemble all three lines
 
 ```bash
 python -m module_a_data.crawler.fetch_ohlcv                          # download OHLCV
-python -m module_a_data.preprocess.chart_generator --ticker AAPL     # generate charts (--limit 100 for a quick test)
+python -m module_a_data.preprocess.chart_generator --ticker AAPL     # generate candlestick charts (--limit 100 for a quick test)
+python -m module_a_data.preprocess.chart_generator --ticker AAPL --technical --indicators rsi macd  # candlestick + multi-indicator chart
+python -m module_a_data.preprocess.chart_generator --ticker AAPL --volume  # candlestick + pure-volume chart
 python -m module_a_data.crawler.fetch_news --ticker AAPL             # recent news
 python -m module_a_data.crawler.fetch_news_alpaca --ticker AAPL --start 2021-01-01 --end 2026-08-08   # historical news backfill
 python -m module_a_data.crawler.fetch_filings --ticker AAPL          # SEC filings
