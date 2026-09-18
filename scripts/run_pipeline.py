@@ -18,9 +18,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-from shared.utils import load_config
-
 ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from shared.utils import load_config
 
 
 def run(module: str, *args: str) -> None:
