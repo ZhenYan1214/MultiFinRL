@@ -10,6 +10,7 @@
 """
 import argparse
 import datetime as dt
+import time
 
 import numpy as np
 
@@ -95,7 +96,7 @@ def run_real(cfg, ticker: str, limit: int | None, balance_sources: bool = False)
     if not files:
         raise SystemExit(f"找不到 A 的資料: {dataset_dir}，先跑 module_a_data.build_dataset")
 
-    for f in files:
+    for i, f in enumerate(files, 1):
         record = read_json(f)
         schemas.validate_daily_record(record)
         date = record["date"]
@@ -111,8 +112,9 @@ def run_real(cfg, ticker: str, limit: int | None, balance_sources: bool = False)
         save_vectors(ticker, date, h_v, h_t, h_r, chunk_ids,
                      vision.model_id, text.model_id, k,
                      str(f.relative_to(paths.ROOT)).replace("\\", "/"))
-        print(f"[generate_vectors] {ticker} {date} done")
+        print(f"[generate_vectors] {ticker} {date} done（{i}/{len(files)}）", end="\r", flush=True)
 
+    print()
     db.save(ticker)
     print(f"[generate_vectors] {ticker}: {len(files)} days -> {paths.VECTORS / ticker}")
 
@@ -129,10 +131,15 @@ def main():
                          "見 docs/decisions.md #70；預設關閉")
     args = ap.parse_args()
 
-    if args.fake:
-        run_fake(cfg, args.ticker, args.n)
-    else:
-        run_real(cfg, args.ticker, args.limit, balance_sources=args.balance_sources)
+    started_at = time.perf_counter()
+    try:
+        if args.fake:
+            run_fake(cfg, args.ticker, args.n)
+        else:
+            run_real(cfg, args.ticker, args.limit, balance_sources=args.balance_sources)
+    finally:
+        elapsed = time.perf_counter() - started_at
+        print(f"[generate_vectors] 總執行時間：{elapsed:.1f} 秒（{elapsed / 60:.1f} 分鐘）")
 
 
 if __name__ == "__main__":
