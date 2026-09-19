@@ -8,6 +8,7 @@
 |---|---|---|---|---|
 | 股價 OHLCV | yfinance | `fetch_ohlcv.py` | AAPL 2021-01-04 ~ 2026-08-07（1405 筆） | 2026-08-09 延伸完成，對齊新聞涵蓋範圍 |
 | K 線圖 | 用 OHLCV 自畫（mplfinance，20 日窗口） | `chart_generator.py` | 同上，1386 張（頭尾幾天因窗口不足缺圖） | 2026-08-09 延伸完成 |
+| 成交量圖 | 用 OHLCV Volume 自畫（20 日窗口） | `chart_generator.py` | 同上，1386 張 | 2026-09-19 完成；作為雙圖 ViT 的第二張輸入 |
 | 新聞（近期） | yfinance | `fetch_news.py` | 僅最新 8~10 則，歷史價值低 | 可用，範圍小 |
 | 新聞（歷史回補） | Alpaca News API（來源 Benzinga，官方 API 非爬蟲） | `fetch_news_alpaca.py` | AAPL 2021-01-01 ~ 2026-08-08，15,989 則 / 1,459 天 | 2026-08 新增，已抽樣驗證為真實全文 |
 | 財報 10-K/10-Q | SEC EDGAR（官方 API，原生 requests） | `fetch_filings.py` | 22 份，2021 ~ 2026 | 可用；唯一版本，`fetch_filings_edgartools.py` 候選方案已刪除（decisions.md #41，取代 #31） |
@@ -28,6 +29,71 @@
 | 2026-08-08（診斷實驗，見 spec_c_accuracy_diagnostics.md） | 新聞有無 × 類別加權有無，四種組合對照（詳見下方獨立小節） | 861 / 184 / 185 | 0.465 / 0.465 / 0.314 / 0.286 | 0.000 / 0.000 / 0.196 / 0.165 | 0.626 / 0.626 / 0.406 / 0.377 | 0.116 / 0.116 / 0.308 / 0.281 | 四個數字依序對應：有新聞不加權／沒新聞不加權／有新聞加權／沒新聞加權。結論：不加權時新聞完全沒影響（結果逐位數字相同）；加權後模型不再塌縮成只猜 NEUTRAL，且加權狀態下「有新聞」四個指標全面優於「沒新聞」——新聞資料是有真實貢獻的，只是先前被類別不平衡蓋住看不出來。整體 accuracy 加權後變低是預期中的正常現象（模型不再靠猜多數類別灌水），不是變差，判讀要看 macro f1 與少數類別表現 |
 | 2026-08-09（延伸日期範圍 + RAG query 修正，加權預設開啟） | OHLCV/K線圖延伸到 2026-08-07（資料集實際到 2026-07-31，最後幾天缺 label）；RAG query 從單純平均改成正規化+alpha 加權（alpha=0.5） | 966 / 207 / 208 | 0.3029 | 0.1875 | 0.3497 | 0.3212 | macro f1≈0.286，跟前一輪「有新聞+加權」（macro f1=0.303）相比持平、略降，沒有明顯進步。**重要限制**：這次同時改了兩件事（延伸範圍 + RAG 修正），且測試集因為時間序切分跟著往後移動（這次測試期間 2025-10-02~2026-07-31，跟前一輪 2025-03-31~2025-12-22 不同），無法從這次比較單獨歸因是哪個改動造成差異，也可能只是新測試期間本身難度不同。要乾淨驗證 RAG 修正的效果，需要同一個日期範圍、只切換 RAG 新舊版本的對照實驗，目前尚未做。`classification_report_2026-08_extended_range_rag_fix.json` |
 | 2026-08-10（漲跌標籤改為分位數門檻，見 decisions.md #30） | 只改標籤定義（固定±2% → 分位數1/3門檻），日期範圍、RAG、加權都跟上一輪相同 | 966 / 207 / 208（跟上一輪完全相同的切分與測試期間，可乾淨對照） | 0.3269 | 0.2689 | 0.3313 | 0.3731 | macro f1 從 0.286 提升到 0.324（+0.038），是這一路診斷下來第一次有乾淨、無混雜因素的正向結果——這次 n_train/val/test 筆數與測試期間跟上一輪完全一樣，只有標籤定義變了，可以放心把差異歸因到標籤改動本身。BEARISH f1 進步最多（0.188→0.269），BULLISH 也進步（0.321→0.373），NEUTRAL 略降（0.350→0.331）。測試集類別分布也從原本 BEARISH 明顯偏少（原本 support 39~48）變成三類接近平均（support 65/67/76）。誠實記錄：macro f1=0.324 仍不算「表現良好」，只是目前為止最好的一次。過程中曾因為 sandbox 執行 `build_dataset.py` 中途被 timeout 打斷，導致新舊標籤混雜跑出一次不可信的結果（accuracy=0.3221），已作廢重跑並逐日核對 208 天全部一致才採信這次結果。`classification_report_2026-08_quantile_labels.json` |
+| 2026-09-19（雙圖 ViT：K 線 + 成交量） | 同一個 frozen ViT 以 batch 一次編碼兩張獨立圖片，H_v `[197,768]` → `[2,197,768]`；fusion 加入圖別 slot embedding。兩組皆使用 1,381 天、seed=42、weighted、3 epochs | 966 / 207 / 208 | 0.3413（固定相同 H_t/H_r 的單圖對照 0.3173，+0.0240） | 0.3036（0.2810） | 0.3432（0.3353） | 0.3704（0.3281） | macro f1 0.3390，受控單圖對照 0.3148，+0.0242；三類 f1 全數上升。另有導入前完整 pipeline 基準 0.3060，但因 H_v 也參與 RAG query，主要結論採固定 H_t/H_r 的受控結果。只跑一個 seed，尚未做顯著性檢驗。報告：`data/outputs/experiments/dual_image_vit/AAPL/` |
+
+### 視覺輸入實驗：K 線疊加 Bollinger Bands（2026-09-18）
+
+比較 20 根純 K 線圖與「同一張圖疊加 20 日 Bollinger 上／中／下軌」。兩組固定使用相同的
+1,362 天（2021-03-01~2026-07-31），依時間切成 953 train／204 validation／205 test；凍結
+`google/vit-base-patch16-224`，取 CLS token 訓練相同的 balanced logistic linear probe，以
+validation macro F1 決定是否採用疊圖。純 K 線 validation accuracy=0.3971、macro F1=0.3880；
+K+BBands accuracy=0.3578、macro F1=0.3537，疊圖的 macro F1 下降 0.0343。勝出的純 K 線在
+held-out test accuracy=0.3756、macro F1=0.3692。
+
+結論：不採用 K+BBands 疊圖，正式 pipeline 維持純 K=20。合理推測是三條高對比曲線增加強烈
+視覺邊緣、稀釋蠟燭形態，而 BBands 又是收盤價的確定性衍生資訊，沒有增加新的原始資料。
+此輪只做視覺模態快速篩選，數字不可直接和完整 Z_fused classifier 比較；實驗程式、圖片與
+H_v 快取已依要求刪除，只保留本紀錄。
+
+### 視覺輸入架構：雙圖 ViT（K 線 + 成交量，2026-09-19）
+
+兩張 224×224 圖以一個 batch 通過同一個 frozen `google/vit-base-patch16-224`，保留每張圖各自的
+CLS + 196 patch tokens，輸出 `H_v=[2,197,768]`。module_c 對兩個圖別加入可學習的 slot
+embedding，再展平成 394 個 vision tokens 與 H_t/H_r 融合；`Z_fused` 仍固定 768 維，因此
+classifier、decoder、RL 與 backtest 的 shape 不需更改。第二張圖由 `config.yaml` 的
+`chart.vision_inputs` 控制，目前為 volume，日後可換成 `technical/<indicator_set>`。
+
+比較使用完全相同的 1,381 天、966/207/208 時序切分、seed=42、weighted loss、batch=4、
+learning rate=1e-4、3 epochs。導入前完整 pipeline 基準 test accuracy=0.3077、macro F1=0.3060；
+雙圖為 accuracy=0.3413、macro F1=0.3390。為排除重算 RAG 的混雜因素，另固定雙圖版本的
+H_t/H_r，只讓 fusion 看到第一張 K 線重新訓練；這個受控單圖對照為 accuracy=0.3173、macro
+F1=0.3148，雙圖仍分別增加 0.0240 與 0.0242。受控對照的 BEARISH/NEUTRAL/BULLISH F1
+由 0.2810/0.3353/0.3281 上升到 0.3036/0.3432/0.3704，三類同方向改善。採用雙圖架構。
+
+限制：RAG query 原本就由 H_v 與 H_t 組成，因此換成雙圖 H_v 後 H_r 也會跟著重算；這次量到
+的是「雙圖架構導入完整 pipeline」的端到端效果，不是固定 H_r 後只量成交量圖的純視覺
+ablation。固定 H_t/H_r 的受控對照已證明第二張圖直接進 fusion 時仍有正向結果，但其 H_r
+本身已由雙圖 query 產生；若論文需要把成交量從 ViT 到 RAG 的每條路徑完全拆開，仍需更細的
+factorial ablation。以上目前只跑 seed=42 一次，尚未做多 seed 平均或顯著性檢驗。
+
+### 第二張視覺圖比較：Volume / RSI / SMA / MACD（2026-09-19）
+
+固定第一張 20 日 K 線、既有 H_t/H_r 與雙圖 fusion 架構，只替換第二張圖。四組取共同的
+1,348 天，嚴格依時間切成 943 train／202 validation／203 test；fusion 僅使用 train label
+訓練，validation macro F1 選候選，held-out test 在選定 SMA 後才開啟。設定固定 seed=42、
+weighted loss、batch=4、learning rate=1e-4、3 epochs。
+
+| 第二張圖 | Validation accuracy | Validation macro F1 |
+|---|---:|---:|
+| Volume | 0.2822 | 0.2819 |
+| RSI(14) | 0.3069 | 0.3067 |
+| SMA(5/10/20) | **0.3960** | **0.3802** |
+| MACD(12/26/9) | 0.3020 | 0.2996 |
+
+SMA 由 validation 選出後，在 203 天 held-out test 得到 accuracy=0.3399、macro F1=0.3415；
+預先定義的 Volume baseline 在同一 test 為 accuracy=0.3251、macro F1=0.3253，SMA 分別提升
+0.0148 與 0.0162（約多答對 3 天）。類別 F1：BEARISH 0.3433→0.4320、NEUTRAL
+0.3066→0.2677、BULLISH 0.3259→0.3247；改善幾乎全由 BEARISH 帶來，並非三類全面進步。
+
+結論：SMA 是這輪最值得繼續驗證的候選，但 test 增幅小、只有單一 seed，暫不取代正式 Volume
+設定。下一步若要定案，應只針對 Volume vs SMA 跑 3～5 seeds，報告 mean±std；若仍穩定勝出，
+再把 `chart.vision_inputs` 改成 `[candlestick, technical/sma]` 並重建正式 H_v/H_r。完整報告在
+`data/outputs/experiments/auxiliary_vision/AAPL/report.json`；技術圖與 ViT 快取暫時保留以便續跑。
+
+另外，本輪發現正式 `fusion.train` 目前會先用全日期 label 訓練 fusion，classifier 才做
+70/15/15 切分，會讓 test label 間接洩漏進 Z_fused。上述新實驗已避開此問題；過往正式
+classifier 數字仍可作同流程工程比較，但不應再稱為嚴格 held-out 成效。正式 pipeline 的
+時間切分需另開修正，不在本輪指標比較中順手改動。
 
 **怎麼判斷有沒有進步**：不是只看 accuracy 這一個數字，因為之前的模型可能只是學會「都猜 NEUTRAL」就拿到 0.459。更要看 BEARISH/BULLISH 的 f1 有沒有從 0 附近的塌縮狀態動起來，那才代表模型真的開始從新聞（或其他輸入）學到區分漲跌的訊號，不是準確率數字好看但其實沒學到東西。
 

@@ -1,4 +1,4 @@
-"""彙整 OHLCV / K 線圖 / 新聞 / 文件 Chunk / 標籤，輸出每日 JSON。
+"""彙整 OHLCV / 雙視覺輸入 / 新聞 / 文件 Chunk / 標籤，輸出每日 JSON。
 
 輸出：data/processed/dataset/{TICKER}/{YYYY-MM-DD}.json（一天一筆）
 寫出前必須通過 shared.schemas.validate_daily_record()。
@@ -92,6 +92,18 @@ def collect_transcript_chunks(ticker: str, date: str, max_tokens: int) -> list[d
                        max_tokens, date_key="event_date")
 
 
+def _chart_input_path(ticker: str, date: str, input_type: str):
+    """把 config 的視覺輸入名稱解析成圖檔路徑；technical/<set> 可供未來擴充。"""
+    if input_type == "candlestick":
+        return paths.RAW_CHARTS / ticker / f"{date}.png"
+    if input_type == "volume":
+        return paths.RAW_CHARTS / ticker / "volume" / f"{date}.png"
+    if input_type.startswith("technical/"):
+        indicator_set = input_type.removeprefix("technical/")
+        return paths.RAW_CHARTS / ticker / "technical" / indicator_set / f"{date}.png"
+    raise ValueError(f"不支援的 chart.vision_inputs 類型: {input_type}")
+
+
 def build_daily_record(ticker: str, date: str, df, cfg,
                        bullish_threshold: float, bearish_threshold: float) -> dict | None:
     """組一筆每日 JSON；K 線圖不存在或標籤產不出來（資料頭尾）回傳 None。
@@ -99,8 +111,11 @@ def build_daily_record(ticker: str, date: str, df, cfg,
     bullish_threshold/bearish_threshold：整段 df 只算一次（見 main()），
     每一天共用同一組門檻，不是每天重算。
     """
-    chart_path = paths.RAW_CHARTS / ticker / f"{date}.png"
-    if not chart_path.exists():
+    input_types = cfg["chart"].get("vision_inputs", ["candlestick", "volume"])
+    if len(input_types) != 2:
+        raise ValueError(f"雙圖 ViT 目前要求 chart.vision_inputs 恰好 2 項，實際為 {input_types}")
+    chart_paths = [_chart_input_path(ticker, date, input_type) for input_type in input_types]
+    if any(not path.exists() for path in chart_paths):
         return None
     pl = build_price_and_label(
         df, date,
@@ -115,7 +130,15 @@ def build_daily_record(ticker: str, date: str, df, cfg,
         "ticker": ticker,
         "date": date,
         "chart": {
-            "path": str(chart_path.relative_to(paths.ROOT)).replace("\\", "/"),
+            # path 保留為第一張圖的向下相容欄位；新流程一律使用 inputs。
+            "path": str(chart_paths[0].relative_to(paths.ROOT)).replace("\\", "/"),
+            "inputs": [
+                {
+                    "type": input_type,
+                    "path": str(path.relative_to(paths.ROOT)).replace("\\", "/"),
+                }
+                for input_type, path in zip(input_types, chart_paths)
+            ],
             "window_days": cfg["chart"]["window_days"],
             "size": cfg["chart"]["image_size"],
             "channels": cfg["chart"]["channels"],

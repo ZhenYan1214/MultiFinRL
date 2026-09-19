@@ -17,6 +17,10 @@
   "date": "2021-03-15",
   "chart": {
     "path": "data/raw/charts/AAPL/2021-03-15.png",
+    "inputs": [
+      { "type": "candlestick", "path": "data/raw/charts/AAPL/2021-03-15.png" },
+      { "type": "volume", "path": "data/raw/charts/AAPL/volume/2021-03-15.png" }
+    ],
     "window_days": 20,
     "size": [224, 224],
     "channels": 3
@@ -67,7 +71,8 @@
 | 欄位 | 規則 |
 |---|---|
 | `date` | ISO 8601（YYYY-MM-DD），僅交易日 |
-| `chart.path` | 相對 repo 根目錄的路徑；PNG、224×224、RGB |
+| `chart.path` | 向下相容欄位，等於 `chart.inputs[0].path` |
+| `chart.inputs` | ViT 輸入的固定順序清單，目前恰好兩張：K 線、成交量；每張皆為相對 repo 根目錄的 224×224 RGB PNG。未來可將第二張換成技術指標圖，但須同步更新 config 並重跑 H_v |
 | `news[].days_ago` | 該則新聞發布日距 `date` 的天數；當日新聞為 0；當日無新聞時以近日新聞回補 |
 | `news[].published_at` | 含時區（美東），供後續切齊時間、避免 look-ahead |
 | `*_chunks[].text` | 每段 ≤512 token（以 FinBERT tokenizer 計） |
@@ -97,7 +102,7 @@ data/vectors/AAPL/2021-03-15/
   "ticker": "AAPL",
   "date": "2021-03-15",
   "vectors": {
-    "H_v": { "file": "H_v.npy", "shape": [197, 768], "dtype": "float32", "encoder": "google/vit-base-patch16-224" },
+    "H_v": { "file": "H_v.npy", "shape": [2, 197, 768], "dtype": "float32", "encoder": "google/vit-base-patch16-224", "input_types": ["candlestick", "volume"] },
     "H_t": { "file": "H_t.npy", "shape": [512, 768], "dtype": "float32", "encoder": "ProsusAI/finbert" },
     "H_r": { "file": "H_r.npy", "shape": [3, 512, 768], "dtype": "float32", "encoder": "ProsusAI/finbert", "top_k": 3 }
   },
@@ -116,6 +121,7 @@ data/vectors/AAPL/2021-03-15/
 |---|---|
 | `shape` | 實際維度以最終選定的 encoder 為準，但**一旦定案不可再變**；換 encoder 需全員同意並重跑 |
 | `encoder` | HuggingFace model id，供實驗比較與論文記錄 |
+| `H_v` 第一維 | = 視覺輸入張數（目前 2），順序必須與 `chart.inputs`／`input_types` 一致；第二維為每張 ViT 的 CLS + patch tokens |
 | `retrieved_chunk_ids` | 對應 A 資料中的 `chunk_id`，供事後追溯與可解釋性分析 |
 | `H_r` 第一維 | = K（目前 K=3），順序為相似度由高至低 |
 

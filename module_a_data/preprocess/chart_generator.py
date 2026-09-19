@@ -10,11 +10,12 @@
     純成交量圖
         data/raw/charts/{TICKER}/volume/{YYYY-MM-DD}.png
 
-三種圖皆為 224x224 RGB PNG，使用相同交易日窗口。預設只畫 K 線；技術指標與
-成交量需由 CLI 明確開啟。技術指標全部只使用當日及之前的資料計算，不會使用未來資料。
+三種圖皆為 224x224 RGB PNG，使用相同交易日窗口。預設產生 config 中指定的雙圖輸入
+（目前為 K 線 + 成交量）；CLI 可用 --no-volume 等旗標覆寫。技術指標全部只使用當日及
+之前的資料計算，不會使用未來資料。
 
 用法：
-    # 相容舊行為：只畫 K 線
+    # 依 config 產生正式雙圖輸入（目前為 K 線 + 成交量）
     python -m module_a_data.preprocess.chart_generator --ticker AAPL --limit 100
 
     # K 線 + 一張同時包含 RSI、MACD 的技術指標圖
@@ -270,6 +271,18 @@ def generate_chart(
 
 def main() -> None:
     cfg = load_config()
+    configured_inputs = cfg["chart"].get("vision_inputs", ["candlestick", "volume"])
+    technical_inputs = [name for name in configured_inputs if name.startswith("technical/")]
+    if len(technical_inputs) > 1:
+        raise ValueError(f"chart.vision_inputs 最多只能有一張 technical 圖: {technical_inputs}")
+    configured_indicators = (
+        technical_inputs[0].removeprefix("technical/").split("_")
+        if technical_inputs else ["rsi", "macd"]
+    )
+    unknown = set(configured_indicators) - set(SUPPORTED_INDICATORS)
+    if unknown:
+        raise ValueError(f"chart.vision_inputs 包含不支援的技術指標: {sorted(unknown)}")
+
     ap = argparse.ArgumentParser()
     ap.add_argument("--ticker", default=cfg["tickers"][0])
     ap.add_argument("--limit", type=int, default=None, help="只產前 N 個可用交易日（測試用）")
@@ -277,13 +290,15 @@ def main() -> None:
         "--candlestick", action=argparse.BooleanOptionalAction, default=True,
         help="是否產生 K 線圖（預設開啟；用 --no-candlestick 關閉）",
     )
-    ap.add_argument("--technical", action=argparse.BooleanOptionalAction, default=False,
-                    help="是否產生技術指標圖（預設關閉）")
-    ap.add_argument("--volume", action=argparse.BooleanOptionalAction, default=False,
-                    help="是否產生純成交量圖（預設關閉）")
+    technical_default = bool(technical_inputs)
+    ap.add_argument("--technical", action=argparse.BooleanOptionalAction, default=technical_default,
+                    help=f"是否產生技術指標圖（目前預設 {'開啟' if technical_default else '關閉'}）")
+    volume_default = "volume" in configured_inputs
+    ap.add_argument("--volume", action=argparse.BooleanOptionalAction, default=volume_default,
+                    help=f"是否產生純成交量圖（目前預設 {'開啟' if volume_default else '關閉'}）")
     ap.add_argument(
-        "--indicators", nargs="+", choices=SUPPORTED_INDICATORS, default=["rsi", "macd"],
-        help="技術圖內要包含的指標，可複選（預設：rsi macd）",
+        "--indicators", nargs="+", choices=SUPPORTED_INDICATORS, default=configured_indicators,
+        help=f"技術圖內要包含的指標，可複選（目前預設：{' '.join(configured_indicators)}）",
     )
     args = ap.parse_args()
 

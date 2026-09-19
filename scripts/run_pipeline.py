@@ -56,6 +56,7 @@ def main():
 
     # A：資料工程
     run("module_a_data.crawler.fetch_ohlcv", "--ticker", args.ticker)
+    # 要產生哪些視覺圖由 config.yaml 的 chart.vision_inputs 決定。
     run("module_a_data.preprocess.chart_generator", "--ticker", args.ticker, *limit_args)
     run("module_a_data.crawler.fetch_filings", "--ticker", args.ticker)
     run("module_a_data.crawler.fetch_news_alpaca", "--ticker", args.ticker)

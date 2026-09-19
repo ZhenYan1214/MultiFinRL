@@ -6,7 +6,9 @@
 ## Responsibilities
 
 1. Download historical OHLCV data via yfinance (`crawler/fetch_ohlcv.py`).
-2. Render a 20-trading-day candlestick chart per day with mplfinance, saved as 224×224 RGB PNG (`preprocess/chart_generator.py`).
+2. Render two 20-trading-day 224×224 RGB inputs per day: a candlestick chart and a separate
+   volume chart (`preprocess/chart_generator.py`). They are kept as separate images for the shared
+   dual-image ViT rather than composited into one bitmap.
 3. Fetch daily financial news and clean HTML/noise (`crawler/fetch_news.py` for recent news, `crawler/fetch_news_alpaca.py` for historical backfill via the Alpaca News API, `preprocess/text_cleaner.py` for cleanup).
 4. Download SEC EDGAR filings (10-K/10-Q as background, 8-K as timestamped supplementary events that don't overwrite the background — see `docs/decisions.md` #41/#44/#45) and earnings-call transcripts via the official Alpha Vantage API (`crawler/fetch_transcripts.py`, replacing the earlier third-party `foolcalls` scraper), chunked to ≤512 tokens (`crawler/fetch_filings.py`, `preprocess/chunker.py`). ETF/index macro data (`crawler/fetch_macro.py`) is scaffolded but not implemented (`docs/decisions.md` #38).
 5. Generate BULLISH / BEARISH / NEUTRAL labels from the 5-trading-day forward return vs. same-day close, using quantile thresholds over the full return distribution (each class ends up close to 1/3 of days) rather than a fixed percentage — see `docs/decisions.md` #30. The old fixed ±2% version is kept as `labeling.py`'s `make_label_fixed_threshold()` for ablation comparisons only.
@@ -26,7 +28,7 @@ build_dataset last, to assemble all three lines
 
 ```bash
 python -m module_a_data.crawler.fetch_ohlcv                          # download OHLCV
-python -m module_a_data.preprocess.chart_generator --ticker AAPL     # generate candlestick charts (--limit 100 for a quick test)
+python -m module_a_data.preprocess.chart_generator --ticker AAPL     # generate configured ViT inputs (--limit 100 for a quick test)
 python -m module_a_data.preprocess.chart_generator --ticker AAPL --technical --indicators rsi macd  # candlestick + multi-indicator chart
 python -m module_a_data.preprocess.chart_generator --ticker AAPL --volume  # candlestick + pure-volume chart
 python -m module_a_data.crawler.fetch_news --ticker AAPL             # recent news
@@ -36,7 +38,9 @@ python -m module_a_data.crawler.fetch_transcripts --ticker AAPL --start 2021-01-
 python -m module_a_data.build_dataset --ticker AAPL --limit 100      # assemble output (start with a 50-100 sample)
 ```
 
-`build_dataset` runs fine before news/filings are fetched (empty arrays are valid under the schema), so the fastest path to a deliverable sample is: `fetch_ohlcv -> chart_generator -> build_dataset`.
+`build_dataset` runs fine before news/filings are fetched (empty arrays are valid under the schema),
+but both configured vision images must exist. The fastest path to a deliverable sample is:
+`fetch_ohlcv -> chart_generator -> build_dataset`.
 
 ## Notes
 

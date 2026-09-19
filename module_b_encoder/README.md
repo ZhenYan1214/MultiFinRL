@@ -6,7 +6,10 @@
 
 ## Responsibilities
 
-1. Encode each candlestick chart PNG into a feature vector **H_v** with a pretrained ViT from HuggingFace (`encoders/vision_encoder.py`).
+1. Encode the candlestick and auxiliary chart (currently volume) together with one shared-weight
+   pretrained ViT (`encoders/vision_encoder.py`). **H_v** preserves both token grids as
+   `[2, 197, 768]`; the second image can later be replaced by a technical-indicator chart without
+   changing the encoder interface.
 2. Encode news text into a feature vector **H_t** with FinBERT or LLaMA (`encoders/text_encoder.py`).
 3. Build a FAISS vector index over filing/transcript chunks (`rag/vector_db.py`).
 4. Combine H_v and H_t into a query and retrieve the top-K (K=3) most relevant chunks to produce **H_r** (`rag/retriever.py`).
@@ -16,7 +19,9 @@
 
 ## Phase 1 (while waiting on real data from A)
 
-Wire up the architecture against synthetic data first: confirm that a single PNG in produces a single vector out, saved in the format `docs/data_format.md` requires. Synthetic inputs can be randomly generated 224×224 images and arbitrary English financial-sounding sentences.
+Wire up the architecture against synthetic data first: confirm that two PNGs in produce one H_v out,
+saved in the format `docs/data_format.md` requires. Synthetic inputs can be randomly generated
+224×224 images and arbitrary English financial-sounding sentences.
 
 ## Commands (run from the repo root)
 

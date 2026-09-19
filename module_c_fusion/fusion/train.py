@@ -82,7 +82,7 @@ def load_day(ticker: str, date: str, ablate_news: bool = False, ablate_vision: b
     """讀 B 的一天向量，回傳 (h_v, h_t, h_r) numpy。
 
     ablate_news=True 時，H_t 讀進來後在記憶體裡直接歸零；ablate_vision=True 時，
-    H_v（K 線圖）比照辦理歸零——這是 ViT domain gap 對照實驗用的（decisions.md #46，
+    H_v（全部視覺圖）比照辦理歸零——這是 ViT domain gap 對照實驗用的（decisions.md #46，
     沿用 #28 新聞歸零對照實驗同一套手法，這次換成歸零視覺輸入，比較「有無 K 線圖」對
     分類準確度的影響）。兩者皆只影響這次執行的記憶體內容，不改動磁碟上的向量檔案，
     不會留下任何需要事後還原的殘留狀態。"""
@@ -92,6 +92,11 @@ def load_day(ticker: str, date: str, ablate_news: bool = False, ablate_vision: b
     h_v = np.load(d / "H_v.npy")
     h_t = np.load(d / "H_t.npy")
     h_r = np.load(d / "H_r.npy")
+    arrays = {"H_v": h_v, "H_t": h_t, "H_r": h_r}
+    for name, array in arrays.items():
+        expected = tuple(index["vectors"][name]["shape"])
+        if array.shape != expected:
+            raise ValueError(f"{d / (name + '.npy')} shape={array.shape}，index.json 記錄為 {expected}")
     if ablate_news:
         h_t = np.zeros_like(h_t)
     if ablate_vision:
@@ -113,9 +118,9 @@ def load_dataset(ticker: str):
     return days
 
 
-def make_fake_batch(n: int, k: int, seed: int = 0):
+def make_fake_batch(n: int, k: int, n_vision_inputs: int = 2, seed: int = 0):
     rng = np.random.default_rng(seed)
-    h_v = rng.standard_normal((n, 197, 768)).astype(np.float32)
+    h_v = rng.standard_normal((n, n_vision_inputs, 197, 768)).astype(np.float32)
     h_t = rng.standard_normal((n, 512, 768)).astype(np.float32)
     h_r = rng.standard_normal((n, k, 512, 768)).astype(np.float32)
     y = rng.integers(0, 3, n)
@@ -224,7 +229,7 @@ def main():
     ap.add_argument("--ablate_news", action="store_true",
                     help="診斷用：H_t 讀進來後在記憶體歸零，不影響磁碟上的向量檔案（結果見 docs/decisions.md #28）")
     ap.add_argument("--ablate_vision", action="store_true",
-                    help="診斷用：H_v（K 線圖）讀進來後在記憶體歸零，不影響磁碟上的向量檔案"
+                    help="診斷用：H_v（全部視覺圖）讀進來後在記憶體歸零，不影響磁碟上的向量檔案"
                          "（ViT domain gap 對照實驗，見 decisions.md #46）")
     ap.add_argument("--weighted", action="store_true",
                     help="診斷用：訓練 loss 依類別出現頻率加權，預設關閉（結果見 docs/decisions.md #28）")
@@ -263,7 +268,9 @@ def main():
         return
 
     if args.fake:
-        h_v, h_t, h_r, y = make_fake_batch(args.n, k, cfg["seed"])
+        h_v, h_t, h_r, y = make_fake_batch(
+            args.n, k, len(cfg["chart"]["vision_inputs"]), cfg["seed"]
+        )
         batches = [
             (h_v[i:i + args.batch], h_t[i:i + args.batch], h_r[i:i + args.batch], y[i:i + args.batch])
             for i in range(0, args.n, args.batch)

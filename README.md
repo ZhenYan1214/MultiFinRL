@@ -2,7 +2,7 @@
 
 **A Multimodal Retrieval-Augmented Financial Decision Framework with Reinforcement Learning**
 
-MultiFinRL turns three kinds of daily market data — candlestick charts (visual), financial news (text), and filings / earnings-call transcripts (external knowledge) — into a single vector, `Z_fused`, that represents a stock's market state on a given trading day. A vision encoder (ViT), a text encoder (FinBERT), and a retrieval-augmented generation (RAG) module each process one modality; a Cross-Modal Transformer fuses the three into `Z_fused`. That vector is then used both to validate market-sentiment classification and event extraction, and as the state input for a PPO reinforcement-learning agent that allocates a portfolio.
+MultiFinRL turns three kinds of daily market data — two market charts (candlestick + volume), financial news (text), and filings / earnings-call transcripts (external knowledge) — into a single vector, `Z_fused`, that represents a stock's market state on a given trading day. A shared-weight dual-image vision encoder (ViT), a text encoder (FinBERT), and a retrieval-augmented generation (RAG) module process those inputs; a Cross-Modal Transformer fuses H_v/H_t/H_r into `Z_fused`. That vector is then used both to validate market-sentiment classification and event extraction, and as the state input for a PPO reinforcement-learning agent that allocates a portfolio.
 
 ---
 
