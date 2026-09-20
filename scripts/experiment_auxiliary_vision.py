@@ -3,8 +3,8 @@
 設計重點：
 - 第一張 K 線、H_t、H_r 全部固定，只替換 H_v 的第二張圖。
 - 所有候選使用共同日期、相同 seed / hyperparameters。
-- fusion 只用前 70% 日期的 label 訓練；中間 15% validation 選候選；最後 15%
-  held-out test 只評估 validation 勝出者，避免現行正式 pipeline 的 test-label leakage。
+- fusion 只用共用 train split 的 label 訓練；validation 選候選；held-out test 只評估
+  validation 勝出者。split 直接沿用 dataset manifest，包含標籤跨界 purge。
 - 技術圖的 ViT token 快取放在 data/outputs/experiments/auxiliary_vision/，可續跑。
 
 前置：先用 chart_generator 產生 technical/rsi、technical/sma、technical/macd 圖。
@@ -26,10 +26,11 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from shared import paths
+from shared.temporal_split import partition_by_split
 from shared.utils import load_config, read_json, write_json
 from module_b_encoder.encoders.vision_encoder import VisionEncoder
 from module_c_fusion.fusion.model import build_model
-from module_c_fusion.fusion.train import LABEL_TO_ID, load_day, train
+from module_c_fusion.fusion.train import load_dataset, load_day, train
 
 
 LABEL_NAMES = ["BEARISH", "NEUTRAL", "BULLISH"]
@@ -50,7 +51,7 @@ class LazyBatches:
         for start in range(0, len(self.rows), self.batch_size):
             chunk = self.rows[start:start + self.batch_size]
             h_vs, h_ts, h_rs, labels = [], [], [], []
-            for date, label in chunk:
+            for date, label, _split in chunk:
                 h_v, h_t, h_r = load_day(self.ticker, date)
                 auxiliary = self.auxiliary_loader(date, h_v)
                 h_vs.append(np.stack([h_v[0], auxiliary]))
@@ -68,33 +69,28 @@ class LazyBatches:
         self._ticker = value
 
 
-def available_rows(ticker: str, candidates: list[str]) -> list[tuple[str, int]]:
+def available_rows(ticker: str, candidates: list[str]) -> list[tuple[str, int, str]]:
     """只保留 dataset、production vectors 與所有候選圖都存在的共同日期。"""
     rows = []
-    for record_path in sorted((paths.DATASET / ticker).glob("*.json")):
-        date = record_path.stem
-        vector_dir = paths.vector_dir(ticker, date)
-        if not (vector_dir / "index.json").exists():
-            continue
+    for date, label, split, _target_date in load_dataset(ticker):
         if any(
             not (paths.RAW_CHARTS / ticker / "technical" / name / f"{date}.png").exists()
             for name in candidates if name != "volume"
         ):
             continue
-        label = LABEL_TO_ID[read_json(record_path)["label"]]
-        rows.append((date, label))
+        rows.append((date, label, split))
     return rows
 
 
 def encode_candidate_cache(vision: VisionEncoder, ticker: str, candidate: str,
-                           rows: list[tuple[str, int]], out_dir: Path,
+                           rows: list[tuple[str, int, str]], out_dir: Path,
                            encode_batch_size: int) -> np.ndarray:
     """將一種 technical 圖編碼為 [N,197,768] memmap；已有完整快取就直接讀。"""
     candidate_dir = out_dir / "embeddings" / candidate
     candidate_dir.mkdir(parents=True, exist_ok=True)
     array_path = candidate_dir / "H_aux.npy"
     dates_path = candidate_dir / "dates.json"
-    dates = [date for date, _ in rows]
+    dates = [date for date, *_ in rows]
 
     if array_path.exists() and dates_path.exists() and read_json(dates_path) == dates:
         cached = np.load(array_path, mmap_mode="r")
@@ -109,7 +105,7 @@ def encode_candidate_cache(vision: VisionEncoder, ticker: str, candidate: str,
         chunk = rows[start:start + encode_batch_size]
         image_paths = [
             paths.RAW_CHARTS / ticker / "technical" / candidate / f"{date}.png"
-            for date, _ in chunk
+            for date, *_ in chunk
         ]
         output[start:start + len(chunk)] = vision.encode_batch(image_paths)
         print(
@@ -168,12 +164,13 @@ def main() -> None:
     if unsupported:
         ap.error(f"不支援的候選: {sorted(unsupported)}")
 
-    rows = available_rows(args.ticker, args.candidates)
-    if len(rows) < 100:
+    available = available_rows(args.ticker, args.candidates)
+    train_rows, val_rows, test_rows = partition_by_split(available)
+    rows = train_rows + val_rows + test_rows
+    if len(rows) < 100 or not train_rows or not val_rows or not test_rows:
         raise SystemExit("共同日期不足；請先產生各候選 technical charts")
-    train_end = int(len(rows) * 0.70)
-    val_end = int(len(rows) * 0.85)
-    train_rows, val_rows, test_rows = rows[:train_end], rows[train_end:val_end], rows[val_end:]
+    train_end = len(train_rows)
+    val_end = train_end + len(val_rows)
     print(
         f"[auxiliary_vision] common={len(rows)}, train/val/test="
         f"{len(train_rows)}/{len(val_rows)}/{len(test_rows)}, "
@@ -192,9 +189,9 @@ def main() -> None:
             )
         del vision
 
-    date_to_index = {date: i for i, (date, _label) in enumerate(rows)}
+    date_to_index = {date: i for i, (date, _label, _split) in enumerate(rows)}
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    train_labels = np.asarray([label for _, label in train_rows])
+    train_labels = np.asarray([label for _, label, _ in train_rows])
     counts = np.bincount(train_labels, minlength=3).astype(np.float32)
     weights = len(train_rows) / (3.0 * counts)
     class_weights = torch.tensor(weights, dtype=torch.float32, device=device)
@@ -222,7 +219,7 @@ def main() -> None:
         z = encode_z(model, rows, all_batches, device)
         clf = LogisticRegression(max_iter=1000, class_weight="balanced")
         clf.fit(z[:train_end], train_labels)
-        val_labels = [label for _, label in val_rows]
+        val_labels = [label for _, label, _ in val_rows]
         val_result = metrics(val_labels, clf.predict(z[train_end:val_end]))
         results[candidate] = {"losses": losses, "validation": val_result}
         print(
@@ -240,8 +237,8 @@ def main() -> None:
 
     _best_score, selected, selected_z = selected_payload
     # 候選已由 validation 選定後，分類 probe 才用 train+validation refit 並看一次 test。
-    train_val_labels = [label for _, label in rows[:val_end]]
-    test_labels = [label for _, label in test_rows]
+    train_val_labels = [label for _, label, _ in rows[:val_end]]
+    test_labels = [label for _, label, _ in test_rows]
     final_clf = LogisticRegression(max_iter=1000, class_weight="balanced")
     final_clf.fit(selected_z[:val_end], train_val_labels)
     test_result = metrics(test_labels, final_clf.predict(selected_z[val_end:]))

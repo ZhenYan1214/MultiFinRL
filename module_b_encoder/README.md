@@ -26,7 +26,7 @@ saved in the format `docs/data_format.md` requires. Synthetic inputs can be rand
 ## Commands (run from the repo root)
 
 ```bash
-python -m module_b_encoder.generate_vectors --fake --n 10              # phase 1: no GPU/model needed, just checks the output format
+python -m module_b_encoder.generate_vectors --fake --n 10              # phase 1: writes AAPL_FAKE, never overwrites real vectors
 python -m module_b_encoder.generate_vectors --ticker AAPL --limit 50   # phase 2: real data
 python -m module_b_encoder.event_extraction --ticker AAPL              # event extraction, keyword method (free)
 python -m module_b_encoder.event_extraction --ticker AAPL --method llm --provider deepseek \

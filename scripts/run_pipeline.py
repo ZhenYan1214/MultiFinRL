@@ -7,7 +7,7 @@
 用法：
     python scripts/run_pipeline.py --fake                     # 全 fake：驗證 B/C 銜接格式
     python scripts/run_pipeline.py --ticker AAPL               # 真跑一次完整流程
-    python scripts/run_pipeline.py --ticker AAPL --limit 50    # 只處理前 50 天（測試用）
+    python scripts/run_pipeline.py --ticker AAPL --limit 100   # 只處理前 100 天（測試用）
     python scripts/run_pipeline.py --ticker AAPL --skip_transcripts
         # 跳過法說會逐字稿抓取（fetch_transcripts.py 現在改用 Alpha Vantage API，需要
         # ALPHA_VANTAGE_API_KEY，且免費方案有速率限制；還沒設定金鑰或想快速跑通其他部分時

@@ -1,0 +1,271 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2600" height="4320" viewBox="0 0 2600 4320" role="img" aria-labelledby="title desc">
+<title id="title">MultiFinRL 詳細系統架構圖</title>
+<desc id="desc">從因果式資料工程、雙圖 ViT、FinBERT、RAG、Cross-Modal Fusion，到診斷分類、生成式 Decoder、PPO、回測與 Integrated Gradients 的完整流程。</desc>
+<defs>
+<marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+<path d="M 0 0 L 10 5 L 0 10 z" fill="#334155"/>
+</marker>
+</defs>
+<rect x="0" y="0" width="2600" height="4320" fill="#ffffff"/>
+<text x="1300.0" y="55" font-size="34" font-weight="500" text-anchor="middle" fill="#172033" font-family="Arial">MultiFinRL 詳細系統架構圖</text>
+<text x="1300.0" y="92" font-size="18" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">依目前程式流程與 leakage-safe temporal protocol 更新（2026-09-20）</text>
+<rect x="45" y="285" width="2510" height="875" rx="22" fill="#f5f7fb" stroke="#b8c4d4" stroke-width="2"/>
+<text x="80" y="333" font-size="27" font-weight="500" text-anchor="start" fill="#33445f" font-family="Arial">Module A｜資料工程與因果式資料集建置｜第一階段</text>
+<text x="80" y="364" font-size="16" font-weight="400" text-anchor="start" fill="#526176" font-family="Arial">adjusted market data、文件可用時間、共用 split 與 train-only label thresholds</text>
+<rect x="45" y="1205" width="2510" height="965" rx="22" fill="#f5f7fb" stroke="#b8c4d4" stroke-width="2"/>
+<text x="80" y="1253" font-size="27" font-weight="500" text-anchor="start" fill="#33445f" font-family="Arial">Module B｜凍結編碼器、因果式 RAG 與向量產出｜第一階段</text>
+<text x="80" y="1284" font-size="16" font-weight="400" text-anchor="start" fill="#526176" font-family="Arial">兩張圖共享 ViT 權重；FAISS 只含截至當日已可取得的文件</text>
+<rect x="45" y="2215" width="2510" height="2035" rx="22" fill="#f5f7fb" stroke="#b8c4d4" stroke-width="2"/>
+<text x="80" y="2263" font-size="27" font-weight="500" text-anchor="start" fill="#33445f" font-family="Arial">Module C｜融合信念、診斷驗證、Decoder、RL 與回測</text>
+<text x="80" y="2294" font-size="16" font-weight="400" text-anchor="start" fill="#526176" font-family="Arial">白色框為 run_pipeline.py 核心路徑；黃色虛線框為已實作但需另行執行</text>
+<path d="M 1300 240 L 1300 345" fill="none" stroke="#315da8" stroke-width="2.1" marker-end="url(#arrow)"/>
+<path d="M 300 345 L 2280 345" fill="none" stroke="#315da8" stroke-width="2.1"/>
+<path d="M 300 345 L 300 380" fill="none" stroke="#315da8" stroke-width="2.1" marker-end="url(#arrow)"/>
+<path d="M 780 345 L 780 380" fill="none" stroke="#315da8" stroke-width="2.1" marker-end="url(#arrow)"/>
+<path d="M 1260 345 L 1260 380" fill="none" stroke="#315da8" stroke-width="2.1" marker-end="url(#arrow)"/>
+<path d="M 1765 345 L 1765 380" fill="none" stroke="#315da8" stroke-width="2.1" marker-end="url(#arrow)"/>
+<path d="M 2280 345 L 2280 380" fill="none" stroke="#315da8" stroke-width="2.1" marker-end="url(#arrow)"/>
+<path d="M 510 470 L 570 470" fill="none" stroke="#334155" stroke-width="2.1" marker-end="url(#arrow)"/>
+<path d="M 300 560 L 300 650" fill="none" stroke="#334155" stroke-width="2.1" marker-end="url(#arrow)"/>
+<path d="M 1260 560 L 1260 650" fill="none" stroke="#334155" stroke-width="2.1" marker-end="url(#arrow)"/>
+<path d="M 1765 560 L 1765 650" fill="none" stroke="#334155" stroke-width="2.1" marker-end="url(#arrow)"/>
+<path d="M 2280 560 L 2280 650" fill="none" stroke="#334155" stroke-width="2.1" marker-end="url(#arrow)"/>
+<path d="M 530 865 L 530 930" fill="none" stroke="#334155" stroke-width="2.1" marker-end="url(#arrow)"/>
+<path d="M 1690 865 L 1690 930" fill="none" stroke="#334155" stroke-width="2.1" marker-end="url(#arrow)"/>
+<path d="M 780 560 L 780 900 L 950 900 L 950 930" fill="none" stroke="#334155" stroke-width="2.1" marker-end="url(#arrow)"/>
+<path d="M 1300 1105 L 1300 1260" fill="none" stroke="#315da8" stroke-width="2.1" marker-end="url(#arrow)"/>
+<path d="M 440 1260 L 2160 1260" fill="none" stroke="#315da8" stroke-width="2.1"/>
+<path d="M 440 1260 L 440 1320" fill="none" stroke="#315da8" stroke-width="2.1" marker-end="url(#arrow)"/>
+<path d="M 1300 1260 L 1300 1320" fill="none" stroke="#315da8" stroke-width="2.1" marker-end="url(#arrow)"/>
+<path d="M 2160 1260 L 2160 1320" fill="none" stroke="#315da8" stroke-width="2.1" marker-end="url(#arrow)"/>
+<path d="M 440 1545 L 440 1590 L 860 1590 L 860 1645" fill="none" stroke="#334155" stroke-width="2.1" marker-end="url(#arrow)"/>
+<path d="M 1300 1545 L 1300 1590 L 860 1590" fill="none" stroke="#334155" stroke-width="2.1"/>
+<path d="M 1220 1737 L 1430 1737" fill="none" stroke="#334155" stroke-width="2.1" marker-end="url(#arrow)"/>
+<path d="M 2160 1545 L 2160 1645" fill="none" stroke="#334155" stroke-width="2.1" marker-end="url(#arrow)"/>
+<path d="M 440 1545 L 440 1885 L 920 1885 L 920 1930" fill="none" stroke="#334155" stroke-width="2.1" marker-end="url(#arrow)"/>
+<path d="M 1300 1545 L 1300 1930" fill="none" stroke="#334155" stroke-width="2.1" marker-end="url(#arrow)"/>
+<path d="M 1840 1830 L 1840 1930" fill="none" stroke="#334155" stroke-width="2.1" marker-end="url(#arrow)"/>
+<path d="M 2120 1017 L 2520 1017 L 2520 1870 L 2248 1870 L 2248 1905" fill="none" stroke="#77808d" stroke-width="2.1" stroke-dasharray="9 7" marker-end="url(#arrow)"/>
+<rect x="2333" y="1472" width="184" height="27" rx="5" fill="#ffffff" opacity="0.94"/>
+<text x="2425" y="1491" font-size="13" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">附屬 QA</text>
+<path d="M 1260 2105 L 1260 2330" fill="none" stroke="#315da8" stroke-width="2.1" marker-end="url(#arrow)"/>
+<path d="M 1300 2560 L 1300 2660" fill="none" stroke="#334155" stroke-width="2.1" marker-end="url(#arrow)"/>
+<path d="M 1300 2845 L 1300 2920" fill="none" stroke="#334155" stroke-width="2.1"/>
+<path d="M 350 2920 L 2215 2920" fill="none" stroke="#334155" stroke-width="2.1"/>
+<path d="M 350 2920 L 350 2990" fill="none" stroke="#334155" stroke-width="2.1" marker-end="url(#arrow)"/>
+<path d="M 940 2920 L 940 2990" fill="none" stroke="#334155" stroke-width="2.1" marker-end="url(#arrow)"/>
+<path d="M 1570 2920 L 1570 2990" fill="none" stroke="#334155" stroke-width="2.1" marker-end="url(#arrow)"/>
+<path d="M 2215 2920 L 2215 2990" fill="none" stroke="#334155" stroke-width="2.1" marker-end="url(#arrow)"/>
+<path d="M 2120 1017 L 2540 1017 L 2540 2945 L 1570 2945 L 1570 2990" fill="none" stroke="#9a6700" stroke-width="2.1" stroke-dasharray="9 7" marker-end="url(#arrow)"/>
+<rect x="2338" y="2582" width="184" height="27" rx="5" fill="#ffffff" opacity="0.94"/>
+<text x="2430" y="2601" font-size="13" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">每日 JSON → y_belief</text>
+<path d="M 350 3275 L 350 3440" fill="none" stroke="#334155" stroke-width="2.1" marker-end="url(#arrow)"/>
+<path d="M 940 3275 L 940 3440" fill="none" stroke="#334155" stroke-width="2.1" marker-end="url(#arrow)"/>
+<path d="M 1570 3275 L 1570 3380 L 1060 3380 L 1060 3440" fill="none" stroke="#334155" stroke-width="2.1" marker-end="url(#arrow)"/>
+<path d="M 350 3275 L 350 3350 L 1510 3350 L 1510 3440" fill="none" stroke="#334155" stroke-width="2.1" marker-end="url(#arrow)"/>
+<rect x="1168" y="3327" width="184" height="27" rx="5" fill="#ffffff" opacity="0.94"/>
+<text x="1260" y="3346" font-size="13" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">rule-based</text>
+<path d="M 1300 2845 L 1300 3380 L 1720 3380 L 1720 3440" fill="none" stroke="#334155" stroke-width="2.1" marker-end="url(#arrow)"/>
+<rect x="1423" y="3357" width="184" height="27" rx="5" fill="#ffffff" opacity="0.94"/>
+<text x="1515" y="3376" font-size="13" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">buy &amp; hold</text>
+<path d="M 2215 3275 L 2215 3405 L 2110 3405 L 2110 3440" fill="none" stroke="#334155" stroke-width="2.1" marker-end="url(#arrow)"/>
+<rect x="2158" y="3367" width="184" height="27" rx="5" fill="#ffffff" opacity="0.94"/>
+<text x="2250" y="3386" font-size="13" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">PPO</text>
+<path d="M 2215 3275 L 2215 3790" fill="none" stroke="#9a6700" stroke-width="2.1" stroke-dasharray="9 7" marker-end="url(#arrow)"/>
+<path d="M 665 3700 L 665 3870" fill="none" stroke="#334155" stroke-width="2.1" marker-end="url(#arrow)"/>
+<path d="M 1880 3700 L 1880 3835 L 1680 3835 L 1680 3970" fill="none" stroke="#334155" stroke-width="2.1" marker-end="url(#arrow)"/>
+<path d="M 2140 3995 L 2140 4140 L 1680 4140 L 1680 4075" fill="none" stroke="#9a6700" stroke-width="2.1" stroke-dasharray="9 7" marker-end="url(#arrow)"/>
+<rect x="780" y="125" width="1040" height="115" rx="13" fill="#eaf2ff" stroke="#315da8" stroke-width="2.4"/>
+<text x="1300.0" y="163" font-size="19" font-weight="500" text-anchor="middle" fill="#172033" font-family="Arial">使用者／研究者與全域設定</text>
+<line x1="804" y1="178" x2="1796" y2="178" stroke="#315da8" stroke-width="1" opacity="0.45"/>
+<text x="1300.0" y="205" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">指定 ticker、date_range、seed 與模型參數</text>
+<text x="1300.0" y="229" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">configs/config.yaml｜scripts/run_pipeline.py</text>
+<rect x="1990" y="125" width="24" height="24" rx="4" fill="#ffffff" stroke="#334155" stroke-width="2"/>
+<text x="2028" y="144" font-size="14" font-weight="400" text-anchor="start" fill="#526176" font-family="Arial">核心 pipeline 自動執行</text>
+<rect x="1990" y="158" width="24" height="24" rx="4" fill="#fff7e6" stroke="#9a6700" stroke-width="2" stroke-dasharray="6 4"/>
+<text x="2028" y="177" font-size="14" font-weight="400" text-anchor="start" fill="#526176" font-family="Arial">已實作，需另行執行</text>
+<rect x="1990" y="191" width="24" height="24" rx="4" fill="#f1f3f5" stroke="#77808d" stroke-width="2"/>
+<text x="2028" y="210" font-size="14" font-weight="400" text-anchor="start" fill="#526176" font-family="Arial">附屬資料品質分析</text>
+<rect x="90" y="380" width="420" height="180" rx="13" fill="#ffffff" stroke="#334155" stroke-width="2.4"/>
+<text x="300.0" y="418" font-size="19" font-weight="500" text-anchor="middle" fill="#172033" font-family="Arial">① 調整後 OHLCV</text>
+<line x1="114" y1="433" x2="486" y2="433" stroke="#334155" stroke-width="1" opacity="0.45"/>
+<text x="300.0" y="460" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">fetch_ohlcv.py｜yfinance</text>
+<text x="300.0" y="484" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">auto_adjust=true（拆股／股利）</text>
+<text x="300.0" y="508" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">CSV + AAPL.meta.json</text>
+<text x="300.0" y="532" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">避免公司行動扭曲報酬</text>
+<rect x="570" y="380" width="420" height="180" rx="13" fill="#ffffff" stroke="#334155" stroke-width="2.4"/>
+<text x="780.0" y="418" font-size="19" font-weight="500" text-anchor="middle" fill="#172033" font-family="Arial">② 雙圖視覺輸入</text>
+<line x1="594" y1="433" x2="966" y2="433" stroke="#334155" stroke-width="1" opacity="0.45"/>
+<text x="780.0" y="460" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">chart_generator.py｜20 日窗口</text>
+<text x="780.0" y="484" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">K 線圖 + 純成交量圖</text>
+<text x="780.0" y="508" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">各 224×224 RGB PNG</text>
+<text x="780.0" y="532" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">第二張可替換 technical/*</text>
+<rect x="1050" y="380" width="420" height="180" rx="13" fill="#ffffff" stroke="#334155" stroke-width="2.4"/>
+<text x="1260.0" y="418" font-size="19" font-weight="500" text-anchor="middle" fill="#172033" font-family="Arial">③ 歷史新聞</text>
+<line x1="1074" y1="433" x2="1446" y2="433" stroke="#334155" stroke-width="1" opacity="0.45"/>
+<text x="1260.0" y="460" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">fetch_news_alpaca.py</text>
+<text x="1260.0" y="484" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">Alpaca News API（Benzinga）</text>
+<text x="1260.0" y="508" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">缺新聞可向前回補 7 天</text>
+<text x="1260.0" y="532" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">保留 days_ago</text>
+<rect x="1530" y="380" width="470" height="180" rx="13" fill="#ffffff" stroke="#334155" stroke-width="2.4"/>
+<text x="1765.0" y="418" font-size="19" font-weight="500" text-anchor="middle" fill="#172033" font-family="Arial">④ SEC 財報／重大訊息</text>
+<line x1="1554" y1="433" x2="1976" y2="433" stroke="#334155" stroke-width="1" opacity="0.45"/>
+<text x="1765.0" y="460" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">fetch_filings.py｜EDGAR</text>
+<text x="1765.0" y="484" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">10-K／10-Q：長期背景</text>
+<text x="1765.0" y="508" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">8-K：補充事件</text>
+<text x="1765.0" y="532" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">已有檔案跳過下載</text>
+<rect x="2060" y="380" width="440" height="180" rx="13" fill="#ffffff" stroke="#334155" stroke-width="2.4"/>
+<text x="2280.0" y="418" font-size="19" font-weight="500" text-anchor="middle" fill="#172033" font-family="Arial">⑤ 法說會逐字稿</text>
+<line x1="2084" y1="433" x2="2476" y2="433" stroke="#334155" stroke-width="1" opacity="0.45"/>
+<text x="2280.0" y="460" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">fetch_transcripts.py</text>
+<text x="2280.0" y="484" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">Alpha Vantage API</text>
+<text x="2280.0" y="508" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">pipeline 可 --skip_transcripts</text>
+<text x="2280.0" y="532" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">既有資料仍可被 dataset 使用</text>
+<rect x="150" y="650" width="760" height="215" rx="13" fill="#ffffff" stroke="#334155" stroke-width="2.4"/>
+<text x="530.0" y="688" font-size="19" font-weight="500" text-anchor="middle" fill="#172033" font-family="Arial">⑥ 時間協議與五日方向標籤</text>
+<line x1="174" y1="703" x2="886" y2="703" stroke="#334155" stroke-width="1" opacity="0.45"/>
+<text x="530.0" y="730" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">依交易日建立 70% train／15% validation／15% test</text>
+<text x="530.0" y="754" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">若 t+5 target_date 跨越邊界，樣本標成 purged</text>
+<text x="530.0" y="778" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">BEARISH／NEUTRAL／BULLISH 分位數門檻只由 train 估計</text>
+<text x="530.0" y="802" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">同一份 split 寫入每日 record，供所有下游沿用</text>
+<rect x="980" y="650" width="1420" height="215" rx="13" fill="#ffffff" stroke="#334155" stroke-width="2.4"/>
+<text x="1690.0" y="688" font-size="19" font-weight="500" text-anchor="middle" fill="#172033" font-family="Arial">⑦ 文字清理、可用日期與切段</text>
+<line x1="1004" y1="703" x2="2376" y2="703" stroke="#334155" stroke-width="1" opacity="0.45"/>
+<text x="1690.0" y="730" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">text_cleaner.py 清除 HTML／iXBRL 隱藏內容；chunker.py 切成 ≤512 tokens</text>
+<text x="1690.0" y="754" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">10-K／10-Q 與 transcript 只在 available_date ≤ 決策日後才可見</text>
+<text x="1690.0" y="778" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">缺精確時間時採保守規則：下一個平日才視為可用</text>
+<text x="1690.0" y="802" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">8-K 保留時間戳記作為補充事件，不覆蓋最近一期背景文件</text>
+<rect x="480" y="930" width="1640" height="175" rx="13" fill="#eaf2ff" stroke="#315da8" stroke-width="2.4"/>
+<text x="1300.0" y="968" font-size="19" font-weight="500" text-anchor="middle" fill="#172033" font-family="Arial">⑧ build_dataset.py：每日多模態資料契約</text>
+<line x1="504" y1="983" x2="2096" y2="983" stroke="#315da8" stroke-width="1" opacity="0.45"/>
+<text x="1300.0" y="1010" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">輸出 data/processed/dataset/{TICKER}/{date}.json：chart.inputs、news、filing/transcript chunks、label、split、target_date</text>
+<text x="1300.0" y="1034" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">manifest 保存 adjusted OHLCV metadata、train-only thresholds、split 摘要與 protocol_version=2</text>
+<text x="1300.0" y="1058" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">records_sha256 串接 B／C 產物，避免上游重建後靜默沿用舊向量或舊模型</text>
+<rect x="100" y="1320" width="680" height="225" rx="13" fill="#ffffff" stroke="#334155" stroke-width="2.4"/>
+<text x="440.0" y="1358" font-size="19" font-weight="500" text-anchor="middle" fill="#172033" font-family="Arial">① Vision Encoder → H_v</text>
+<line x1="124" y1="1373" x2="756" y2="1373" stroke="#334155" stroke-width="1" opacity="0.45"/>
+<text x="440.0" y="1400" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">vision_encoder.py｜google/vit-base-patch16-224</text>
+<text x="440.0" y="1424" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">K 線與成交量以同一 batch 通過同一組 frozen ViT</text>
+<text x="440.0" y="1448" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">每張圖保留 CLS + 196 patch tokens</text>
+<text x="440.0" y="1472" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">H_v shape = [2, 197, 768]（圖別由 fusion slot embedding 區分）</text>
+<text x="440.0" y="1527" font-size="14" font-weight="400" text-anchor="middle" fill="#b42318" font-family="Arial" font-style="italic">目前為通用 ImageNet ViT，非財經圖表領域預訓練</text>
+<rect x="960" y="1320" width="680" height="225" rx="13" fill="#ffffff" stroke="#334155" stroke-width="2.4"/>
+<text x="1300.0" y="1358" font-size="19" font-weight="500" text-anchor="middle" fill="#172033" font-family="Arial">② Text Encoder → H_t</text>
+<line x1="984" y1="1373" x2="1616" y2="1373" stroke="#334155" stroke-width="1" opacity="0.45"/>
+<text x="1300.0" y="1400" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">text_encoder.py｜ProsusAI/finbert（frozen）</text>
+<text x="1300.0" y="1424" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">輸入當日／回補新聞文字與 days_ago</text>
+<text x="1300.0" y="1448" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">token-level 表徵，最長 512 tokens</text>
+<text x="1300.0" y="1472" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">H_t shape = [512, 768]</text>
+<rect x="1820" y="1320" width="680" height="225" rx="13" fill="#ffffff" stroke="#334155" stroke-width="2.4"/>
+<text x="2160.0" y="1358" font-size="19" font-weight="500" text-anchor="middle" fill="#172033" font-family="Arial">③ Causal FAISS 文件庫</text>
+<line x1="1844" y1="1373" x2="2476" y2="1373" stroke="#334155" stroke-width="1" opacity="0.45"/>
+<text x="2160.0" y="1400" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">vector_db.py｜filing／transcript chunks</text>
+<text x="2160.0" y="1424" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">逐日依時間加入，禁止未來文件進入 index</text>
+<text x="2160.0" y="1448" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">chunk embedding 由 FinBERT mean-pool 建立</text>
+<text x="2160.0" y="1472" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">可選來源配額 balance_sources（預設關閉）</text>
+<rect x="500" y="1645" width="720" height="185" rx="13" fill="#ffffff" stroke="#334155" stroke-width="2.4"/>
+<text x="860.0" y="1683" font-size="19" font-weight="500" text-anchor="middle" fill="#172033" font-family="Arial">④ 建立跨模態檢索 query</text>
+<line x1="524" y1="1698" x2="1196" y2="1698" stroke="#334155" stroke-width="1" opacity="0.45"/>
+<text x="860.0" y="1725" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">retriever.py｜q = α·mean(H_v) + (1-α)·mean(H_t)</text>
+<text x="860.0" y="1749" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">目前 query_alpha=0.5</text>
+<text x="860.0" y="1773" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">L2 normalize 後查詢當日可見的 FAISS index</text>
+<rect x="1430" y="1645" width="820" height="185" rx="13" fill="#ffffff" stroke="#334155" stroke-width="2.4"/>
+<text x="1840.0" y="1683" font-size="19" font-weight="500" text-anchor="middle" fill="#172033" font-family="Arial">⑤ Top-K 檢索與重新編碼 → H_r</text>
+<line x1="1454" y1="1698" x2="2226" y2="1698" stroke="#334155" stroke-width="1" opacity="0.45"/>
+<text x="1840.0" y="1725" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">top-K=3；取相似文件 chunk（可選 filing/transcript 來源配額）</text>
+<text x="1840.0" y="1749" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">檢索文字重新通過 FinBERT，保留 token-level 表徵</text>
+<text x="1840.0" y="1773" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">H_r shape = [3, 512, 768]</text>
+<rect x="600" y="1930" width="1320" height="175" rx="13" fill="#eaf2ff" stroke="#315da8" stroke-width="2.4"/>
+<text x="1260.0" y="1968" font-size="19" font-weight="500" text-anchor="middle" fill="#172033" font-family="Arial">⑥ generate_vectors.py：版本化每日向量</text>
+<line x1="624" y1="1983" x2="1896" y2="1983" stroke="#315da8" stroke-width="1" opacity="0.45"/>
+<text x="1260.0" y="2010" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">輸出 data/vectors/{TICKER}/{date}/H_v.npy、H_t.npy、H_r.npy、index.json</text>
+<text x="1260.0" y="2034" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">index 保存 encoder、input_types、retrieved_chunk_ids、source_record_sha256 與 dataset_records_sha256</text>
+<text x="1260.0" y="2058" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">真實向量與 --fake namespace 分離；資料版本不一致時下游直接停止</text>
+<rect x="1995" y="1905" width="505" height="205" rx="13" fill="#f1f3f5" stroke="#77808d" stroke-width="2.4"/>
+<text x="2247.5" y="1943" font-size="19" font-weight="500" text-anchor="middle" fill="#172033" font-family="Arial">附屬：原始文字事件抽取</text>
+<line x1="2019" y1="1958" x2="2476" y2="1958" stroke="#77808d" stroke-width="1" opacity="0.45"/>
+<text x="2247.5" y="1985" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">event_extraction.py</text>
+<text x="2247.5" y="2009" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">keyword（pipeline 預設）或 LLM</text>
+<text x="2247.5" y="2033" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">用 149 天 ground truth 算 P/R/F1</text>
+<text x="2247.5" y="2057" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">只檢查 A 的文字資料，不讀 Z_fused</text>
+<rect x="620" y="2330" width="1360" height="230" rx="13" fill="#ffffff" stroke="#334155" stroke-width="2.4"/>
+<text x="1300.0" y="2368" font-size="19" font-weight="500" text-anchor="middle" fill="#172033" font-family="Arial">① Cross-Modal Transformer：H_v／H_t／H_r → Z_fused</text>
+<line x1="644" y1="2383" x2="1956" y2="2383" stroke="#334155" stroke-width="1" opacity="0.45"/>
+<text x="1300.0" y="2410" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">fusion/model.py：兩張圖保留 394 個 vision tokens；H_t mean-pool 成 1 token；H_r mean-pool 成 K tokens</text>
+<text x="1300.0" y="2434" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">加入 modality embedding 與 vision slot embedding，經 2-layer／8-head Transformer，CLS 經 head 輸出 768 維</text>
+<text x="1300.0" y="2458" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">fusion/train.py 僅用 train labels + throwaway classifier head 的 cross-entropy 更新 fusion</text>
+<text x="1300.0" y="2482" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">訓練完成後才固定權重，對 train／validation／test／purged 全日期做 forward export</text>
+<text x="1300.0" y="2542" font-size="14" font-weight="400" text-anchor="middle" fill="#b42318" font-family="Arial" font-style="italic">目前只實作分類 CE；正式計畫的 L_align／L_ground 尚未實作</text>
+<rect x="820" y="2660" width="960" height="185" rx="13" fill="#eaf2ff" stroke="#315da8" stroke-width="2.4"/>
+<text x="1300.0" y="2698" font-size="19" font-weight="500" text-anchor="middle" fill="#172033" font-family="Arial">② Z_fused 版本化 belief state</text>
+<line x1="844" y1="2713" x2="1756" y2="2713" stroke="#315da8" stroke-width="1" opacity="0.45"/>
+<text x="1300.0" y="2740" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">每個交易日一筆 768-D 向量；consolidate.py 建立 {TICKER}_index.npz</text>
+<text x="1300.0" y="2764" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">index 保存 label、return_next、split、target_date 與 dataset/Z SHA-256</text>
+<text x="1300.0" y="2788" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">Classifier、Decoder、PPO、Backtest、IG 共用這份 index，不再自行重切資料</text>
+<rect x="80" y="2990" width="540" height="285" rx="13" fill="#ffffff" stroke="#334155" stroke-width="2.4"/>
+<text x="350.0" y="3028" font-size="19" font-weight="500" text-anchor="middle" fill="#172033" font-family="Arial">③ 市場方向診斷分類</text>
+<line x1="104" y1="3043" x2="596" y2="3043" stroke="#334155" stroke-width="1" opacity="0.45"/>
+<text x="350.0" y="3070" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">classifier.py｜LogisticRegression</text>
+<text x="350.0" y="3094" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">輸入 Z_fused；預測 t+5 三分類</text>
+<text x="350.0" y="3118" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">fit：train</text>
+<text x="350.0" y="3142" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">model selection/report：validation</text>
+<text x="350.0" y="3166" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">final metric：held-out test</text>
+<text x="350.0" y="3190" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">每次報告含 run_id 並保留歷史檔</text>
+<rect x="670" y="2990" width="540" height="285" rx="13" fill="#fff7e6" stroke="#9a6700" stroke-width="2.4" stroke-dasharray="10 7"/>
+<text x="940.0" y="3028" font-size="19" font-weight="500" text-anchor="middle" fill="#172033" font-family="Arial">④ 事件類型診斷 Probe</text>
+<line x1="694" y1="3043" x2="1186" y2="3043" stroke="#9a6700" stroke-width="1" opacity="0.45"/>
+<text x="940.0" y="3070" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">event_validation_head.py</text>
+<text x="940.0" y="3094" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">Z_fused → 7 類 multi-label 商業事件</text>
+<text x="940.0" y="3118" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">對 149 天 event ground truth</text>
+<text x="940.0" y="3142" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">forward-only expanding-window CV</text>
+<text x="940.0" y="3166" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">purged 樣本排除</text>
+<text x="940.0" y="3190" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">輸出 per-class 與 micro P/R/F1</text>
+<rect x="1260" y="2990" width="620" height="285" rx="13" fill="#fff7e6" stroke="#9a6700" stroke-width="2.4" stroke-dasharray="10 7"/>
+<text x="1570.0" y="3028" font-size="19" font-weight="500" text-anchor="middle" fill="#172033" font-family="Arial">⑤ 生成式 Belief Decoder</text>
+<line x1="1284" y1="3043" x2="1856" y2="3043" stroke="#9a6700" stroke-width="1" opacity="0.45"/>
+<text x="1570.0" y="3070" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">generate_y_belief.py：LLM 建立 trend／risk／narrative targets</text>
+<text x="1570.0" y="3094" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">decoder/train.py：Z_fused soft prompt + QLoRA LLaMA-2-7b</text>
+<text x="1570.0" y="3118" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">共用 train／validation／test split；val 選 checkpoint</text>
+<text x="1570.0" y="3142" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">decoder/evaluate.py 在 held-out test 評估 loss delta、tags</text>
+<text x="1570.0" y="3166" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">可選 LLM-as-judge 評估敘述品質</text>
+<text x="1570.0" y="3257" font-size="14" font-weight="400" text-anchor="middle" fill="#b42318" font-family="Arial" font-style="italic">Decoder 只實作 L_belief；L_align／L_ground 尚缺</text>
+<rect x="1930" y="2990" width="570" height="285" rx="13" fill="#ffffff" stroke="#334155" stroke-width="2.4"/>
+<text x="2215.0" y="3028" font-size="19" font-weight="500" text-anchor="middle" fill="#172033" font-family="Arial">⑥ MDP 環境與 PPO</text>
+<line x1="1954" y1="3043" x2="2476" y2="3043" stroke="#334155" stroke-width="1" opacity="0.45"/>
+<text x="2215.0" y="3070" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">state = [Z_fused, 前一期股票權重]</text>
+<text x="2215.0" y="3094" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">action = 股票權重 [0,1]，其餘為現金</text>
+<text x="2215.0" y="3118" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">reward = 報酬 - 交易成本 - λvol·波動 - λmdd·回撤</text>
+<text x="2215.0" y="3142" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">train_ppo.py 只讀 train split</text>
+<text x="2215.0" y="3166" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">可選連續低波動→完整市場 curriculum</text>
+<text x="2215.0" y="3190" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">checkpoint 綁 ticker 與 Z_fused hash</text>
+<rect x="150" y="3440" width="1030" height="260" rx="13" fill="#ecf9ee" stroke="#2f8a43" stroke-width="2.4"/>
+<text x="665.0" y="3478" font-size="19" font-weight="500" text-anchor="middle" fill="#172033" font-family="Arial">第一階段輸出：表徵與生成品質報告</text>
+<line x1="174" y1="3493" x2="1156" y2="3493" stroke="#2f8a43" stroke-width="1" opacity="0.45"/>
+<text x="665.0" y="3520" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">classification_report_{TICKER}_{run_id}.json（validation + held-out test）</text>
+<text x="665.0" y="3544" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">event_validation_head_report_{TICKER}_{run_id}.json（forward-only CV）</text>
+<text x="665.0" y="3568" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">decoder test：微調前後 loss delta、TREND／RISK_LEVEL、格式正確率</text>
+<text x="665.0" y="3592" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">三者用途不同：未來價格方向／當天事件保真度／結構化 belief 敘述</text>
+<rect x="1360" y="3440" width="1040" height="260" rx="13" fill="#ecf9ee" stroke="#2f8a43" stroke-width="2.4"/>
+<text x="1880.0" y="3478" font-size="19" font-weight="500" text-anchor="middle" fill="#172033" font-family="Arial">⑦ held-out test 回測：三策略同期間比較</text>
+<line x1="1384" y1="3493" x2="2376" y2="3493" stroke="#2f8a43" stroke-width="1" opacity="0.45"/>
+<text x="1880.0" y="3520" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">backtest.py：buy_and_hold（基準）／rule_based（train-fitted probe）／ppo</text>
+<text x="1880.0" y="3544" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">t 日決定權重，以 t→t+1 adjusted return 結算；納入 turnover × cost</text>
+<text x="1880.0" y="3568" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">只讀 evaluation.backtest_split=test</text>
+<text x="1880.0" y="3592" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">輸出 cumulative return、annualized Sharpe ratio、maximum drawdown</text>
+<rect x="1880" y="3790" width="520" height="205" rx="13" fill="#fff7e6" stroke="#9a6700" stroke-width="2.4" stroke-dasharray="10 7"/>
+<text x="2140.0" y="3828" font-size="19" font-weight="500" text-anchor="middle" fill="#172033" font-family="Arial">⑧ Integrated Gradients</text>
+<line x1="1904" y1="3843" x2="2376" y2="3843" stroke="#9a6700" stroke-width="1" opacity="0.45"/>
+<text x="2140.0" y="3870" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">integrated_gradients.py｜captum</text>
+<text x="2140.0" y="3894" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">只在 held-out test 解釋 PPO policy mean</text>
+<text x="2140.0" y="3918" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">重建真實前期持倉軌跡</text>
+<text x="2140.0" y="3942" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">輸出逐日歸因與 top dimensions</text>
+<rect x="430" y="3870" width="1250" height="205" rx="13" fill="#ecf9ee" stroke="#2f8a43" stroke-width="2.4"/>
+<text x="1055.0" y="3908" font-size="19" font-weight="500" text-anchor="middle" fill="#172033" font-family="Arial">最終研究輸出</text>
+<line x1="454" y1="3923" x2="1656" y2="3923" stroke="#2f8a43" stroke-width="1" opacity="0.45"/>
+<text x="1055.0" y="3950" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">每日 Z_fused belief state + 結構化市場敘述</text>
+<text x="1055.0" y="3974" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">診斷分類／事件保真度 + 單股與現金配置 policy</text>
+<text x="1055.0" y="3998" font-size="15" font-weight="400" text-anchor="middle" fill="#526176" font-family="Arial">held-out 回測（return／Sharpe／MDD）+ policy attribution</text>
+<text x="1055.0" y="4057" font-size="14" font-weight="400" text-anchor="middle" fill="#b42318" font-family="Arial" font-style="italic">目前 action space 為單一股票＋現金；多資產回測尚未擴充</text>
+<text x="75" y="4220" font-size="16" font-weight="500" text-anchor="start" fill="#33445f" font-family="Arial">核心原則：offline belief construction → freeze/version Z_fused → train-only PPO → held-out test evaluation</text>
+<text x="2525" y="4220" font-size="15" font-weight="400" text-anchor="end" fill="#526176" font-family="Arial">資料／模型版本不相容時 fail fast，不允許靜默混用舊產物</text>
+</svg>

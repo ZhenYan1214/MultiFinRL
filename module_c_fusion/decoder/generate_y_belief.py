@@ -76,14 +76,37 @@ def main():
     args = ap.parse_args()
     model = args.model or DEFAULT_MODEL[args.provider]
 
-    files = sorted((paths.DATASET / args.ticker).glob("*.json"))
-    if not files:
-        raise SystemExit(f"找不到 A 的資料: {paths.DATASET / args.ticker}，先跑完 A 的 pipeline")
+    manifest_path = paths.dataset_manifest(args.ticker)
+    if not manifest_path.exists():
+        raise SystemExit(f"找不到 A 的資料 manifest: {manifest_path}，先跑完 A 的 pipeline")
+    manifest = read_json(manifest_path)
+    files = [paths.daily_json(args.ticker, date) for date in manifest["dates"]]
+    if not files or any(not file.exists() for file in files):
+        raise SystemExit(f"A 的 manifest/每日資料不完整: {paths.DATASET / args.ticker}")
 
     out_path = paths.y_belief_path(args.ticker)
+    meta_path = paths.y_belief_meta_path(args.ticker)
     y_belief: dict[str, str] = {}
     if out_path.exists():
+        if not meta_path.exists():
+            raise SystemExit(
+                f"既有 {out_path} 缺少 dataset 指紋，無法確認標籤/文本版本。"
+                "請先備份或移走舊檔，再依新版 dataset 重新生成"
+            )
+        meta = read_json(meta_path)
+        if meta.get("dataset_records_sha256") != manifest["records_sha256"]:
+            raise SystemExit(
+                f"既有 {out_path} 對應舊 dataset。為避免混用舊 TREND/敘述，"
+                "請先備份或移走舊檔，再重新生成"
+            )
+        if meta.get("provider") != args.provider or meta.get("model") != model:
+            raise SystemExit(
+                f"既有 {out_path} 由 {meta.get('provider')}/{meta.get('model')} 生成，"
+                f"不可和 {args.provider}/{model} 混在同一份 target；請改回原設定或另行備份重建"
+            )
         y_belief = read_json(out_path)  # 已生成的先保留，重跑只補新的（同 event_ground_truth_llm.py）
+        valid_dates = set(manifest["dates"])
+        y_belief = {date: text for date, text in y_belief.items() if date in valid_dates}
 
     targets = [f for f in files if f.stem not in y_belief]
     if args.limit:
@@ -99,8 +122,12 @@ def main():
         y_belief[date] = text
         print(f"  [{i}/{len(targets)}] {date}: {text[:80]}...")
         write_json(y_belief, out_path)  # 每天都落地，避免中途中斷（例如 API 偶發錯誤）把之前的進度全部弄丟
+        write_json({"ticker": args.ticker, "provider": args.provider, "model": model,
+                    "dataset_records_sha256": manifest["records_sha256"]}, meta_path)
 
     write_json(y_belief, out_path)
+    write_json({"ticker": args.ticker, "provider": args.provider, "model": model,
+                "dataset_records_sha256": manifest["records_sha256"]}, meta_path)
     print(f"[generate_y_belief] {len(y_belief)} 天 -> {out_path}")
 
 

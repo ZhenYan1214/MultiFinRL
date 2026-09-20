@@ -9,15 +9,16 @@
 
 ground truth：149 天分層抽樣，人工（Claude 對話中直接標記）標記，見
 `data/labels/event_ground_truth/{ticker}.json` 與 `event_ground_truth_prompt.py`。
-評估結果輸出到 data/outputs/metrics/event_extraction_report.json（keyword）或
-data/outputs/metrics/event_extraction_report_llm_{provider}.json（llm）
+評估結果輸出到 data/outputs/metrics/event_extraction_report_{ticker}.json（keyword）或
+data/outputs/metrics/event_extraction_report_llm_{provider}_{ticker}.json（llm）
 （docs/decisions.md #32、docs/spec_b_event_extraction_llm.md）。
 """
 import argparse
+import datetime as dt
 import re
 
 from shared import paths
-from shared.utils import read_json, write_json
+from shared.utils import read_json, stable_json_sha256, write_json
 from module_b_encoder.llm_client import DEFAULT_MODEL, label_events
 
 EVENT_KEYWORDS: dict[str, list[str]] = {
@@ -110,11 +111,15 @@ def extract_llm_from_daily_record(record: dict, provider: str, model: str) -> li
     return label_events(ticker, date, news, filing_chunks, transcript_chunks, provider, model)
 
 
-def run_llm_extraction(files: list, provider: str, model: str) -> dict[str, set]:
+def run_llm_extraction(files: list, provider: str, model: str,
+                       dataset_hash: str) -> dict[str, set]:
     """對 files 逐天做 LLM 抽取，中斷續跑：結果邊跑邊存進快取檔，重跑時已經有結果的
     日期直接跳過、不重新呼叫 API、不重複花錢。"""
     ticker = read_json(files[0])["ticker"] if files else None
-    cache_path = paths.event_extraction_llm_cache_path(ticker)
+    cache_key = stable_json_sha256({
+        "provider": provider, "model": model, "dataset_records_sha256": dataset_hash,
+    })[:16]
+    cache_path = paths.event_extraction_llm_cache_path(ticker, provider, cache_key)
     cache: dict[str, list[str]] = read_json(cache_path) if cache_path.exists() else {}
 
     per_day_types: dict[str, set] = {}
@@ -158,9 +163,13 @@ def main():
     model = args.model or DEFAULT_MODEL[args.provider]
 
     dataset_dir = paths.DATASET / args.ticker
-    files = sorted(dataset_dir.glob("*.json"))
-    if not files:
-        raise SystemExit(f"找不到 A 的資料: {dataset_dir}")
+    manifest_path = paths.dataset_manifest(args.ticker)
+    if not manifest_path.exists():
+        raise SystemExit(f"找不到 A 的 dataset manifest: {manifest_path}")
+    manifest = read_json(manifest_path)
+    files = [paths.daily_json(args.ticker, date) for date in manifest["dates"]]
+    if not files or any(not file.exists() for file in files):
+        raise SystemExit(f"A 的 manifest/每日資料不完整: {dataset_dir}")
 
     gt_path = paths.event_ground_truth_path(args.ticker)
     gt = read_json(gt_path) if gt_path.exists() else {}
@@ -170,7 +179,8 @@ def main():
             raise SystemExit(f"--limit_to_ground_truth 需要 ground truth，找不到: {gt_path}")
         files = [f for f in files if f.stem in gt]
 
-    report = {"ticker": args.ticker, "method": args.method, "days": len(files)}
+    report = {"run_id": dt.datetime.now().strftime("%Y%m%d_%H%M%S_%f"),
+              "ticker": args.ticker, "method": args.method, "days": len(files)}
 
     if args.method == "keyword":
         per_day = {}
@@ -181,15 +191,18 @@ def main():
             per_day[record["date"]] = events
             per_day_types[record["date"]] = {e["event_type"] for e in events}
         report["events_per_day"] = {d: e for d, e in per_day.items() if e}
-        out = paths.OUTPUTS / "metrics" / "event_extraction_report.json"
+        out = paths.OUTPUTS / "metrics" / f"event_extraction_report_{args.ticker}.json"
     else:
         print(f"[event_extraction] method=llm provider={args.provider} model={model}"
              f"（{len(files)} 天，每天一次 API 呼叫，會產生費用，已標記過的日期會跳過）")
-        per_day_types = run_llm_extraction(files, args.provider, model)
+        per_day_types = run_llm_extraction(
+            files, args.provider, model, manifest["records_sha256"]
+        )
         report["provider"] = args.provider
         report["model"] = model
         report["events_per_day"] = {d: sorted(t) for d, t in per_day_types.items() if t}
-        out = paths.OUTPUTS / "metrics" / f"event_extraction_report_llm_{args.provider}.json"
+        out = (paths.OUTPUTS / "metrics" /
+               f"event_extraction_report_llm_{args.provider}_{args.ticker}.json")
 
     if gt:
         dates = sorted(d for d in gt if d in per_day_types)
@@ -205,7 +218,9 @@ def main():
         report["evaluation"] = f"pending ground truth（找不到 {gt_path}）"
 
     write_json(report, out)
-    print(f"[event_extraction] {len(files)} days -> {out}")
+    archive = out.with_name(f"{out.stem}_{report['run_id']}.json")
+    write_json(report, archive)
+    print(f"[event_extraction] {len(files)} days -> {archive}（latest: {out}）")
 
 
 if __name__ == "__main__":

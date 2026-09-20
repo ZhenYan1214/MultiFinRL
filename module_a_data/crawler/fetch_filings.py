@@ -18,7 +18,9 @@ index.json，下游自己依 form 分流。
     python -m module_a_data.crawler.fetch_filings --ticker AAPL --start 2021-01-01
 """
 import argparse
+import datetime as dt
 import time
+from zoneinfo import ZoneInfo
 
 import requests
 
@@ -28,6 +30,26 @@ from shared.utils import write_json
 # SEC 要求 User-Agent 含聯絡方式，請改成自己的
 HEADERS = {"User-Agent": "MultiFinRL research project XXXXXXXXX@gmail.com"}
 FORMS = {"10-K", "10-Q", "8-K"}
+ET = ZoneInfo("America/New_York")
+
+
+def _available_date(accepted_at: str, filing_date: str) -> str:
+    """SEC 文件在 16:00 ET 後才受理時，下一個平日才可進入收盤後決策狀態。"""
+    if accepted_at:
+        accepted = dt.datetime.fromisoformat(accepted_at.replace("Z", "+00:00"))
+        if accepted.tzinfo is None:
+            accepted = accepted.replace(tzinfo=ET)
+        else:
+            accepted = accepted.astimezone(ET)
+        day = accepted.date()
+        if accepted.time() >= dt.time(16, 0):
+            day += dt.timedelta(days=1)
+    else:
+        # 舊資料或 API 缺欄位時保守延後一天，避免把盤後文件提前到同日。
+        day = dt.date.fromisoformat(filing_date) + dt.timedelta(days=1)
+    while day.weekday() >= 5:
+        day += dt.timedelta(days=1)
+    return day.isoformat()
 
 
 def ticker_to_cik(ticker: str) -> str:
@@ -44,11 +66,15 @@ def list_filings(cik: str, start: str) -> list[dict]:
     r.raise_for_status()
     recent = r.json()["filings"]["recent"]
     filings = []
-    for form, date, accession, doc in zip(
-        recent["form"], recent["filingDate"], recent["accessionNumber"], recent["primaryDocument"]
+    accepted_times = recent.get("acceptanceDateTime", [""] * len(recent["form"]))
+    for form, date, accepted_at, accession, doc in zip(
+        recent["form"], recent["filingDate"], accepted_times,
+        recent["accessionNumber"], recent["primaryDocument"]
     ):
         if form in FORMS and date >= start:
             filings.append({"form": form, "filing_date": date,
+                            "accepted_at": accepted_at,
+                            "available_date": _available_date(accepted_at, date),
                             "accession": accession.replace("-", ""), "document": doc})
     return filings
 
@@ -65,7 +91,11 @@ def download_filings(ticker: str, start: str) -> None:
     for f in filings:
         fname = f"{f['form']}_{f['filing_date']}.html"
         out_path = out_dir / fname
-        index.append({"form": f["form"], "filing_date": f["filing_date"], "file": fname})
+        index.append({
+            "form": f["form"], "filing_date": f["filing_date"],
+            "accepted_at": f["accepted_at"], "available_date": f["available_date"],
+            "file": fname,
+        })
 
         if out_path.is_file():
             skipped += 1

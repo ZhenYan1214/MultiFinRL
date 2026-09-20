@@ -5,7 +5,8 @@
     buy_and_hold   全程滿倉（baseline）
     rule_based     分類器預測 BULLISH 滿倉 / BEARISH 空倉 / NEUTRAL 半倉（無 RL 對照組）
     ppo            用訓練好的 PPO agent 決定權重（RL 組）
-- 報告輸出到 data/outputs/backtest/report_{run_id}.json。
+- 三種策略都只在同一份 held-out test split 評估。
+- 報告輸出到 data/outputs/backtest/report_{TICKER}_{strategy}_{run_id}.json。
 
 用法：
     python -m module_c_fusion.backtest.backtest --ticker AAPL --strategy buy_and_hold
@@ -16,8 +17,9 @@ import datetime as dt
 import numpy as np
 
 from shared import paths
-from shared.utils import load_config, read_json, write_json
+from shared.utils import load_config, write_json
 from module_c_fusion.fusion.consolidate import load_index
+from module_c_fusion.rl.train_ppo import validate_agent_metadata
 
 TRADING_DAYS_PER_YEAR = 252
 
@@ -57,27 +59,15 @@ def run_backtest(weights: np.ndarray, asset_returns: np.ndarray, cost: float = 0
 # --- 資料與策略 ---
 
 def load_series(ticker: str):
-    """回傳 (dates, z_seq, next_day_returns)。
+    """回傳 (dates, z_seq, next_day_returns, split)。
 
-    優先讀彙整索引；索引不存在時 fallback 成逐日掃描。
-    注意：這裡回傳整段期間的序列，不自動切測試期——切分邏輯由呼叫端（策略函式）決定，
-    例如 weights_rule_based() 內部用前 70% fit、其餘出訊號。
+    只讀帶資料指紋的彙整索引，避免混用殘留的逐日 Z_fused。
+    main() 會依 index 內的 split 選出正式評估區間。
     """
     idx = load_index(ticker)
-    if idx is not None:
-        return idx["dates"].tolist(), idx["z"], idx["return_next"]
-
-    z_dir = paths.OUTPUTS / "z_fused" / ticker
-    dates, z_list, r_list = [], [], []
-    for f in sorted(z_dir.glob("*.npy")):
-        record_file = paths.daily_json(ticker, f.stem)
-        if not record_file.exists():
-            continue
-        prices = read_json(record_file)["prices"]
-        dates.append(f.stem)
-        z_list.append(np.load(f))
-        r_list.append(prices["future_closes"][0] / prices["close_t0"] - 1)
-    return dates, np.stack(z_list), np.array(r_list)
+    if idx is None or "split" not in idx:
+        raise ValueError("缺少新版 Z_fused index；請重跑 fusion.train/consolidate")
+    return idx["dates"].tolist(), idx["z"], idx["return_next"], idx["split"]
 
 
 def weights_buy_and_hold(n: int, **_) -> np.ndarray:
@@ -85,23 +75,24 @@ def weights_buy_and_hold(n: int, **_) -> np.ndarray:
 
 
 def weights_rule_based(z_seq: np.ndarray, ticker: str, **_) -> np.ndarray:
-    """用 validation 的 LogisticRegression 在訓練期 fit、測試期出訊號的簡化版：
-    這裡直接以 Z_fused 重新 fit 前 70% 再對全序列出權重，僅供 pipeline 對照，
-    正式實驗請沿用 classifier.py 的切分。"""
+    """用 train split fit LogisticRegression，再對傳入的 held-out test Z_fused 出訊號。"""
     from sklearn.linear_model import LogisticRegression
     from module_c_fusion.validation.classifier import load_z_and_labels
     rows = load_z_and_labels(ticker)
-    n_train = int(len(rows) * 0.7)
-    X = np.stack([z for _, z, _ in rows])
-    y = [lab for _, _, lab in rows]
-    clf = LogisticRegression(max_iter=1000).fit(X[:n_train], y[:n_train])
+    train = [row for row in rows if row[3] == "train"]
+    if not train:
+        raise ValueError("rule_based 找不到 train split")
+    X = np.stack([z for _, z, _, _ in train])
+    y = [lab for _, _, lab, _ in train]
+    clf = LogisticRegression(max_iter=1000, class_weight="balanced").fit(X, y)
     pred = clf.predict(z_seq)  # 0=BEARISH,1=NEUTRAL,2=BULLISH
     return np.select([pred == 2, pred == 1], [1.0, 0.5], default=0.0)
 
 
-def weights_ppo(z_seq: np.ndarray, **_) -> np.ndarray:
+def weights_ppo(z_seq: np.ndarray, ticker: str, agent_path=None, **_) -> np.ndarray:
     from stable_baselines3 import PPO
-    agent = PPO.load(paths.OUTPUTS / "checkpoints" / "ppo_agent.zip")
+    path = agent_path or (paths.OUTPUTS / "checkpoints" / f"ppo_agent_{ticker}.zip")
+    agent = PPO.load(path)
     weights, w_prev = [], 0.0
     for z in z_seq:
         obs = np.concatenate([z, [w_prev]]).astype(np.float32)
@@ -123,22 +114,34 @@ def main():
     ap.add_argument("--ticker", default=cfg["tickers"][0])
     ap.add_argument("--strategy", choices=STRATEGIES, default="buy_and_hold")
     ap.add_argument("--cost", type=float, default=0.001)
+    ap.add_argument("--agent", default=None, help="PPO checkpoint；預設使用目前 ticker 的專屬檔案")
     args = ap.parse_args()
 
-    dates, z_seq, returns = load_series(args.ticker)
+    dates, z_seq, returns, splits = load_series(args.ticker)
+    if args.strategy == "ppo":
+        index = load_index(args.ticker)
+        agent_path = args.agent or (paths.OUTPUTS / "checkpoints" / f"ppo_agent_{args.ticker}.zip")
+        validate_agent_metadata(agent_path, args.ticker, index)
+    evaluation_split = cfg.get("evaluation", {}).get("backtest_split", "test")
+    mask = np.asarray(splits) == evaluation_split
+    dates = [date for date, keep in zip(dates, mask) if keep]
+    z_seq, returns = z_seq[mask], returns[mask]
     if len(dates) < 10:
-        raise SystemExit("Z_fused 不足，先跑 module_c_fusion.fusion.train")
+        raise SystemExit(f"{evaluation_split} split 的 Z_fused 不足，先重跑 build_dataset 與 fusion.train")
 
     fn = STRATEGIES[args.strategy]
-    weights = fn(n=len(dates), z_seq=z_seq, ticker=args.ticker)
+    weights = fn(n=len(dates), z_seq=z_seq, ticker=args.ticker, agent_path=args.agent)
     result = run_backtest(np.asarray(weights, dtype=float), returns, args.cost)
 
-    run_id = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_id = dt.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     report = {
         "run_id": run_id, "ticker": args.ticker, "strategy": args.strategy,
+        "evaluation_split": evaluation_split,
+        "protocol": "all strategies evaluated on the same held-out split",
         "period": [dates[0], dates[-1]], "cost": args.cost, **result,
     }
-    out = paths.OUTPUTS / "backtest" / f"report_{run_id}.json"
+    out = (paths.OUTPUTS / "backtest" /
+           f"report_{args.ticker}_{args.strategy}_{run_id}.json")
     write_json(report, out)
     print(f"[backtest] {args.strategy}: cum={result['cumulative_return']:.2%} "
           f"sharpe={result['sharpe_ratio']:.2f} mdd={result['max_drawdown']:.2%} -> {out}")

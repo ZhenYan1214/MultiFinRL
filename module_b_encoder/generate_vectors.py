@@ -15,7 +15,7 @@ import time
 import numpy as np
 
 from shared import paths, schemas
-from shared.utils import load_config, read_json, write_json
+from shared.utils import load_config, read_json, stable_json_sha256, write_json
 
 try:
     from dotenv import load_dotenv
@@ -26,7 +26,9 @@ except ImportError:
 
 def save_vectors(ticker: str, date: str, h_v, h_t, h_r, chunk_ids: list[str],
                  vision_id: str, text_id: str, top_k: int, source_json: str,
-                 vision_input_types: list[str] | None = None) -> None:
+                 vision_input_types: list[str] | None = None,
+                 source_record_sha256: str = "synthetic",
+                 dataset_records_sha256: str = "synthetic") -> None:
     """三個 .npy + index.json 落地（validate 後）。"""
     out_dir = paths.vector_dir(ticker, date)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -46,6 +48,8 @@ def save_vectors(ticker: str, date: str, h_v, h_t, h_r, chunk_ids: list[str],
         },
         "retrieved_chunk_ids": chunk_ids,
         "source_json": source_json,
+        "source_record_sha256": source_record_sha256,
+        "dataset_records_sha256": dataset_records_sha256,
     }
     schemas.validate_vector_index(index)
     write_json(index, out_dir / "index.json")
@@ -97,7 +101,16 @@ def run_real(cfg, ticker: str, limit: int | None, balance_sources: bool = False)
     quota = {"filing": 1, "transcript": 1} if balance_sources else None
 
     dataset_dir = paths.DATASET / ticker
-    files = sorted(dataset_dir.glob("*.json"))
+    manifest_path = paths.dataset_manifest(ticker)
+    if not manifest_path.exists():
+        raise SystemExit(f"找不到 dataset manifest：{manifest_path}；請重跑 build_dataset")
+    manifest = read_json(manifest_path)
+    if manifest.get("protocol_version") != 2 or not manifest.get("records_sha256"):
+        raise SystemExit(f"{manifest_path} 是舊版格式；請重跑 build_dataset")
+    files = [paths.daily_json(ticker, date) for date in manifest["dates"]]
+    missing = [str(path) for path in files if not path.exists()]
+    if missing:
+        raise FileNotFoundError(f"dataset manifest 指向不存在的每日 JSON: {missing[:3]}")
     if limit:
         files = files[:limit]
     if not files:
@@ -129,7 +142,8 @@ def run_real(cfg, ticker: str, limit: int | None, balance_sources: bool = False)
 
         save_vectors(ticker, date, h_v, h_t, h_r, chunk_ids,
                      vision.model_id, text.model_id, k,
-                     str(f.relative_to(paths.ROOT)).replace("\\", "/"), input_types)
+                     str(f.relative_to(paths.ROOT)).replace("\\", "/"), input_types,
+                     stable_json_sha256(record), manifest["records_sha256"])
         print(f"[generate_vectors] {ticker} {date} done（{i}/{len(files)}）", end="\r", flush=True)
 
     print()
@@ -152,7 +166,7 @@ def main():
     started_at = time.perf_counter()
     try:
         if args.fake:
-            run_fake(cfg, args.ticker, args.n)
+            run_fake(cfg, f"{args.ticker}_FAKE", args.n)
         else:
             run_real(cfg, args.ticker, args.limit, balance_sources=args.balance_sources)
     finally:

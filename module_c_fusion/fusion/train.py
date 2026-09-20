@@ -3,7 +3,7 @@
 - 基礎版：以情緒分類為訓練目標（cross-entropy），端到端訓練融合層。
   QLoRA / 對比損失（L_align + L_ground + L_belief）為後續強化，介面不變。
 - 產出：Z_fused 到 data/outputs/z_fused/{TICKER}/{date}.npy，
-  checkpoint 到 data/outputs/checkpoints/fusion.pt。
+  checkpoint 到 data/outputs/checkpoints/fusion_{TICKER}.pt。
 
 用法：
     python -m module_c_fusion.fusion.train --fake --n 32     # 第一階段：假向量測通
@@ -30,21 +30,20 @@
   照著「共用主幹、分開輸出層」的架構做，不是只共用主幹卻仍然只有一個輸出層。
   這個 `clf_head` 本身只是訓練時提供梯度訊號用的鷹架，不會被存進 checkpoint（只存
   `model.state_dict()`），所以每支股票各自一個不會影響到之後怎麼載入這個 checkpoint。
-  單一 ticker（`--ticker` 或只給一個 `--tickers`）時，行為與加入這個功能之前完全一樣，
-  checkpoint 仍存到 `fusion.pt`；給多個 tickers 時，checkpoint 改存到
-  `fusion_{TICKER1}_{TICKER2}_....pt`，不會覆蓋掉單一 ticker 訓練出來的 `fusion.pt`，
-  兩者可以並存比較，不需要手動備份。
+  單一 ticker 存 `fusion_{TICKER}.pt`；多個 tickers 存
+  `fusion_{TICKER1}_{TICKER2}_....pt`；fake smoke test 則存 `fusion_fake.pt`，彼此不覆蓋。
 """
 import argparse
 import datetime as dt
 import json
+from pathlib import Path
 
 import numpy as np
 import torch    
 import torch.nn as nn
 
 from shared import paths, schemas
-from shared.utils import load_config, read_json
+from shared.utils import load_config, read_json, stable_json_sha256, write_json
 from module_c_fusion.fusion.model import build_model
 
 LABEL_TO_ID = {"BEARISH": 0, "NEUTRAL": 1, "BULLISH": 2}
@@ -105,17 +104,82 @@ def load_day(ticker: str, date: str, ablate_news: bool = False, ablate_vision: b
 
 
 def load_dataset(ticker: str):
-    """列出 B 已產出的所有日期，配上 A 的 label（沒有 label 的日期跳過）。"""
+    """列出 B 已產出的日期，配上 A 的 label/split/target_date。"""
+    manifest_path = paths.dataset_manifest(ticker)
+    if not manifest_path.exists():
+        raise SystemExit(f"缺少 {manifest_path}；請先重跑 build_dataset")
+    manifest = read_json(manifest_path)
+    if manifest.get("protocol_version") != 2 or not manifest.get("records_sha256"):
+        raise SystemExit(f"{manifest_path} 是舊版格式；請先重跑 build_dataset")
+
     days = []
-    for d in sorted((paths.VECTORS / ticker).iterdir()):
+    for date in manifest["dates"]:
+        d = paths.vector_dir(ticker, date)
         if not (d / "index.json").exists():
-            continue
-        date = d.name
+            raise SystemExit(
+                f"缺少 {d / 'index.json'}；請完整重跑 module_b_encoder.generate_vectors "
+                f"--ticker {ticker}"
+            )
         label_file = paths.daily_json(ticker, date)
         if not label_file.exists():
-            continue
-        days.append((date, LABEL_TO_ID[read_json(label_file)["label"]]))
+            raise SystemExit(f"manifest 指向不存在的 {label_file}；請重跑 build_dataset")
+        record = read_json(label_file)
+        if "split" not in record or "target_date" not in record.get("prices", {}):
+            raise SystemExit(
+                f"{label_file} 缺少防洩漏 split/target_date；請先重跑 module_a_data.build_dataset"
+            )
+        vector_index_path = d / "index.json"
+        vector_index = read_json(vector_index_path)
+        source_hash = vector_index.get("source_record_sha256")
+        if (not source_hash or source_hash != stable_json_sha256(record)
+                or vector_index.get("dataset_records_sha256") != manifest["records_sha256"]):
+            raise SystemExit(
+                f"{vector_index_path} 與目前 {label_file} 版本不一致；"
+                f"請重跑 module_b_encoder.generate_vectors --ticker {ticker}"
+            )
+        days.append((date, LABEL_TO_ID[record["label"]],
+                     record["split"], record["prices"]["target_date"]))
     return days
+
+
+def _model_days(days, split: str = "train"):
+    return [day for day in days if day[2] == split]
+
+
+def _common_multi_stock_splits(days_by_ticker: dict[str, list], train_ratio: float,
+                               validation_ratio: float) -> dict[str, dict[str, str]]:
+    """多股票共用日期邊界，避免某股票的 test 時段進入另一股票的 shared fusion 訓練。"""
+    common_dates = sorted(set.intersection(*(set(day[0] for day in days) for days in days_by_ticker.values())))
+    if len(common_dates) < 3:
+        raise ValueError("多股票沒有足夠的共同日期可建立共用時間切分")
+    i = int(len(common_dates) * train_ratio)
+    j = int(len(common_dates) * (train_ratio + validation_ratio))
+    if i == 0 or j <= i or j >= len(common_dates):
+        raise ValueError("多股票共同日期不足以切出 train/validation/test")
+    validation_start, test_start = common_dates[i], common_dates[j]
+
+    result = {}
+    for ticker, days in days_by_ticker.items():
+        stored_validation = min((day[0] for day in days if day[2] == "validation"), default=None)
+        stored_test = min((day[0] for day in days if day[2] == "test"), default=None)
+        if stored_validation != validation_start or stored_test != test_start:
+            raise SystemExit(
+                f"{ticker} 的 dataset split 邊界 ({stored_validation}, {stored_test}) 與多股票共同"
+                f"邊界 ({validation_start}, {test_start}) 不一致。為避免 shared fusion/label threshold "
+                "跨期洩漏，請先用相同交易日範圍重建各股票 dataset。"
+            )
+        by_date = {}
+        for date, _label, _stored_split, target_date in days:
+            if date < validation_start:
+                split = "train" if target_date < validation_start else "purged"
+            elif date < test_start:
+                split = "validation" if target_date < test_start else "purged"
+            else:
+                split = "test"
+            by_date[date] = split
+        result[ticker] = by_date
+    print(f"[train] 多股票共用切分邊界：validation={validation_start}, test={test_start}")
+    return result
 
 
 def make_fake_batch(n: int, k: int, n_vision_inputs: int = 2, seed: int = 0):
@@ -203,7 +267,8 @@ def export_z_fused(model, ticker: str, days, device: str, batch: int = 8,
     out_dir = paths.OUTPUTS / "z_fused" / ticker
     out_dir.mkdir(parents=True, exist_ok=True)
     with torch.no_grad():
-        for date, _y in days:
+        for day in days:
+            date = day[0]
             h_v, h_t, h_r = load_day(ticker, date, ablate_news=ablate_news, ablate_vision=ablate_vision)
             z = model(
                 torch.from_numpy(h_v[None]).to(device),
@@ -211,6 +276,12 @@ def export_z_fused(model, ticker: str, days, device: str, batch: int = 8,
                 torch.from_numpy(h_r[None]).to(device),
             )[0].cpu().numpy()
             np.save(out_dir / f"{date}.npy", z)
+    dataset_manifest = read_json(paths.dataset_manifest(ticker))
+    write_json({
+        "ticker": ticker,
+        "dates": [day[0] for day in days],
+        "dataset_records_sha256": dataset_manifest["records_sha256"],
+    }, out_dir / "run.json")
     print(f"[train] Z_fused x{len(days)} -> {out_dir}")
 
 
@@ -246,10 +317,22 @@ def main():
     if args.apply_checkpoint:
         # ---- 泛化測試：套用既有權重，不訓練，只對指定股票跑前向運算產生 Z_fused ----
         ticker = args.tickers[0] if args.tickers else args.ticker
+        checkpoint_path = Path(args.apply_checkpoint)
+        checkpoint_meta_path = checkpoint_path.with_suffix(".meta.json")
+        if not checkpoint_meta_path.exists():
+            raise SystemExit(f"{checkpoint_path} 缺少訓練 metadata，不可作正式泛化測試")
+        checkpoint_meta = read_json(checkpoint_meta_path)
+        if checkpoint_meta.get("training_split") != "train":
+            raise SystemExit(f"{checkpoint_path} 不是 train-only 正式 checkpoint")
+        if ticker in checkpoint_meta.get("trained_tickers", []):
+            raise SystemExit(
+                f"{ticker} 已參與 {checkpoint_path} 訓練，不是 held-out ticker；"
+                "不可把這次套用宣稱為跨股票泛化測試"
+            )
         days = load_dataset(ticker)
         if not days:
             raise SystemExit(f"找不到 {ticker} 的 B 向量，先跑 module_b_encoder.generate_vectors --ticker {ticker}")
-        state = torch.load(args.apply_checkpoint, map_location=device)
+        state = torch.load(checkpoint_path, map_location=device)
         model.load_state_dict(state)
         model.to(device)
         export_z_fused(model, ticker, days, device,
@@ -289,27 +372,41 @@ def main():
                 raise SystemExit(f"找不到 {t} 的 B 向量，先跑 module_b_encoder.generate_vectors --ticker {t}")
             days_by_ticker[t] = d
 
+        eval_cfg = cfg.get("evaluation", {})
+        split_overrides = _common_multi_stock_splits(
+            days_by_ticker,
+            eval_cfg.get("train_ratio", 0.70),
+            eval_cfg.get("validation_ratio", 0.15),
+        )
+        for t, days in days_by_ticker.items():
+            days_by_ticker[t] = [
+                (date, label, split_overrides[t][date], target_date)
+                for date, label, _split, target_date in days
+            ]
+
         batches = []  # [(ticker, h_v, h_t, h_r, y)]，batch 邊界不跨股票
         for t in tickers:
-            days = days_by_ticker[t]
+            days = _model_days(days_by_ticker[t])
+            if not days:
+                raise SystemExit(f"{t} 的 train split 是空的")
             for i in range(0, len(days), args.batch):
                 chunk = days[i:i + args.batch]
                 arrs = [load_day(t, d, ablate_news=args.ablate_news, ablate_vision=args.ablate_vision)
-                       for d, _ in chunk]
+                       for d, *_ in chunk]
                 batches.append((
                     t,
                     np.stack([a[0] for a in arrs]),
                     np.stack([a[1] for a in arrs]),
                     np.stack([a[2] for a in arrs]),
-                    np.array([y for _, y in chunk]),
+                    np.array([day[1] for day in chunk]),
                 ))
 
         class_weights_by_ticker = None
         if args.weighted:
             class_weights_by_ticker = {}
             for t in tickers:
-                days = days_by_ticker[t]
-                counts = np.bincount([y for _, y in days], minlength=3).astype(np.float32)
+                days = _model_days(days_by_ticker[t])
+                counts = np.bincount([day[1] for day in days], minlength=3).astype(np.float32)
                 counts[counts == 0] = 1
                 weights = len(days) / (3.0 * counts)
                 class_weights_by_ticker[t] = torch.tensor(weights, dtype=torch.float32, device=device)
@@ -323,11 +420,11 @@ def main():
             days = days_by_ticker[t]
             export_z_fused(model, t, days, device,
                            ablate_news=args.ablate_news, ablate_vision=args.ablate_vision)
-            index_data = build_index(t)
+            index_data = build_index(t, split_overrides=split_overrides[t])
             if index_data:
                 save_index(t, index_data)
 
-        total_days = sum(len(d) for d in days_by_ticker.values())
+        total_days = sum(len(_model_days(d)) for d in days_by_ticker.values())
         note = (f"joint training tickers={tickers}, "
                f"news={'off' if args.ablate_news else 'on'}, "
                f"vision={'off' if args.ablate_vision else 'on'}, weighted={args.weighted}")
@@ -339,23 +436,26 @@ def main():
         days = load_dataset(ticker)
         if not days:
             raise SystemExit("找不到 B 的向量，先跑 module_b_encoder.generate_vectors")
+        train_days = _model_days(days)
+        if not train_days:
+            raise SystemExit("train split 是空的；請檢查 dataset manifest 與 evaluation 設定")
         batches = []
-        for i in range(0, len(days), args.batch):
-            chunk = days[i:i + args.batch]
+        for i in range(0, len(train_days), args.batch):
+            chunk = train_days[i:i + args.batch]
             arrs = [load_day(ticker, d, ablate_news=args.ablate_news, ablate_vision=args.ablate_vision)
-                   for d, _ in chunk]
+                   for d, *_ in chunk]
             batches.append((
                 np.stack([a[0] for a in arrs]),
                 np.stack([a[1] for a in arrs]),
                 np.stack([a[2] for a in arrs]),
-                np.array([y for _, y in chunk]),
+                np.array([day[1] for day in chunk]),
             ))
 
         class_weights = None
         if args.weighted:
-            counts = np.bincount([y for _, y in days], minlength=3).astype(np.float32)
+            counts = np.bincount([day[1] for day in train_days], minlength=3).astype(np.float32)
             counts[counts == 0] = 1  # 避免除以 0（理論上三類都該有資料）
-            weights = len(days) / (3.0 * counts)
+            weights = len(train_days) / (3.0 * counts)
             class_weights = torch.tensor(weights, dtype=torch.float32, device=device)
             print(f"[train] 類別加權啟用，權重（BEARISH/NEUTRAL/BULLISH 順序）={weights.tolist()}")
 
@@ -369,18 +469,34 @@ def main():
         if index_data:
             save_index(ticker, index_data)
 
-        date_range = [days[0][0], days[-1][0]] if days else None
+        date_range = [train_days[0][0], train_days[-1][0]] if train_days else None
         note = (f"news={'off' if args.ablate_news else 'on'}, "
-               f"vision={'off' if args.ablate_vision else 'on'}, weighted={args.weighted}")
-        log_run("real", ticker, len(days), args.epochs, args.batch, args.lr, losses,
+               f"vision={'off' if args.ablate_vision else 'on'}, weighted={args.weighted}, "
+               f"train_only=True, exported_days={len(days)}")
+        log_run("real", ticker, len(train_days), args.epochs, args.batch, args.lr, losses,
                date_range=date_range, note=note)
 
-    if args.tickers and len(args.tickers) > 1:
+    if args.fake:
+        ckpt = paths.OUTPUTS / "checkpoints" / "fusion_fake.pt"
+    elif args.tickers and len(args.tickers) > 1:
         ckpt = paths.OUTPUTS / "checkpoints" / f"fusion_{'_'.join(args.tickers)}.pt"
     else:
-        ckpt = paths.OUTPUTS / "checkpoints" / "fusion.pt"
+        ticker = args.tickers[0] if args.tickers else args.ticker
+        ckpt = paths.OUTPUTS / "checkpoints" / f"fusion_{ticker}.pt"
     ckpt.parent.mkdir(parents=True, exist_ok=True)
     torch.save(model.state_dict(), ckpt)
+    trained_tickers = (args.tickers if args.tickers and len(args.tickers) > 1
+                       else [args.tickers[0] if args.tickers else args.ticker])
+    write_json({
+        "checkpoint": str(ckpt.relative_to(paths.ROOT)),
+        "trained_tickers": trained_tickers,
+        "training_split": "synthetic" if args.fake else "train",
+        "seed": cfg["seed"],
+        "epochs": args.epochs,
+        "batch": args.batch,
+        "lr": args.lr,
+        "weighted": args.weighted,
+    }, ckpt.with_suffix(".meta.json"))
     print(f"[train] checkpoint -> {ckpt}")
 
 

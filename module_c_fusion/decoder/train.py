@@ -17,8 +17,8 @@ backbone LLaMA-2 全程凍結，只訓練：
     - checkpoint 只在 val loss 創新低時才覆寫存檔，不是無條件存最後一個 epoch的
       結果——如果過擬合在後面幾個 epoch 才出現，最後一個 epoch 反而不是最好的版本。
 
-train/val/test 依時間切分（70/15/15，跟 classifier.py 同一套慣例，不可隨機打散，避免
-時間洩漏）：train 拿去訓練，val 每個 epoch 結束後算一次 loss（不參與訓練、不更新參數），
+train/val/test 直接沿用 A 寫入並經標籤跨界 purge 的共用 split，不因 y_belief 交集變小而
+重新計算邊界：train 拿去訓練，val 每個 epoch 結束後算一次 loss（不參與訓練、不更新參數），
 用來跟 train loss 對照——如果 val loss 跟 train loss 差不多，代表學到的是可以類化的規律；
 如果 val loss 明顯比 train loss差很多，代表在死記硬背訓練集，不是真的學會。test 這次先
 保留不用，是給之後要做「生成文字品質」人工檢查用的（模型完全沒看過的天，見 decisions.md）。
@@ -53,12 +53,13 @@ from torch.utils.data import Dataset, DataLoader
 from transformers import get_cosine_schedule_with_warmup
 
 from shared import paths
+from shared.temporal_split import partition_by_split
 from shared.utils import load_config, read_json, write_json
 from module_c_fusion.fusion.consolidate import load_index
 from module_c_fusion.decoder.model import ZFusedDecoder, load_backbone, load_backbone_for_resume
 
 
-def load_paired_samples(ticker: str) -> list[tuple[str, "np.ndarray", str]]:
+def load_paired_samples(ticker: str) -> list[tuple[str, "np.ndarray", str, str]]:
     """(date, Z_fused, y_belief 文字) 三元組，依日期排序，只取兩邊都有的日期——Z_fused
     跟 y_belief 是分開產出的兩支腳本，範圍不一定完全一致，交集才是能訓練的樣本。
     """
@@ -71,10 +72,18 @@ def load_paired_samples(ticker: str) -> list[tuple[str, "np.ndarray", str]]:
         raise SystemExit(
             f"找不到 y_belief，先跑 python -m module_c_fusion.decoder.generate_y_belief --ticker {ticker}")
     y_belief = read_json(y_belief_path)
+    meta_path = paths.y_belief_meta_path(ticker)
+    manifest = read_json(paths.dataset_manifest(ticker))
+    if (not meta_path.exists()
+            or read_json(meta_path).get("dataset_records_sha256") != manifest.get("records_sha256")):
+        raise SystemExit(f"{y_belief_path} 與目前 dataset 版本不一致；請重新生成 y_belief")
 
+    if "split" not in index:
+        raise ValueError("Z_fused index 缺少 split；請重跑 fusion.train/consolidate")
     dates = index["dates"]
     z = index["z"]
-    samples = [(str(date), z[i], y_belief[str(date)])
+    splits = index["split"]
+    samples = [(str(date), z[i], y_belief[str(date)], str(splits[i]))
               for i, date in enumerate(dates) if str(date) in y_belief]
     if not samples:
         raise SystemExit("Z_fused 跟 y_belief 沒有任何日期交集，檢查兩邊的 ticker/日期範圍是否一致")
@@ -82,10 +91,9 @@ def load_paired_samples(ticker: str) -> list[tuple[str, "np.ndarray", str]]:
 
 
 def time_split(rows: list, train_ratio: float = 0.7, val_ratio: float = 0.15):
-    """時間序切分：前 70% train、中 15% val、後 15% test（跟 classifier.py 同一套慣例）。"""
-    n = len(rows)
-    i, j = int(n * train_ratio), int(n * (train_ratio + val_ratio))
-    return rows[:i], rows[i:j], rows[j:]
+    """相容名稱：直接使用 index 既有 split，取交集後不重算日期邊界。"""
+    del train_ratio, val_ratio
+    return partition_by_split(rows)
 
 
 class YBeliefDataset(Dataset):
@@ -102,7 +110,7 @@ class YBeliefDataset(Dataset):
         return len(self.samples)
 
     def __getitem__(self, idx):
-        _, z, text = self.samples[idx]
+        _, z, text, _split = self.samples[idx]
         enc = self.tokenizer(text, truncation=True, max_length=self.max_length,
                              padding="max_length", return_tensors="pt")
         return {
@@ -160,12 +168,14 @@ def main():
                          "進度狀態），不是從頭訓練。第一次跑不要加這個參數")
     args = ap.parse_args()
 
-    out_dir = paths.OUTPUTS / "checkpoints" / "decoder"           # 只存 val loss 最佳的一份，evaluate.py 讀這裡
-    out_dir_latest = paths.OUTPUTS / "checkpoints" / "decoder_latest"  # 每個 epoch 結束都存，給 --resume 用
+    out_dir = paths.OUTPUTS / "checkpoints" / "decoder" / args.ticker
+    out_dir_latest = paths.OUTPUTS / "checkpoints" / "decoder_latest" / args.ticker
     state_path = out_dir_latest / "resume_state.json"
-    report_path = paths.OUTPUTS / "metrics" / "decoder_train_report.json"
+    report_path = paths.OUTPUTS / "metrics" / f"decoder_train_report_{args.ticker}.json"
 
     samples = load_paired_samples(args.ticker)
+    source_index = load_index(args.ticker)
+    z_fused_sha256 = str(source_index["z_fused_sha256"])
     train_rows, val_rows, test_rows = time_split(samples)
     print(f"[decoder.train] {args.ticker}: 共 {len(samples)} 天可訓練樣本（Z_fused ∩ y_belief），"
          f"train={len(train_rows)} val={len(val_rows)} test={len(test_rows)}（依時間序切分，不打散）")
@@ -179,6 +189,8 @@ def main():
         if not state_path.exists():
             raise SystemExit(f"--resume 但找不到可接續的紀錄：{state_path}，第一次跑不要加 --resume")
         state = read_json(state_path)
+        if state.get("ticker") != args.ticker or state.get("z_fused_sha256") != z_fused_sha256:
+            raise SystemExit("--resume checkpoint 與目前 ticker/Z_fused 版本不一致，請重新訓練")
         start_epoch = state["epoch"]  # 已完成的 epoch 數（例如 1 代表 epoch 1 已經跑完）
         best_val = state["best_val"]
         best_epoch = state["best_epoch"]
@@ -248,19 +260,23 @@ def main():
             best_val = val_l
             best_epoch = epoch_num
             save_checkpoint(decoder, llm, out_dir)
+            write_json({"ticker": args.ticker, "z_fused_sha256": z_fused_sha256},
+                       out_dir / "source_index.json")
             print(f"[decoder.train] val loss 創新低（{val_l:.4f}），最佳 checkpoint 已更新 -> {out_dir}")
 
         # 不論這個 epoch 是不是最佳，都存一份「最新」checkpoint + 進度狀態。8 小時的訓練
         # 成本太高，不能只靠「電腦不會當機、不會跳電、不會不小心關掉終端機」的僥倖——
         # 存了這份，中途中斷的話下次加 --resume 就能接著練，不用整個從頭重來
         save_checkpoint(decoder, llm, out_dir_latest)
-        write_json({"epoch": epoch_num, "best_val": best_val, "best_epoch": best_epoch,
+        write_json({"ticker": args.ticker, "z_fused_sha256": z_fused_sha256,
+                   "epoch": epoch_num, "best_val": best_val, "best_epoch": best_epoch,
                    "epoch_history": epoch_history}, state_path)
 
         # 訓練報告也改成每個 epoch 都覆寫一次（原本只在訓練全部結束後才寫），
         # 中途中斷也留得下目前為止的紀錄，不會甚麼都沒有
         report = {
             "ticker": args.ticker,
+            "z_fused_sha256": z_fused_sha256,
             "n_train": len(train_rows), "n_val": len(val_rows), "n_test": len(test_rows),
             "test_period": [test_rows[0][0], test_rows[-1][0]] if test_rows else [],
             "best_epoch": best_epoch, "best_val_loss": best_val,

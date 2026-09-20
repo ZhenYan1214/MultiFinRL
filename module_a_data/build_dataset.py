@@ -17,13 +17,26 @@ import argparse
 import datetime as dt
 
 from shared import paths, schemas
-from shared.utils import load_config, read_json, write_json
+from shared.temporal_split import assign_temporal_splits, split_summary
+from shared.utils import load_config, read_json, stable_json_sha256, write_json
 from module_a_data.crawler.fetch_ohlcv import load_ohlcv
 from module_a_data.labeling import build_price_and_label, compute_quantile_thresholds
 from module_a_data.preprocess.chunker import make_chunks
 from module_a_data.preprocess.text_cleaner import clean
 
 NEWS_BACKFILL_DAYS = 7  # 當日無新聞時，最多往前找幾天
+
+
+def _next_weekday(date: str) -> str:
+    """時間戳未知時採保守規則：文件從下一個平日才視為可用。"""
+    day = dt.date.fromisoformat(date) + dt.timedelta(days=1)
+    while day.weekday() >= 5:
+        day += dt.timedelta(days=1)
+    return day.isoformat()
+
+
+def _available_date(item: dict, source_date_key: str) -> str:
+    return item.get("available_date") or _next_weekday(item[source_date_key])
 
 
 def collect_news(ticker: str, date: str) -> list[dict]:
@@ -56,21 +69,27 @@ def collect_filing_chunks(ticker: str, date: str, max_tokens: int) -> list[dict]
         return []
     filings = read_json(index_path)["filings"]
 
-    periodic = [f for f in filings if f["form"] in ("10-K", "10-Q") and f["filing_date"] <= date]
+    periodic = [
+        f for f in filings
+        if f["form"] in ("10-K", "10-Q") and _available_date(f, "filing_date") <= date
+    ]
     chunks: list[dict] = []
     background_since = None
     if periodic:
-        latest = max(periodic, key=lambda f: f["filing_date"])
+        latest = max(periodic, key=lambda f: (_available_date(f, "filing_date"), f["filing_date"]))
         background_since = latest["filing_date"]
         html = (paths.RAW_FILINGS / ticker / latest["file"]).read_text(encoding="utf-8", errors="ignore")
         chunks += make_chunks(ticker, latest["form"], latest["filing_date"], clean(html),
                               max_tokens, date_key="filing_date")
 
-    eight_k = [f for f in filings if f["form"] == "8-K" and f["filing_date"] <= date
-              and (background_since is None or f["filing_date"] > background_since)]
+    eight_k = [
+        f for f in filings
+        if f["form"] == "8-K" and _available_date(f, "filing_date") <= date
+        and (background_since is None or f["filing_date"] > background_since)
+    ]
     d0 = dt.date.fromisoformat(date)
     for f in sorted(eight_k, key=lambda f: f["filing_date"]):
-        days_ago = (d0 - dt.date.fromisoformat(f["filing_date"])).days
+        days_ago = (d0 - dt.date.fromisoformat(_available_date(f, "filing_date"))).days
         html = (paths.RAW_FILINGS / ticker / f["file"]).read_text(encoding="utf-8", errors="ignore")
         text = f"[{days_ago} 天前的重大訊息揭露 8-K] {clean(html)}"
         chunks += make_chunks(ticker, f["form"], f["filing_date"], text,
@@ -79,14 +98,17 @@ def collect_filing_chunks(ticker: str, date: str, max_tokens: int) -> list[dict]
 
 
 def collect_transcript_chunks(ticker: str, date: str, max_tokens: int) -> list[dict]:
-    """同上，取 event_date <= date 的最新一份法說會逐字稿。"""
+    """取在決策日前已可取得的最新法說會逐字稿。"""
     index_path = paths.RAW_TRANSCRIPTS / ticker / "index.json"
     if not index_path.exists():
         return []
-    valid = [t for t in read_json(index_path)["transcripts"] if t["event_date"] <= date]
+    valid = [
+        t for t in read_json(index_path)["transcripts"]
+        if _available_date(t, "event_date") <= date
+    ]
     if not valid:
         return []
-    latest = max(valid, key=lambda t: t["event_date"])
+    latest = max(valid, key=lambda t: (_available_date(t, "event_date"), t["event_date"]))
     text = (paths.RAW_TRANSCRIPTS / ticker / latest["file"]).read_text(encoding="utf-8", errors="ignore")
     return make_chunks(ticker, "earnings_call", latest["event_date"], text,
                        max_tokens, date_key="event_date")
@@ -105,11 +127,12 @@ def _chart_input_path(ticker: str, date: str, input_type: str):
 
 
 def build_daily_record(ticker: str, date: str, df, cfg,
-                       bullish_threshold: float, bearish_threshold: float) -> dict | None:
+                       bullish_threshold: float, bearish_threshold: float,
+                       split: str) -> dict | None:
     """組一筆每日 JSON；K 線圖不存在或標籤產不出來（資料頭尾）回傳 None。
 
-    bullish_threshold/bearish_threshold：整段 df 只算一次（見 main()），
-    每一天共用同一組門檻，不是每天重算。
+    bullish_threshold/bearish_threshold：只用 train split 算一次（見 main()），
+    再把固定門檻套用到所有日期。
     """
     input_types = cfg["chart"].get("vision_inputs", ["candlestick", "volume"])
     if len(input_types) != 2:
@@ -129,6 +152,7 @@ def build_daily_record(ticker: str, date: str, df, cfg,
     return {
         "ticker": ticker,
         "date": date,
+        "split": split,
         "chart": {
             # path 保留為第一張圖的向下相容欄位；新流程一律使用 inputs。
             "path": str(chart_paths[0].relative_to(paths.ROOT)).replace("\\", "/"),
@@ -159,27 +183,77 @@ def main():
 
     df = load_ohlcv(args.ticker)
     horizon = cfg["label"]["horizon_trading_days"]
+    input_types = cfg["chart"].get("vision_inputs", ["candlestick", "volume"])
+    candidates: list[tuple[str, str]] = []
+    for i, d in enumerate(df.index):
+        if i + horizon >= len(df):
+            continue
+        date = d.strftime("%Y-%m-%d")
+        chart_paths = [_chart_input_path(args.ticker, date, input_type) for input_type in input_types]
+        if all(path.exists() for path in chart_paths):
+            candidates.append((date, df.index[i + horizon].strftime("%Y-%m-%d")))
+    if args.limit:
+        candidates = candidates[:args.limit]
+    if len(candidates) < 3:
+        raise SystemExit("可建立標籤且具備全部視覺輸入的日期不足，先跑 chart_generator")
+
+    eval_cfg = cfg.get("evaluation", {})
+    candidate_dates = [date for date, _ in candidates]
+    target_dates = [target for _, target in candidates]
+    candidate_splits = assign_temporal_splits(
+        candidate_dates,
+        target_dates,
+        train_ratio=eval_cfg.get("train_ratio", 0.70),
+        validation_ratio=eval_cfg.get("validation_ratio", 0.15),
+    )
+    split_by_date = dict(zip(candidate_dates, candidate_splits))
+    train_dates = [date for date, split in zip(candidate_dates, candidate_splits) if split == "train"]
     bearish_threshold, bullish_threshold = compute_quantile_thresholds(
         df, horizon,
         low_q=cfg["label"].get("quantile_low", 1 / 3),
         high_q=cfg["label"].get("quantile_high", 2 / 3),
+        fit_dates=train_dates,
     )
-    print(f"[build_dataset] 分位數門檻（依 {args.ticker} 整段報酬分布算出）："
+    print(f"[build_dataset] 分位數門檻（只依 {args.ticker} train 報酬分布算出）："
          f"bearish<{bearish_threshold:.4f}, bullish>{bullish_threshold:.4f}")
 
-    n = 0
-    for d in df.index:
-        date = d.strftime("%Y-%m-%d")
+    generated_dates: list[str] = []
+    generated_splits: list[str] = []
+    record_hashes: list[str] = []
+    for date in candidate_dates:
         record = build_daily_record(args.ticker, date, df, cfg,
-                                    bullish_threshold, bearish_threshold)
+                                    bullish_threshold, bearish_threshold, split_by_date[date])
         if record is None:
             continue
         schemas.validate_daily_record(record)  # 不合法會 raise，直接中斷
         write_json(record, paths.daily_json(args.ticker, date))
-        n += 1
-        if args.limit and n >= args.limit:
-            break
-    print(f"[build_dataset] {args.ticker}: {n} records -> {paths.DATASET / args.ticker}")
+        generated_dates.append(date)
+        generated_splits.append(split_by_date[date])
+        record_hashes.append(stable_json_sha256(record))
+
+    manifest = {
+        "ticker": args.ticker,
+        "dates": generated_dates,
+        "protocol_version": 2,
+        "records_sha256": stable_json_sha256(record_hashes),
+        "ohlcv": read_json(paths.RAW_OHLCV / f"{args.ticker}.meta.json"),
+        "label": {
+            "horizon_trading_days": horizon,
+            "threshold_fit_split": "train",
+            "bearish_threshold": bearish_threshold,
+            "bullish_threshold": bullish_threshold,
+        },
+        "split": {
+            "train_ratio": eval_cfg.get("train_ratio", 0.70),
+            "validation_ratio": eval_cfg.get("validation_ratio", 0.15),
+            "purge_rule": "target_date must remain inside its source split",
+            **split_summary(generated_dates, generated_splits),
+        },
+    }
+    write_json(manifest, paths.dataset_manifest(args.ticker))
+    print(f"[build_dataset] split counts={manifest['split']['counts']}")
+    print(f"[build_dataset] {args.ticker}: {len(generated_dates)} records -> {paths.DATASET / args.ticker}")
+    print(f"[build_dataset] manifest -> {paths.dataset_manifest(args.ticker)}")
 
 
 if __name__ == "__main__":

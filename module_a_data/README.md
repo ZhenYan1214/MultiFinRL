@@ -5,13 +5,15 @@
 
 ## Responsibilities
 
-1. Download historical OHLCV data via yfinance (`crawler/fetch_ohlcv.py`).
+1. Download historical OHLCV data via yfinance (`crawler/fetch_ohlcv.py`). The formal pipeline uses
+   split/dividend-adjusted OHLC so labels, rewards, and backtests approximate investor total return;
+   `--unadjusted` is retained only for controlled comparison.
 2. Render two 20-trading-day 224×224 RGB inputs per day: a candlestick chart and a separate
    volume chart (`preprocess/chart_generator.py`). They are kept as separate images for the shared
    dual-image ViT rather than composited into one bitmap.
 3. Fetch daily financial news and clean HTML/noise (`crawler/fetch_news.py` for recent news, `crawler/fetch_news_alpaca.py` for historical backfill via the Alpaca News API, `preprocess/text_cleaner.py` for cleanup).
 4. Download SEC EDGAR filings (10-K/10-Q as background, 8-K as timestamped supplementary events that don't overwrite the background — see `docs/decisions.md` #41/#44/#45) and earnings-call transcripts via the official Alpha Vantage API (`crawler/fetch_transcripts.py`, replacing the earlier third-party `foolcalls` scraper), chunked to ≤512 tokens (`crawler/fetch_filings.py`, `preprocess/chunker.py`). ETF/index macro data (`crawler/fetch_macro.py`) is scaffolded but not implemented (`docs/decisions.md` #38).
-5. Generate BULLISH / BEARISH / NEUTRAL labels from the 5-trading-day forward return vs. same-day close, using quantile thresholds over the full return distribution (each class ends up close to 1/3 of days) rather than a fixed percentage — see `docs/decisions.md` #30. The old fixed ±2% version is kept as `labeling.py`'s `make_label_fixed_threshold()` for ablation comparisons only.
+5. Generate BULLISH / BEARISH / NEUTRAL labels from the 5-trading-day forward return vs. same-day close. Quantile thresholds are fitted on the train split only and then frozen for validation/test. Samples whose five-day target crosses a split boundary are marked `purged`. The old fixed ±2% version is kept for ablation comparisons.
 6. Assemble everything into one JSON record per day (`build_dataset.py`).
 7. **Deliver an initial 50–100 sample days early** so B and C can start development against real formats sooner.
 
@@ -46,5 +48,8 @@ but both configured vision images must exist. The fastest path to a deliverable 
 
 - Every record must pass `validate_daily_record()` in `shared/schemas.py` before being written.
 - News entries must keep `published_at` (Eastern time) and `days_ago`.
+- SEC filings use their acceptance time to determine availability. Sources without a reliable time are conservatively delayed to the next weekday.
+- News published after 16:00 ET is assigned to the next effective trading day by both news crawlers.
+- `build_dataset` writes a manifest with a stable record-content fingerprint; downstream stages reject stale vectors built from another dataset version.
 - `future_closes` exists only to generate labels and for backtesting — it must never reach the model as an input feature. Keep it isolated from other fields.
 - The ticker universe is currently fixed to AAPL. The code is written to support multiple tickers, but only one is run for now.

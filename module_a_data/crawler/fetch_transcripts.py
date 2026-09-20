@@ -178,6 +178,13 @@ def fetch_transcript_by_quarter(
     return None
 
 
+def _next_weekday(date: str) -> str:
+    day = dt.date.fromisoformat(date) + dt.timedelta(days=1)
+    while day.weekday() >= 5:
+        day += dt.timedelta(days=1)
+    return day.isoformat()
+
+
 def save_transcript(ticker: str, event_date: str, quarter: str, text: str) -> None:
     """統一儲存格式：產出 EC_{event_date}.txt 並更新 index.json。"""
     out_dir = paths.RAW_TRANSCRIPTS / ticker
@@ -191,7 +198,9 @@ def save_transcript(ticker: str, event_date: str, quarter: str, text: str) -> No
         index = read_json(index_path)
     # 去重並依 event_date 排序
     entries = [t for t in index.get("transcripts", []) if t["event_date"] != event_date]
-    entries.append({"event_date": event_date, "quarter": quarter, "file": fname})
+    # Alpha Vantage 只提供公布日期，沒有可靠的逐字稿可用時間；保守地從下一個平日使用。
+    entries.append({"event_date": event_date, "available_date": _next_weekday(event_date),
+                    "quarter": quarter, "file": fname})
     index["transcripts"] = sorted(entries, key=lambda t: t["event_date"])
     write_json(index, index_path)
     print(f"[fetch_transcripts] {ticker} {quarter} ({event_date}) -> {out_dir / fname}")

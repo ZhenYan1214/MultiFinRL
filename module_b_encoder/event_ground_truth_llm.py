@@ -59,9 +59,13 @@ def main():
     args = ap.parse_args()
     model = args.model or DEFAULT_MODEL[args.provider]
 
-    files = sorted((paths.DATASET / args.ticker).glob("*.json"))
-    if not files:
-        raise SystemExit(f"找不到 A 的資料: {paths.DATASET / args.ticker}")
+    manifest_path = paths.dataset_manifest(args.ticker)
+    if not manifest_path.exists():
+        raise SystemExit(f"找不到 A 的資料 manifest: {manifest_path}")
+    manifest = read_json(manifest_path)
+    files = [paths.daily_json(args.ticker, date) for date in manifest["dates"]]
+    if not files or any(not file.exists() for file in files):
+        raise SystemExit(f"A 的 manifest/每日資料不完整: {paths.DATASET / args.ticker}")
     sample = stratified_sample(files, args.n_sample, args.seed)
     print(f"[event_ground_truth_llm] {args.ticker}: 抽樣 {len(sample)}/{len(files)} 天,"
          f" provider={args.provider}, model={model}")

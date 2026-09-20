@@ -19,7 +19,7 @@ pi(a|x) 這裡取 policy 動作分布的 mean（確定性動作），不是隨�
     python -m module_c_fusion.explainability.integrated_gradients --ticker AAPL
 
 前置：先跑過 module_c_fusion.fusion.train（產出 Z_fused）跟 module_c_fusion.rl.train_ppo
-（產出 data/outputs/checkpoints/ppo_agent.zip）。
+（產出 data/outputs/checkpoints/ppo_agent_{TICKER}.zip）。歸因只在 held-out test split 執行。
 """
 import argparse
 
@@ -28,6 +28,7 @@ import numpy as np
 from shared import paths
 from shared.utils import write_json
 from module_c_fusion.fusion.consolidate import load_index
+from module_c_fusion.rl.train_ppo import validate_agent_metadata
 
 
 class PolicyMeanWrapper:
@@ -122,21 +123,33 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ticker", default="AAPL")
     ap.add_argument("--n_steps", type=int, default=50, help="Integrated Gradients 積分黎曼和切割數")
-    ap.add_argument("--agent", default=None, help="不指定就用 data/outputs/checkpoints/ppo_agent.zip")
+    ap.add_argument("--agent", default=None, help="不指定就用目前 ticker 的專屬 PPO checkpoint")
     args = ap.parse_args()
 
     idx = load_index(args.ticker)
     if idx is None:
         raise SystemExit(f"找不到 {args.ticker} 的 Z_fused 索引，先跑 module_c_fusion.fusion.train")
-    z_seq = idx["z"]
+    if "split" not in idx:
+        raise ValueError("Z_fused index 缺少 split；請重跑 fusion.train/consolidate")
+    test_mask = idx["split"] == "test"
+    z_seq = idx["z"][test_mask]
+    dates = idx["dates"][test_mask]
+    if not len(z_seq):
+        raise SystemExit("test split 是空的，無法做樣本外 policy 歸因")
     z_dim = z_seq.shape[1]
 
-    agent_path = args.agent or (paths.OUTPUTS / "checkpoints" / "ppo_agent.zip")
+    agent_path = args.agent or (paths.OUTPUTS / "checkpoints" / f"ppo_agent_{args.ticker}.zip")
+    validate_agent_metadata(agent_path, args.ticker, idx)
     model = load_agent(agent_path)
 
     prev_weights = rebuild_holding_trajectory(model, z_seq)
     attributions = compute_attributions(model, z_seq, prev_weights, n_steps=args.n_steps)
     summary = summarize(attributions, z_dim)
+    summary.update({
+        "evaluation_split": "test",
+        "period": [str(dates[0]), str(dates[-1])],
+        "agent": str(agent_path),
+    })
 
     out_dir = paths.OUTPUTS / "explainability" / args.ticker
     out_dir.mkdir(parents=True, exist_ok=True)

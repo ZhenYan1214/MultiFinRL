@@ -3,7 +3,7 @@
 
 為什麼要這樣設計（查證來源見 docs/decisions.md，跟 QLoRA 訓練設定同一次查證）：
 
-    1. 一定要用 test set（train.py 時間序切分出來的最後 15%），不能用 train/val 的資料
+    1. 一定要用共用 protocol 的 test set，不能用 train/val 的資料
        ——不然算出來的數字只是「背得熟不熟」，不是「有沒有學會類化」。
     2. 只看 loss/perplexity 不夠：loss 只反映「逐字猜對的機率」，不反映生成內容對不對。
        BLEU/ROUGE 這類字面比對指標，跟人類對開放式生成文字品質的判斷相關性很弱（換句話
@@ -26,7 +26,7 @@
     python -m module_c_fusion.decoder.evaluate --ticker AAPL --n_generate 30
     python -m module_c_fusion.decoder.evaluate --ticker AAPL --n_generate 30 --llm_judge --n_judge 15
 
-前置：train.py 已經跑完，checkpoint 存在 data/outputs/checkpoints/decoder/。
+前置：train.py 已經跑完，checkpoint 存在 data/outputs/checkpoints/decoder/{TICKER}/。
 本檔案需要 torch/transformers/peft，無法在沒有 GPU 的環境執行，只驗證過語法（py_compile）。
 """
 import argparse
@@ -36,7 +36,8 @@ import torch
 from torch.utils.data import DataLoader
 
 from shared import paths
-from shared.utils import load_config, write_json
+from shared.utils import load_config, read_json, write_json
+from module_c_fusion.fusion.consolidate import load_index
 from module_c_fusion.decoder.train import load_paired_samples, time_split, YBeliefDataset, eval_loss
 from module_c_fusion.decoder.model import ZFusedDecoder, load_base_only, load_finetuned_decoder
 
@@ -80,7 +81,15 @@ def main():
     print(f"[decoder.evaluate] {args.ticker}: test set 共 {len(test_rows)} 天"
          f"（{test_rows[0][0]} ~ {test_rows[-1][0]}，訓練時完全沒看過）")
 
-    checkpoint_dir = paths.OUTPUTS / "checkpoints" / "decoder"
+    checkpoint_dir = paths.OUTPUTS / "checkpoints" / "decoder" / args.ticker
+    source_meta_path = checkpoint_dir / "source_index.json"
+    if not source_meta_path.exists():
+        raise SystemExit(f"{checkpoint_dir} 缺少新版資料指紋；請依目前 protocol 重訓 decoder")
+    source_meta = read_json(source_meta_path)
+    current_index = load_index(args.ticker)
+    if (source_meta.get("ticker") != args.ticker
+            or source_meta.get("z_fused_sha256") != str(current_index["z_fused_sha256"])):
+        raise SystemExit("decoder checkpoint 與目前 ticker/Z_fused 版本不一致，請重新訓練")
     z_dim = cfg["fusion"]["z_dim"]
 
     # --- (1) test loss：微調後 vs 完全沒微調的 backbone ---
@@ -112,7 +121,7 @@ def main():
     print(f"[decoder.evaluate] 對前 {n_gen} 天實際生成文字，比對 <TREND>/<RISK_LEVEL> 標籤...")
     gen_records = []
     trend_correct, risk_correct, format_ok = 0, 0, 0
-    for date, z, gt_text in test_rows[:n_gen]:
+    for date, z, gt_text, _split in test_rows[:n_gen]:
         z_t = torch.tensor(z, dtype=torch.float32).unsqueeze(0).to(finetuned.llm.device)
         generated = finetuned.generate(z_t, max_new_tokens=200)
         gt_trend, gt_risk, gt_narrative = parse_tags(gt_text)
@@ -186,7 +195,7 @@ def main():
         "llm_judge": judge_results,
         "generation_samples": gen_records,
     }
-    out_path = paths.OUTPUTS / "metrics" / "decoder_evaluation_report.json"
+    out_path = paths.OUTPUTS / "metrics" / f"decoder_evaluation_report_{args.ticker}.json"
     write_json(report, out_path)
     print(f"[decoder.evaluate] 完整評估報告 -> {out_path}")
 

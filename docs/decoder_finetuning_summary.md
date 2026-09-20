@@ -27,8 +27,8 @@
 - 學習率 2e-4，搭配 cosine 排程 + 5% warmup（2026 年 QLoRA 微調常見做法，比全程
   固定學習率更穩定）。
 - Gradient clipping（max_norm=1.0），避免訓練中途梯度爆掉。
-- Train / Val / Test 依時間切分 70/15/15（跟既有的 `classifier.py` 同一套慣例），
-  不隨機打散，避免用未來資料訓練、洩漏到過去的評估上。
+- Train / Val / Test 沿用 Module A 寫入的唯一時間 split；五日標籤跨界樣本已 purge，
+  即使 y_belief 日期交集縮小也不重新計算邊界。
 - Checkpoint 只在驗證集 loss 創新低時才存檔，避免存到過擬合之後、表現反而變差
   的版本。
 

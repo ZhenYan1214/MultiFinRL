@@ -11,7 +11,7 @@ VALID_LABELS = {"BULLISH", "BEARISH", "NEUTRAL"}
 
 DAILY_RECORD_REQUIRED_KEYS = {
     "ticker", "date", "chart", "news",
-    "filing_chunks", "transcript_chunks", "prices", "label",
+    "filing_chunks", "transcript_chunks", "prices", "label", "split",
 }
 
 VECTOR_INDEX_REQUIRED_KEYS = {
@@ -26,6 +26,8 @@ def validate_daily_record(record: dict) -> None:
         raise ValueError(f"daily record missing keys: {missing}")
     if record["label"] not in VALID_LABELS:
         raise ValueError(f"invalid label: {record['label']}")
+    if record["split"] not in {"train", "validation", "test", "purged"}:
+        raise ValueError(f"invalid split: {record['split']}")
     # chart
     chart = record["chart"]
     for k in ("path", "window_days", "size", "channels"):
@@ -58,7 +60,7 @@ def validate_daily_record(record: dict) -> None:
                     raise ValueError(f"{field}[{i}] missing key: {k}")
     # prices
     prices = record["prices"]
-    for k in ("close_t0", "close_t5", "future_closes"):
+    for k in ("close_t0", "close_t5", "future_closes", "target_date"):
         if k not in prices:
             raise ValueError(f"prices missing key: {k}")
     if len(prices["future_closes"]) != 5:
@@ -70,6 +72,10 @@ def validate_vector_index(index: dict) -> None:
     missing = VECTOR_INDEX_REQUIRED_KEYS - index.keys()
     if missing:
         raise ValueError(f"vector index missing keys: {missing}")
+    if not index.get("source_record_sha256"):
+        raise ValueError("vector index missing source_record_sha256")
+    if not index.get("dataset_records_sha256"):
+        raise ValueError("vector index missing dataset_records_sha256")
     for name in ("H_v", "H_t", "H_r"):
         if name not in index["vectors"]:
             raise ValueError(f"vectors missing: {name}")

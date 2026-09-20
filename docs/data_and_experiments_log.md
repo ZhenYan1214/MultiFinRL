@@ -20,7 +20,8 @@
 
 ## 二、B/C 實驗結果紀錄（分類驗證準確率）
 
-每次重跑 `classifier.py` 都在這裡加一行，`detail_file` 存一份對應時間點的 `classification_report.json` 備份，方便回頭比對。
+每次重跑 `classifier.py` 都在這裡加一行。程式會自動保留
+`classification_report_{TICKER}_{run_id}.json`，把該檔填入 `detail_file` 方便回頭比對。
 
 | 日期 | 資料版本/這次改了什麼 | n_train/val/test | accuracy | BEARISH f1 | NEUTRAL f1 | BULLISH f1 | 備註 / detail 檔案 |
 |---|---|---|---|---|---|---|---|
@@ -90,10 +91,38 @@ SMA 由 validation 選出後，在 203 天 held-out test 得到 accuracy=0.3399�
 再把 `chart.vision_inputs` 改成 `[candlestick, technical/sma]` 並重建正式 H_v/H_r。完整報告在
 `data/outputs/experiments/auxiliary_vision/AAPL/report.json`；技術圖與 ViT 快取暫時保留以便續跑。
 
-另外，本輪發現正式 `fusion.train` 目前會先用全日期 label 訓練 fusion，classifier 才做
-70/15/15 切分，會讓 test label 間接洩漏進 Z_fused。上述新實驗已避開此問題；過往正式
-classifier 數字仍可作同流程工程比較，但不應再稱為嚴格 held-out 成效。正式 pipeline 的
-時間切分需另開修正，不在本輪指標比較中順手改動。
+另外，本輪發現當時正式 `fusion.train` 會先用全日期 label 訓練 fusion，classifier 才做
+70/15/15 切分。這個問題已由 `decisions.md #78` 的共用時間協議修正；本節數字是在修正前或
+獨立實驗 protocol 下得到，不能直接當成新版正式 pipeline 的基準。
+
+### 實驗有效性協議修正（2026-09-19）
+
+依正式企劃書的「離線 belief construction → 凍結 Z_fused → PPO policy optimization」主線，
+全流程改用單一時間序 split。AAPL 現有 1,381 個可用日預檢結果為 train 961、validation 202、
+test 208、purged 10；purged 是切分邊界前五日標籤的 target date 已跨入下一區段。分位數門檻
+只在 961 個 train 樣本估計。Fusion/class weight、decoder、PPO 均只使用指定訓練區段；三種
+回測策略與 IG 使用相同 test 日期。事件 probe 改為只向前看的 expanding-window CV。
+
+同時補上兩類非模型本身、但會污染結果的工程問題：(1) curriculum 不再把彼此不相鄰的
+低波動日期串成同一個持倉 episode，而是從連續低波動區間向外擴張；(2) dataset、每日向量、
+Z index、y_belief、PPO 與 decoder checkpoint 以 SHA-256 指紋串接，並採 ticker 專屬檔名。只要上游
+重建或股票不同，下游會直接停止，不再靜默使用舊產物；fake fusion checkpoint 也與正式權重分開。
+B 的 `--fake` 同樣改寫入 `{TICKER}_FAKE` namespace，不再覆蓋真實日期的向量。
+Classifier 與 event-validation 每次執行都另存含 `run_id` 的歷史報告，同時更新 ticker
+專屬 latest 檔，避免消融或重跑再次把正式結果無痕覆蓋。
+LLM event extraction cache 也綁定 provider、model 與 dataset 指紋，切換模型或資料版本時
+不會把舊模型答案誤當成新模型輸出續跑。
+`fusion.train --apply_checkpoint` 會檢查 checkpoint metadata，拒絕 fake/舊協議權重，且若
+目標 ticker 已在 `trained_tickers` 中會明確拒絕將它宣稱成 held-out 泛化測試。
+
+OHLCV 正式預設亦改為 yfinance `auto_adjust=true`，讓五日標籤、PPO reward 與 backtest
+納入拆股／現金股利調整，避免把除權息造成的機械性跳空當成預測錯誤。每次下載另寫
+`data/raw/ohlcv/{TICKER}.meta.json` 保存來源、區間與 adjustment 設定；舊 raw CSV 必須重抓。
+
+這是 protocol 變更，不是新模型結果。目前尚未重跑 B/C 的昂貴步驟，因此本文件前面所有
+舊分類、decoder、PPO 與回測數字保留作歷史工程比較，不能與新版重訓結果直接比較。新版第一筆
+正式結果必須重新建立 dataset/manifest，重產受 availability date 影響的 H_t/H_r，重訓 fusion、
+decoder、PPO，再跑 test-only classifier/backtest/IG。
 
 **怎麼判斷有沒有進步**：不是只看 accuracy 這一個數字，因為之前的模型可能只是學會「都猜 NEUTRAL」就拿到 0.459。更要看 BEARISH/BULLISH 的 f1 有沒有從 0 附近的塌縮狀態動起來，那才代表模型真的開始從新聞（或其他輸入）學到區分漲跌的訊號，不是準確率數字好看但其實沒學到東西。
 

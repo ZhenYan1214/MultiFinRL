@@ -1,7 +1,7 @@
 """PPO 強化學習環境與獎勵函數（gymnasium API）。
 
 - State：當日 Z_fused + 前期持倉權重。
-- Action：投資組合權重（單股版：[現金, 股票] 兩維，softmax 正規化）。
+- Action：單一股票權重 [0,1]；剩餘權重自動視為現金。
 - Reward：風險敏感型 = 期望報酬 - λ_vol * 波動 - λ_mdd * 回撤 - 交易成本。
 - 嚴禁 look-ahead：t 日的 action 用 t+1 日的報酬結算。
 """
@@ -72,7 +72,9 @@ class PortfolioEnv(gym.Env if gym else object):
 
         self.weight = w
         self.t += 1
-        terminated = self.t >= len(self.z_seq) - 1
+        # 當前 step 已結算 returns[t]；走到 len 才結束，避免永遠漏掉序列最後一天。
+        terminated = self.t >= len(self.z_seq)
         info = {"nav": self.nav, "drawdown": drawdown, "weight": w}
-        return (self._obs() if not terminated else np.zeros_like(self._obs()),
+        terminal_obs = np.zeros(self.z_seq.shape[1] + 1, dtype=np.float32)
+        return (self._obs() if not terminated else terminal_obs,
                 reward, terminated, False, info)
