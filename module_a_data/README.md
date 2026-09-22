@@ -32,7 +32,7 @@ python -m module_a_data.preprocess.chart_generator --ticker AAPL     # generate 
 python -m module_a_data.preprocess.chart_generator --ticker AAPL --technical --indicators rsi macd  # candlestick + multi-indicator chart
 python -m module_a_data.preprocess.chart_generator --ticker AAPL --volume  # candlestick + pure-volume chart
 python -m module_a_data.crawler.fetch_news --ticker AAPL             # recent news
-python -m module_a_data.crawler.fetch_news_alpaca --ticker AAPL --start 2021-01-01 --end 2026-08-08   # historical news backfill
+python -m module_a_data.crawler.fetch_news_alpaca --ticker AAPL --start 2021-01-01 --end 2026-08-08   # historical news backfill（已覆蓋區間會自動跳過）
 python -m module_a_data.crawler.fetch_filings --ticker AAPL          # SEC filings
 python -m module_a_data.crawler.fetch_transcripts --ticker AAPL --start 2021-01-01 --end 2026-08-08   # earnings-call transcripts (Alpha Vantage, needs ALPHA_VANTAGE_API_KEY)
 python -m module_a_data.build_dataset --ticker AAPL --limit 100      # assemble output (start with a 50-100 sample)
@@ -46,5 +46,9 @@ but both configured vision images must exist. The fastest path to a deliverable 
 
 - Every record must pass `validate_daily_record()` in `shared/schemas.py` before being written.
 - News entries must keep `published_at` (Eastern time) and `days_ago`.
+- Alpaca news fetch state lives in `data/raw/news/{TICKER}/meta.json`. It records completed
+  date ranges and an in-progress page token, so repeated or overlapping research ranges only
+  request uncovered gaps. Raw Alpaca items retain `article_id`, `updated_at`, and `symbols`;
+  deduplication uses `article_id` first and normalized URL as a legacy fallback.
 - `future_closes` exists only to generate labels and for backtesting — it must never reach the model as an input feature. Keep it isolated from other fields.
 - The ticker universe is currently fixed to AAPL. The code is written to support multiple tickers, but only one is run for now.

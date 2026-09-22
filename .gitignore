@@ -40,3 +40,6 @@ runs/
 # 目前 foolcalls/ 這 10 個檔案已經被追蹤進 git 了，加這行不會自動移除，
 # 需要另外執行 git rm -r --cached foolcalls/ 才會真的取消追蹤
 foolcalls/
+
+
+tests/
