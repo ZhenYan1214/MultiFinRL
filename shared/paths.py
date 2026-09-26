@@ -12,7 +12,10 @@ RAW_CHARTS = RAW / "charts"
 RAW_NEWS = RAW / "news"
 RAW_FILINGS = RAW / "filings"
 RAW_TRANSCRIPTS = RAW / "transcripts"
-RAW_MACRO = RAW / "macro"          # ETF/指數用的總經資料（decisions.md #38），架構已寫、未實作
+RAW_MACRO = RAW / "macro"          # ETF/指數用的總經資料（decisions.md #38）
+RAW_MACRO_INDICATORS = RAW_MACRO / "indicators"
+RAW_MACRO_NEWS = RAW_MACRO / "news"
+RAW_MACRO_FOMC = RAW_MACRO / "fomc"
 
 DATASET = DATA / "processed" / "dataset"   # A 的交付物
 VECTORS = DATA / "vectors"                  # B 的交付物

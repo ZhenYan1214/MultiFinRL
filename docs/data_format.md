@@ -6,6 +6,34 @@
 
 ---
 
+## 0.5 Module A 的總經 raw data（ETF／指數擴充）
+
+由 `module_a_data/crawler/fetch_macro.py` 產生，尚未加入每日資料 JSON 的必填欄位。
+
+```
+data/raw/macro/
+├── indicators/index.json
+├── news/{YYYY-MM-DD}.json
+└── fomc/{YYYY-MM-DD}/
+    ├── source.html
+    ├── dot_plot.json
+    └── dot_plot.png
+```
+
+- `indicators/index.json` 的 `observations[]` 包含 `series_id`、`name`、`frequency`、
+  `units`、`observation_date`、`available_date`、`value`、`source`。
+- `observation_date` 是統計所屬期間；模型依交易日合併時必須使用 `available_date` 做
+  as-of join，只可 forward-fill，不可 backfill。
+- CPI、PCE、非農、失業率等會修訂的月頻資料使用 ALFRED initial release，不使用今天
+  看到的修訂後歷史值；政策利率、殖利率、利差、VIX 等日頻資料使用一般 FRED
+  observation，並以 `observation_date` 作為 `available_date`。
+- `news/*.json` 的 `news[]` 沿用個股新聞欄位：`headline`、`content`、`source`、
+  `published_at`、`url`，另加 `category`。
+- `dot_plot.png` 固定為 224×224；`dot_plot.json` 保留各預測年度、利率水準與委員人數。
+  點陣圖從 `available_date` 起沿用至下一份 SEP 發布為止。
+
+---
+
 ## 1. A 的交付物：每日資料 JSON
 
 **路徑規則**：`data/processed/dataset/{TICKER}/{YYYY-MM-DD}.json`
