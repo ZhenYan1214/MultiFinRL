@@ -6,9 +6,9 @@
 
 | 資料類型 | 來源 | 抓取腳本 | 目前涵蓋範圍 | 狀態 |
 |---|---|---|---|---|
-| 股價 OHLCV | yfinance | `fetch_ohlcv.py` | AAPL 2021-01-04 ~ 2026-08-07（1405 筆） | 2026-08-09 延伸完成，對齊新聞涵蓋範圍 |
-| K 線圖 | 用 OHLCV 自畫（mplfinance，20 日窗口） | `chart_generator.py` | 同上，1386 張（頭尾幾天因窗口不足缺圖） | 2026-08-09 延伸完成 |
-| 成交量圖 | 用 OHLCV Volume 自畫（20 日窗口） | `chart_generator.py` | 同上，1386 張 | 2026-09-19 完成；作為雙圖 ViT 的第二張輸入 |
+| 股價 OHLCV | yfinance | `fetch_ohlcv.py` | AAPL／NVDA／MSFT／JPM 2021-01-04 ~ 2026-08-07（各 1405 筆） | AAPL 完整多模態；其餘三檔於 2026-09-24 補齊供多股票 ViT 實驗 |
+| K 線圖 | 用 OHLCV 自畫（mplfinance，20 日窗口） | `chart_generator.py` | AAPL／NVDA／MSFT／JPM 各 1386 張（頭尾幾天因窗口不足缺圖） | 四檔皆完成 |
+| 成交量圖 | 用 OHLCV Volume 自畫（20 日窗口） | `chart_generator.py` | AAPL／NVDA／MSFT／JPM 各 1386 張 | 四檔皆完成；作為雙圖 ViT 的第二張輸入 |
 | 新聞（近期） | yfinance | `fetch_news.py` | 僅最新 8~10 則，歷史價值低 | 可用，範圍小 |
 | 新聞（歷史回補） | Alpaca News API（來源 Benzinga，官方 API 非爬蟲） | `fetch_news_alpaca.py` | AAPL 2021-01-01 ~ 2026-08-08，15,989 則 / 1,459 天 | 2026-08 新增，已抽樣驗證為真實全文 |
 | 財報 10-K/10-Q | SEC EDGAR（官方 API，原生 requests） | `fetch_filings.py` | 22 份，2021 ~ 2026 | 可用；唯一版本，`fetch_filings_edgartools.py` 候選方案已刪除（decisions.md #41，取代 #31） |
@@ -94,6 +94,170 @@ SMA 由 validation 選出後，在 203 天 held-out test 得到 accuracy=0.3399�
 70/15/15 切分，會讓 test label 間接洩漏進 Z_fused。上述新實驗已避開此問題；過往正式
 classifier 數字仍可作同流程工程比較，但不應再稱為嚴格 held-out 成效。正式 pipeline 的
 時間切分需另開修正，不在本輪指標比較中順手改動。
+
+### ViT-only 分類頭與部分 Fine-tune（2026-09-24）
+
+新增 `experiments/vision/vision_classifier.py` 與
+`experiments/vision/experiment_vit_adaptation.py`，隔離 H_t、H_r 和 fusion，只比較
+雙圖 ViT 本身。每一天的 K 線與 Volume 圖共用同一個 `google/vit-base-patch16-224`，各取一個
+CLS token 串成 1,536 維，再接 `LayerNorm + Dropout(0.1) + Linear(1536,3)` 分類頭。資料共
+1,381 天；依時間切成 966 train／202 validation／203 test，兩個切分邊界各保留 5 個交易日
+gap。BEARISH／NEUTRAL／BULLISH 的 1/3、2/3 分位數門檻只用 train 的未來五日報酬計算，
+避免使用 validation/test 的報酬分布。固定 seed=42、balanced cross-entropy、batch=8、分類頭
+learning rate=3e-4、ViT learning rate=3e-6、weight decay=1e-3，最多 10 epochs、patience=3。
+
+| 策略 | 可訓練參數 | 最佳 epoch | Validation accuracy | Validation macro F1 |
+|---|---:|---:|---:|---:|
+| Frozen ViT，只訓練分類頭 | 7,683 | 6 | 0.4406 | 0.4095 |
+| 解凍最後 1 block | 7,097,091 | 3 | 0.4109 | 0.3648 |
+| 解凍最後 2 blocks | 14,184,963 | 3 | 0.4059 | 0.3607 |
+| 解凍最後 4 blocks | 28,360,707 | 8 | **0.4653** | **0.4309** |
+
+Validation 選出 last4 後才開啟 held-out test，並在同一次 test 評估預先定義的 Frozen baseline。
+
+| Test 指標 | Frozen baseline | Validation 勝者 last4 | last4 - frozen |
+|---|---:|---:|---:|
+| Accuracy | **0.3596** | 0.3448 | -0.0148 |
+| Balanced accuracy | **0.3788** | 0.3659 | -0.0129 |
+| Macro F1 | **0.3377** | 0.3210 | -0.0166 |
+| Log loss（越低越好） | **1.1908** | 1.2733 | +0.0825 |
+
+Frozen 的 test 類別 F1 為 BEARISH 0.4444／NEUTRAL 0.3186／BULLISH 0.2500；last4 為
+0.4393／0.3382／0.1856。last4 雖然在 validation 高出 0.0214 macro F1，到了真正未看過的
+test 卻低 0.0166，且 log loss 也較差；改善沒有跨期間重現，合理解讀是對 validation period
+過度適配，不能說 Fine-tune 已優於 frozen ViT。**決定：不替換正式 frozen ViT**。若繼續這條線，
+先增加多股票資料或測 LoRA，再以多 seed／walk-forward 驗證；不針對已開啟的這份 test 繼續調參。
+
+完整報告：`data/outputs/experiments/vit_adaptation/AAPL/run/report.json`；checkpoint 同目錄下的
+`checkpoints/`。60 天 smoke test 只用來確認 frozen／last1 梯度、early stopping、checkpoint
+與 test gate 可執行，不列入模型成效。注意本輪仍只有單一 seed，且是 ViT-only probe，尚未
+重新產生 H_v 或放回 fusion，所以不能直接和 Z_fused classifier 數字做同任務比較。
+
+### 多股票 ViT：AAPL＋NVDA 訓練、MSFT backbone holdout（2026-09-24）
+
+新增 NVDA、MSFT 各 1,405 筆 OHLCV、1,386 張 K 線、1,386 張 Volume 圖與 1,381 筆每日
+dataset。三檔取 1,381 個共同日期；AAPL＋NVDA 各自使用分類頭、共同更新同一個 ViT backbone，
+避免每檔股票不同的 train-only 分位數門檻被迫共用輸出邊界。MSFT 圖片與標籤完全不參與
+backbone 訓練或策略選擇；選出 backbone 後將其凍結，只用 MSFT 過去期間訓練一個新的診斷
+probe head，再測 MSFT 未來期間。切分日期與單股版相同且邊界各留 5 日 gap：AAPL＋NVDA
+train 1,932 筆（2021-02-01~2024-12-02）、validation 404 筆（2024-12-10~2025-10-01）；
+MSFT probe train/validation 各 966/202 筆，held-out test 203 筆（2025-10-09~2026-07-31）。
+
+| Backbone 策略 | 最佳 epoch | Pooled validation macro F1 | AAPL macro F1 | NVDA macro F1 | 兩檔平均 |
+|---|---:|---:|---:|---:|---:|
+| Frozen，只訓練兩個股票 head | 6 | **0.3757** | 0.3761 | **0.3339** | **0.3550** |
+| Last4，共用 ViT 最後四層 | 7 | 0.3610 | **0.4478** | 0.2236 | 0.3357 |
+
+last4 對 AAPL 比 Frozen 增加 0.0717，卻讓 NVDA 下降 0.1102，顯示它不是學到更通用的金融圖表
+表示，而是更偏向其中一檔股票。執行當下以 pooled macro F1 選模，Frozen 勝出；事後再用更嚴格
+的「每檔 macro F1 先算、再平均」核對，仍是 Frozen 0.3550 > last4 0.3357，結論不變。程式後續
+已把多股票選模預設改成兩檔平均，避免 pooled 指標掩蓋單一股票退化。
+
+Frozen backbone 在 MSFT 的新 probe head 以 validation 選到 epoch 4（validation macro F1
+=0.4091），最後 MSFT held-out test accuracy=0.3202、balanced accuracy=0.3292、macro F1
+=0.3066、log loss=1.1129；類別 F1 為 BEARISH 0.3506／NEUTRAL 0.3394／BULLISH 0.2299。
+因 last4 未通過 AAPL＋NVDA validation 選擇，所以沒有再用 MSFT test 挑救 last4，保持 test gate。
+
+正式結論：**只新增 NVDA 還不足以讓 last4 Fine-tune 穩定勝過 Frozen；正式 pipeline 繼續使用
+Frozen ViT。** 多股票的價值在這輪主要是揭露單股 AAPL 看不出的過度專化。下一次若繼續，應
+增加更多產業的股票或測 LoRA，並改用新的 walk-forward folds／新 held-out ticker；不能再用
+已開啟的這段 MSFT test 調參。完整報告：
+`data/outputs/experiments/vit_adaptation/AAPL_NVDA_holdout_MSFT/run/report.json`。
+
+另保留一個工程 pilot：AAPL＋NVDA 共用同一分類頭、MSFT 完全零樣本分類時，Frozen/last4
+validation macro F1 為 0.3498/0.3141，選出的 Frozen 在 MSFT test 為 0.2870。由於專案既定
+架構要求每檔股票分開輸出頭，此 pilot 不作正式結論，存於同目錄的
+`zero_shot_shared_head_run/`。
+
+### ViT LoRA 正式實驗（2026-09-24）
+
+為避免繼續用已開啟的 MSFT test 調參，本輪新增 JPM 作為新的跨股票 holdout；已建立 1,405 筆
+OHLCV、1,386 張 K 線、1,386 張 Volume 圖與 1,381 筆每日 dataset。正式設計以
+AAPL＋NVDA＋MSFT 訓練／validation，共用 ViT backbone、各自使用股票分類頭；JPM 完全不參與
+backbone 訓練或 LoRA 策略選擇。選定策略後才凍結 backbone，以 JPM 過去資料訓練新 probe head，
+最後開啟 JPM future test。
+
+新增的策略語法為 `lora_rN`。預先固定比較 `frozen`、`lora_r4`、`lora_r8`；LoRA 只掛在
+ViT 最後四個 transformer blocks（8～11）的 attention `query`／`value`，alpha=2×rank、
+dropout=0.1，ViT/LoRA learning rate=1e-4。三股票分類頭也列入後，可訓練參數為：Frozen
+23,049、LoRA r=4 為 72,201、LoRA r=8 為 121,353；相較先前 Last4 約 2,837 萬個可訓練
+參數小很多。
+
+已用共同前 60 個日期、1 epoch 做工程 smoke test，確認兩個 LoRA rank 都能完成反向傳播、
+checkpoint 儲存／載入、validation 選模及 JPM probe。這次 validation 只有 12 筆、future test
+只有 4 筆，**數字不得當成模型效果或 LoRA 勝出的證據**；報告只留作工程稽核：
+`data/outputs/experiments/vit_adaptation/AAPL_NVDA_MSFT_holdout_JPM/smoke/report.json`。
+
+正式實驗使用 1,381 個共同日期、seed=42、batch=8、最多 10 epochs、patience=3。AAPL／NVDA／
+MSFT 合計 2,898 筆 train、606 筆 validation；策略選擇採「三檔各自 macro F1 再平均」，避免
+pooled 指標掩蓋單檔退化。
+
+| 策略 | 最佳 epoch | Pooled val macro F1 | AAPL | NVDA | MSFT | 三檔平均（選模指標） |
+|---|---:|---:|---:|---:|---:|---:|
+| Frozen | 1 | 0.3474 | **0.3459** | 0.2034 | 0.3339 | 0.2944 |
+| LoRA r=4 | 4 | **0.3954** | 0.3414 | **0.3293** | **0.4099** | **0.3602** |
+| LoRA r=8 | 1 | 0.3419 | 0.3615 | 0.3108 | 0.2955 | 0.3226 |
+
+Validation 依預定規則選出 LoRA r=4，三檔平均比 Frozen 高 0.0658。接著才以凍結的 backbone
+分別訓練 JPM probe head（兩者皆在 epoch 2 選中），並開啟同一段 203 天 JPM future test：
+
+| JPM test 指標 | Frozen | LoRA r=4 | 差值（r4 - Frozen） |
+|---|---:|---:|---:|
+| Accuracy | 0.3547（72/203） | **0.3793（77/203）** | +0.0246 |
+| Balanced accuracy | 0.3530 | **0.3696** | +0.0166 |
+| Macro F1 | 0.3209 | **0.3458** | +0.0249 |
+| Log loss（越低越好） | 1.1014 | **1.0894** | -0.0120 |
+
+類別效果不平均：BEARISH F1 由 0.1075 大幅升至 0.3407、NEUTRAL 由 0.4500 升至 0.4945，
+但 BULLISH 由 0.4052 降至 0.2022（recall 0.4844→0.1406）。因此正式結論是：**LoRA r=4
+已通過這一輪 validation 與新股票 held-out test，證據比 Last4 強，列為下一個送進 fusion 的
+ViT 候選；但它不是三類全面改善，而且目前只有一個 seed，不直接替換正式 Frozen ViT。**
+下一步應固定 r=4 與現有超參數，不再利用已開啟的 JPM test 調整；先做 3～5 seeds／新
+walk-forward fold，確認平均與變異，再把 adapter 載入正式 `vision_encoder.py`，重建 H_v 後做
+Frozen vs LoRA 的嚴格 fusion 對照。正式報告：
+`data/outputs/experiments/vit_adaptation/AAPL_NVDA_MSFT_holdout_JPM/run/report.json`；完整 terminal
+log：`data/outputs/experiments/vit_adaptation/lora_AAPL_NVDA_MSFT_holdout_JPM.log`。
+
+#### LoRA r4 五 seed 穩定性驗證（2026-09-29）
+
+新增 `experiments/vision/run_vit_multiseed.py`，固定比較 Frozen 與 LoRA r4、固定既有超參數，使用 seeds
+40／41／42／43／44。這一輪只彙整 AAPL／NVDA／MSFT validation 的每檔 macro F1 平均，
+不傳 `--evaluate-test`，因此不會再次讀取 JPM future test。
+`experiments/vision/experiment_vit_adaptation.py` 同時新增
+`--run-name`，讓每個 seed 寫入獨立目錄，不覆蓋上方已開啟 test 的 `run/report.json`。
+
+已用 seeds 940／941、共同前 60 日期、1 epoch 完成短版工程 smoke test：確認 seed 目錄隔離、
+test 維持 locked、完成的 seed 可在中斷續跑時自動跳過、`--summarize-only` 可重建 mean±std。
+由於 validation 僅 12 筆，smoke 數字不作模型效果解讀。正式五 seed 已在 MPS 完成，訓練計時
+合計約 2 小時 18 分；每份 report 均確認 `test_was_opened=false`。
+
+| Seed | Frozen 三檔平均 macro F1 | LoRA r4 | r4 - Frozen | 勝者 |
+|---:|---:|---:|---:|---|
+| 40 | **0.3674** | 0.3630 | -0.0044 | Frozen |
+| 41 | 0.3240 | **0.3867** | +0.0627 | r4 |
+| 42 | 0.2944 | **0.3602** | +0.0658 | r4 |
+| 43 | **0.3797** | 0.3530 | -0.0266 | Frozen |
+| 44 | 0.2984 | **0.3680** | +0.0696 | r4 |
+| **Mean ± std** | **0.3328 ± 0.0392** | **0.3662 ± 0.0127** | **+0.0334 ± 0.0454** | r4 3/5 |
+
+| 股票 | Frozen mean ± std | LoRA r4 mean ± std | 平均差值 | r4 勝出 seeds |
+|---|---:|---:|---:|---:|
+| AAPL | 0.3479 ± 0.0648 | **0.3875 ± 0.0258** | +0.0396 | 3/5 |
+| NVDA | **0.3097 ± 0.0669** | 0.3096 ± 0.0360 | -0.0001 | 2/5 |
+| MSFT | 0.3407 ± 0.0436 | **0.4015 ± 0.0150** | +0.0607 | 5/5 |
+
+整體上 r4 平均高 0.0334，且自身跨 seed 標準差比 Frozen 小（0.0127 vs 0.0392），顯示它有
+較穩定的正向訊號；但只勝出 3/5 seeds，平均差值小於差值標準差，差值的近似 95% 信賴區間
+為 -0.0230～0.0898，包含 0。改善也不平均：MSFT 5/5 穩定受益、AAPL 3/5，NVDA 平均幾乎
+完全打平且只勝 2/5。
+
+因此本輪**沒有通過預先設定的 4/5 穩定門檻**。結論由「r4 可直接進 fusion 候選」下修為：
+**r4 有平均提升且較穩，但證據不足以替換 Frozen 或投入昂貴的完整 fusion 重建。** 現階段不再
+增加相同資料上的 seeds，也不使用已開啟的 JPM test 調參；下一個更有資訊量的實驗應增加不同
+產業的訓練股票與至少兩檔新 holdout，或增加新的 walk-forward 時段，確認 r4 的提升不是由 MSFT
+單一股票主導。正式彙整：
+`data/outputs/experiments/vit_adaptation/AAPL_NVDA_MSFT_holdout_JPM/multiseed_summary/report.json`；
+完整 log：`data/outputs/experiments/vit_adaptation/vit_lora_multiseed.log`。
 
 **怎麼判斷有沒有進步**：不是只看 accuracy 這一個數字，因為之前的模型可能只是學會「都猜 NEUTRAL」就拿到 0.459。更要看 BEARISH/BULLISH 的 f1 有沒有從 0 附近的塌縮狀態動起來，那才代表模型真的開始從新聞（或其他輸入）學到區分漲跌的訊號，不是準確率數字好看但其實沒學到東西。
 

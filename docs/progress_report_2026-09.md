@@ -1,6 +1,7 @@
 # MultiFinRL 進度回報（2026-09）
 
-股票池：AAPL，資料範圍 2021-01 ～ 2026-08（1381 個交易日）。
+完整多模態股票池：AAPL；ViT 視覺實驗另有 NVDA／MSFT／JPM。四檔資料範圍皆為
+2021-01 ～ 2026-08（各 1381 個可用交易日）。
 
 ## 一句話總結
 
@@ -10,7 +11,7 @@
 
 | 模組／項目 | 狀態 | 關鍵數字 |
 |---|---|---|
-| A：資料收集（股價／新聞／10-K・10-Q／8-K／法說會／標籤） | ✅ 已完成 | 1381 天，含 8-K 即時揭露 |
+| A：資料收集（股價／新聞／10-K・10-Q／8-K／法說會／標籤） | ✅ AAPL 完成；NVDA/MSFT/JPM 完成視覺實驗所需資料 | 四檔各 1381 天；完整文字模態目前只有 AAPL |
 | B：Vision / Text / RAG 三種編碼器 | ✅ 已完成 | H_v / H_t / H_r 皆已產出 |
 | C：融合模型 Z_fused | ✅ 已完成 | — |
 | 市場情緒分類驗證 | ✅ 已完成 | macro f1 = 0.324 |
@@ -54,6 +55,26 @@ TREND 偏弱不是 decoder 獨有的問題——`classifier.py` 用同一份 Z_f
 
 拿掉 K 線圖輸入（H_v 歸零），macro f1 從 0.324 掉到 0.159（掉 51%）。證明現有 ViT（雖非財經領域預訓練版本）貢獻其實很大，換編碼器的急迫性沒有想像中高，但邊際效益可能仍大。
 
+### ViT 分類頭、部分 Fine-tune 與多股票實驗
+
+AAPL-only 嚴格時間切分下，last4 在 validation 勝過 Frozen（0.4309 vs 0.4095），但 held-out
+test 反而較差（0.3210 vs 0.3377），因此未採用。加入 NVDA 後改成 AAPL/NVDA 分開分類頭、
+共用 ViT backbone，並留 MSFT 不參與 backbone 訓練：Frozen/last4 的兩檔 validation macro F1
+平均為 0.3550/0.3357。last4 改善 AAPL 卻明顯傷害 NVDA，仍未證明通用提升；最終 Frozen
+backbone 加 MSFT 新 probe head，在 203 天 future test 得到 macro F1=0.3066。正式設定維持
+Frozen ViT。完整方法與限制見 `docs/data_and_experiments_log.md`、決議 #78/#79。
+
+LoRA 正式實驗只對最後四個 ViT blocks 的 attention query/value 掛 rank 4 或 rank 8 adapter，
+以 AAPL＋NVDA＋MSFT validation 選模，JPM 作新的 backbone holdout。三檔 validation macro F1
+平均為 Frozen 0.2944、r4 **0.3602**、r8 0.3226，選出 r4；203 天 JPM future test 上，r4
+相較 Frozen 的 accuracy 0.3793 vs 0.3547、macro F1 0.3458 vs 0.3209、log loss 1.0894 vs
+1.1014，整體指標正向。但 BULLISH F1 由 0.4052 降至 0.2022。
+
+後續五 seed validation-only 驗證得到 Frozen 0.3328±0.0392、r4 0.3662±0.0127，平均差
++0.0334±0.0454；r4 只勝 3/5，未通過預先設定的 4/5 門檻。MSFT 5/5 改善，但 NVDA 平均
+完全打平，表示效果仍受股票別影響。正式 pipeline 因此繼續使用 Frozen，不先投入 Fusion 重建；
+下一步改為增加跨產業股票／新 holdout 或新 walk-forward。完整方法與限制見決議 #81～#83。
+
 ### 事件抽取方法比較
 
 | 方法 | Precision | Recall | F1 |
@@ -88,6 +109,6 @@ LLM 版全量 1381 天已跑完，401 天判斷有事件發生。此項為 Track
 ## 下一步建議
 
 1. 補跑 `evaluate.py --llm_judge` 驗證敘述文字品質，成本低、不需重新訓練。
-2. 決定是否投入多股票（AAPL+NVDA+MSFT）擴充實驗，驗證 TREND 偏弱是否為資料量問題。
+2. ViT LoRA 五 seed 未通過穩定門檻；若續做，先增加跨產業股票與新 holdout／walk-forward，不直接進 Fusion。
 3. `fetch_transcripts.py` 已改用 Alpha Vantage API，待本機執行取得真實法說會逐字稿。
 4. 多資產回測：需先完成上述擴充實驗的資料，才有意義動工。

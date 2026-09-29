@@ -10,7 +10,7 @@
 前置：先用 chart_generator 產生 technical/rsi、technical/sma、technical/macd 圖。
 
 用法：
-    python scripts/experiment_auxiliary_vision.py --ticker AAPL
+    python experiments/vision/experiment_auxiliary_vision.py --ticker AAPL
 """
 import argparse
 from pathlib import Path
@@ -21,7 +21,7 @@ import torch
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, classification_report, f1_score
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 

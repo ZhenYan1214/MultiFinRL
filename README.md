@@ -129,6 +129,12 @@ MultiFinRL/
 │   │   └── train_ppo.py             # --curriculum for volatility-staged curriculum learning
 │   └── backtest/
 │       └── backtest.py              # cumulative return, Sharpe ratio, max drawdown (single-ticker only)
+├── experiments/                     # research-only code; not part of the production pipeline
+│   └── vision/
+│       ├── vision_classifier.py      # Frozen / partial fine-tune / LoRA experiment model
+│       ├── experiment_vit_adaptation.py # strict temporal ViT adaptation comparison
+│       ├── run_vit_multiseed.py      # multi-seed validation aggregation
+│       └── experiment_auxiliary_vision.py # volume / RSI / SMA / MACD comparison
 ├── scripts/
 │   └── run_pipeline.py              # runs A -> B -> C end to end
 └── data/                            # not tracked in git except data/labels/; synced locally/via cloud storage
@@ -151,14 +157,14 @@ Full definition in `docs/data_format.md`; the handoff points are:
 
 | Item | Spec |
 |---|---|
-| Market / initial universe | US equities, starting with AAPL; expansion to more large-cap names (e.g. NVDA) is a later step. Indices/ETFs are excluded for now since they have no filings. |
+| Market / initial universe | US equities. AAPL has the complete multimodal pipeline; NVDA/MSFT/JPM currently have OHLCV, dual charts, and labels for ViT experiments. Indices/ETFs are excluded for now since they have no filings. |
 | Data range | 2021-01 onward, continuously extended (currently through 2026-08; see `configs/config.yaml`) |
 | Charts | 20-day trailing window, PNG, 224×224, RGB |
-| Price-movement label | Return from close to the close 5 trading days later: > +2% → BULLISH, < −2% → BEARISH, otherwise NEUTRAL |
+| Price-movement label | Return from close to the close 5 trading days later; train-period 1/3 and 2/3 quantiles define BEARISH / NEUTRAL / BULLISH in strict experiments |
 | Text chunking | ≤512 tokens per chunk (FinBERT's input limit) |
 | RAG retrieval | top-K = 3 |
 | Missing daily news | backfilled from prior days, with a `days_ago` field so the model can weigh relevance |
-| Fine-tuning | Fusion model (`fusion/train.py`): full-parameter training. Decoder (`decoder/train.py`): QLoRA (4-bit, LoRA on all attention+MLP linear layers) fine-tuning LLaMA-2-7b, in progress |
+| Fine-tuning | Fusion model (`fusion/train.py`): full-parameter training. Decoder (`decoder/train.py`): QLoRA (4-bit, LoRA on all attention+MLP linear layers). ViT: LoRA r4 improved mean validation macro F1 over five seeds (0.3662 vs 0.3328) but won only 3/5 seeds, so Frozen remains the formal encoder pending broader cross-stock/time validation. |
 | Dev environment | `requirements.txt` in this repo is the single source of truth |
 
 ## Current Status and Roadmap
