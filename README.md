@@ -13,7 +13,9 @@ MultiFinRL turns three kinds of daily market data — two market charts (candles
 
 Both phases run within the same year and the pipeline is expected to cover the output of both — classification, event extraction, a simple backtest, and an RL-based backtest — not one phase per year.
 
-## Architecture
+## System Architecture
+
+[✏️ Open in draw.io](https://app.diagrams.net/#Uhttps%3A%2F%2Fraw.githubusercontent.com%2FZhenYan1214%2FMultiFinRL%2Fmain%2Fdocs%2Farchitecture_diagram_detailed.drawio)
 
 ```mermaid
 flowchart LR
@@ -43,6 +45,7 @@ This runs once per trading day for the configured date range, producing one `Z_f
 
 ## Ownership and Directory Layout
 
+| Module | Directory | Responsibility | Output |
 |---|---|---|---|
 | A | `module_a_data/` | Data engineering: crawlers, chart generation, text cleaning, chunking, price-movement labels | One JSON record per day (`data/processed/dataset/`) |
 | B | `module_b_encoder/` | ViT / FinBERT encoding, RAG index and retrieval, event extraction | Daily `H_v`, `H_t`, `H_r` vectors (`data/vectors/`) in a fixed format |
