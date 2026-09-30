@@ -11,7 +11,7 @@
    dual-image ViT rather than composited into one bitmap.
 3. Fetch daily financial news and clean HTML/noise (`crawler/fetch_news.py` for recent news, `crawler/fetch_news_alpaca.py` for historical backfill via the Alpaca News API, `preprocess/text_cleaner.py` for cleanup).
 4. Download SEC EDGAR filings (10-K/10-Q as background, 8-K as timestamped supplementary events that don't overwrite the background — see `docs/decisions.md` #41/#44/#45) and earnings-call transcripts via the official Alpha Vantage API (`crawler/fetch_transcripts.py`, replacing the earlier third-party `foolcalls` scraper), chunked to ≤512 tokens (`crawler/fetch_filings.py`, `preprocess/chunker.py`). ETF/index macro data (`crawler/fetch_macro.py`) is scaffolded but not implemented (`docs/decisions.md` #38).
-5. Generate BULLISH / BEARISH / NEUTRAL labels from the 5-trading-day forward return vs. same-day close, using quantile thresholds over the full return distribution (each class ends up close to 1/3 of days) rather than a fixed percentage — see `docs/decisions.md` #30. The old fixed ±2% version is kept as `labeling.py`'s `make_label_fixed_threshold()` for ablation comparisons only.
+5. Generate BULLISH / BEARISH / NEUTRAL labels from the 5-trading-day forward return vs. same-day close. Quantile thresholds are computed from the Train return distribution only, then frozen and applied to Validation/Test; the two boundaries each keep a 5-trading-day gap. The old fixed ±2% version is kept as `labeling.py`'s `make_label_fixed_threshold()` for ablation comparisons only.
 6. Assemble everything into one JSON record per day (`build_dataset.py`).
 7. **Deliver an initial 50–100 sample days early** so B and C can start development against real formats sooner.
 
@@ -45,6 +45,8 @@ but both configured vision images must exist. The fastest path to a deliverable 
 ## Notes
 
 - Every record must pass `validate_daily_record()` in `shared/schemas.py` before being written.
+- `build_dataset.py` writes the shared split manifest to `data/processed/temporal_splits/{TICKER}.json`;
+  Fusion, classifier, decoder, PPO, and backtest must reuse it rather than recalculate ratios.
 - News entries must keep `published_at` (Eastern time) and `days_ago`.
 - Alpaca news fetch state lives in `data/raw/news/{TICKER}/meta.json`. It records completed
   date ranges and an in-progress page token, so repeated or overlapping research ranges only

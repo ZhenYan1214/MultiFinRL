@@ -2,8 +2,10 @@
 
 - 基礎版：以情緒分類為訓練目標（cross-entropy），端到端訓練融合層。
   QLoRA / 對比損失（L_align + L_ground + L_belief）為後續強化，介面不變。
-- 產出：Z_fused 到 data/outputs/z_fused/{TICKER}/{date}.npy，
-  checkpoint 到 data/outputs/checkpoints/fusion.pt。
+- 真實資料一律沿用 A 建立的 strict temporal manifest：只用 Train 更新參數，
+  Validation 選最佳 epoch，Test 不參與訓練或選模。兩個邊界的 gap 日也不參與。
+- 產出：Z_fused 到 data/outputs/z_fused/{TICKER}/{date}.npy，真實訓練 checkpoint
+  到 data/outputs/checkpoints/fusion.pt；--fake 獨立寫到 fusion_fake.pt。
 
 用法：
     python -m module_c_fusion.fusion.train --fake --n 32     # 第一階段：假向量測通
@@ -36,15 +38,17 @@
   兩者可以並存比較，不需要手動備份。
 """
 import argparse
+import copy
 import datetime as dt
 import json
 
 import numpy as np
-import torch    
+import torch
 import torch.nn as nn
 
 from shared import paths, schemas
-from shared.utils import load_config, read_json
+from shared.temporal_split import load_temporal_manifest, split_rows
+from shared.utils import load_config, read_json, write_json
 from module_c_fusion.fusion.model import build_model
 
 LABEL_TO_ID = {"BEARISH": 0, "NEUTRAL": 1, "BULLISH": 2}
@@ -53,7 +57,8 @@ TRAIN_LOG = paths.OUTPUTS / "logs" / "train_log.jsonl"
 
 def log_run(mode: str, ticker: str, n_days: int, epochs: int, batch: int, lr: float,
            losses: list[float], date_range: list[str] | None = None,
-           note: str = "") -> None:
+           note: str = "", validation_history: list[dict] | None = None,
+           best_epoch: int | None = None, split_manifest: str | None = None) -> None:
     """把這次訓練的參數與每個 epoch 的 loss 附加寫進 train_log.jsonl，一行一筆紀錄。
 
     不用手動記，每次跑 train.py 都會自動留下一筆，之後要比較不同次執行的結果，
@@ -71,6 +76,9 @@ def log_run(mode: str, ticker: str, n_days: int, epochs: int, batch: int, lr: fl
         "lr": lr,
         "losses": losses,          # 每個 epoch 結束時的平均 loss，依序排列
         "final_loss": losses[-1] if losses else None,
+        "validation_history": validation_history,
+        "best_epoch": best_epoch,
+        "split_manifest": split_manifest,
         "note": note,
     }
     with open(TRAIN_LOG, "a", encoding="utf-8") as f:
@@ -116,6 +124,57 @@ def load_dataset(ticker: str):
             continue
         days.append((date, LABEL_TO_ID[read_json(label_file)["label"]]))
     return days
+
+
+def load_split_dataset(ticker: str, days: list[tuple[str, int]]) -> tuple[dict, dict]:
+    """讀取唯一 manifest，並要求 B 向量完整覆蓋 manifest 的所有日期。"""
+    manifest = load_temporal_manifest(ticker)
+    groups = split_rows(days, manifest, require_all_manifest_dates=True)
+    return manifest, groups
+
+
+def make_batches(ticker: str, days: list[tuple[str, int]], batch_size: int,
+                 *, ablate_news: bool = False, ablate_vision: bool = False,
+                 split_name: str = "dataset") -> list:
+    print(f"[train] 載入 {ticker} {split_name}：{len(days)} 天，batch={batch_size}")
+    batches = []
+    for i in range(0, len(days), batch_size):
+        chunk = days[i:i + batch_size]
+        arrs = [
+            load_day(ticker, date, ablate_news=ablate_news, ablate_vision=ablate_vision)
+            for date, _ in chunk
+        ]
+        batches.append((
+            np.stack([item[0] for item in arrs]),
+            np.stack([item[1] for item in arrs]),
+            np.stack([item[2] for item in arrs]),
+            np.asarray([label for _, label in chunk]),
+        ))
+        loaded = min(i + len(chunk), len(days))
+        if loaded == len(days) or loaded % 100 < batch_size:
+            finished = loaded == len(days)
+            print(
+                f"[train] 載入 {ticker} {split_name}: {loaded}/{len(days)} 天",
+                end="\n" if finished else "\r",
+                flush=True,
+            )
+    return batches
+
+
+def class_weights_for_days(days: list[tuple[str, int]], device: str) -> torch.Tensor:
+    counts = np.bincount([label for _, label in days], minlength=3).astype(np.float32)
+    counts[counts == 0] = 1
+    weights = len(days) / (3.0 * counts)
+    return torch.tensor(weights, dtype=torch.float32, device=device)
+
+
+def protocol_days(groups: dict[str, list[tuple[str, int]]]) -> list[tuple[str, int]]:
+    """包含兩段 gap、但排除 manifest 外的舊檔，供凍結後輸出 Z_fused。"""
+    return sorted(row for rows in groups.values() for row in rows)
+
+
+def multi_batches(ticker: str, batches: list) -> list:
+    return [(ticker, *batch) for batch in batches]
 
 
 def make_fake_batch(n: int, k: int, n_vision_inputs: int = 2, seed: int = 0):
@@ -196,6 +255,197 @@ def train_multi(model, batches, epochs: int, lr: float, device: str, tickers: li
     return clf_heads, losses
 
 
+def _macro_f1(y_true: list[int], y_pred: list[int]) -> float:
+    scores = []
+    for label in range(3):
+        tp = sum(a == label and b == label for a, b in zip(y_true, y_pred))
+        fp = sum(a != label and b == label for a, b in zip(y_true, y_pred))
+        fn = sum(a == label and b != label for a, b in zip(y_true, y_pred))
+        precision = tp / (tp + fp) if tp + fp else 0.0
+        recall = tp / (tp + fn) if tp + fn else 0.0
+        scores.append(2 * precision * recall / (precision + recall) if precision + recall else 0.0)
+    return float(np.mean(scores))
+
+
+def evaluate_head(model, clf_head, batches, device: str) -> dict:
+    model.eval()
+    clf_head.eval()
+    loss_fn = nn.CrossEntropyLoss()
+    total_loss, n_items = 0.0, 0
+    y_true, y_pred = [], []
+    with torch.no_grad():
+        for h_v, h_t, h_r, y in batches:
+            h_v = torch.from_numpy(h_v).to(device)
+            h_t = torch.from_numpy(h_t).to(device)
+            h_r = torch.from_numpy(h_r).to(device)
+            labels = torch.as_tensor(y, dtype=torch.long, device=device)
+            logits = clf_head(model(h_v, h_t, h_r))
+            loss = loss_fn(logits, labels)
+            total_loss += float(loss.item()) * len(labels)
+            n_items += len(labels)
+            y_true.extend(labels.cpu().tolist())
+            y_pred.extend(logits.argmax(dim=1).cpu().tolist())
+    return {
+        "loss": total_loss / max(n_items, 1),
+        "macro_f1": _macro_f1(y_true, y_pred),
+        "n": n_items,
+    }
+
+
+def train_with_validation(model, train_batches, validation_batches, epochs: int, lr: float,
+                          device: str, class_weights=None):
+    """只用 train 更新權重，以 validation macro F1 選回最佳 epoch。"""
+    model.to(device)
+    clf_head = nn.Linear(model.head.out_features, 3).to(device)
+    optimizer = torch.optim.AdamW(list(model.parameters()) + list(clf_head.parameters()), lr=lr)
+    loss_fn = nn.CrossEntropyLoss(weight=class_weights)
+    history = []
+    best_score, best_loss, best_epoch = -1.0, float("inf"), 0
+    best_model_state = None
+    best_head_state = None
+
+    for epoch in range(1, epochs + 1):
+        model.train()
+        clf_head.train()
+        total_loss, n_items = 0.0, 0
+        for batch_index, (h_v, h_t, h_r, y) in enumerate(train_batches, start=1):
+            h_v = torch.from_numpy(h_v).to(device)
+            h_t = torch.from_numpy(h_t).to(device)
+            h_r = torch.from_numpy(h_r).to(device)
+            labels = torch.as_tensor(y, dtype=torch.long, device=device)
+            loss = loss_fn(clf_head(model(h_v, h_t, h_r)), labels)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            total_loss += float(loss.item()) * len(labels)
+            n_items += len(labels)
+            if batch_index == len(train_batches) or batch_index % 50 == 0:
+                print(f"[train] epoch {epoch}/{epochs} batch "
+                      f"{batch_index}/{len(train_batches)}")
+
+        train_loss = total_loss / max(n_items, 1)
+        validation = evaluate_head(model, clf_head, validation_batches, device)
+        row = {
+            "epoch": epoch,
+            "train_loss": round(train_loss, 6),
+            "validation_loss": round(validation["loss"], 6),
+            "validation_macro_f1": round(validation["macro_f1"], 6),
+        }
+        history.append(row)
+        print(
+            f"[train] epoch {epoch}/{epochs} train_loss={train_loss:.4f} "
+            f"val_loss={validation['loss']:.4f} val_macro_f1={validation['macro_f1']:.4f}"
+        )
+        score = validation["macro_f1"]
+        if score > best_score or (score == best_score and validation["loss"] < best_loss):
+            best_score, best_loss, best_epoch = score, validation["loss"], epoch
+            best_model_state = copy.deepcopy(model.state_dict())
+            best_head_state = copy.deepcopy(clf_head.state_dict())
+
+    model.load_state_dict(best_model_state)
+    clf_head.load_state_dict(best_head_state)
+    print(f"[train] 採用 epoch {best_epoch}：val_macro_f1={best_score:.4f}, val_loss={best_loss:.4f}")
+    return clf_head, history, best_epoch
+
+
+def evaluate_multi_heads(model, clf_heads: dict, batches, device: str) -> dict:
+    model.eval()
+    for head in clf_heads.values():
+        head.eval()
+    loss_fn = nn.CrossEntropyLoss()
+    total_loss, n_items = 0.0, 0
+    y_true = {ticker: [] for ticker in clf_heads}
+    y_pred = {ticker: [] for ticker in clf_heads}
+    with torch.no_grad():
+        for ticker, h_v, h_t, h_r, y in batches:
+            h_v = torch.from_numpy(h_v).to(device)
+            h_t = torch.from_numpy(h_t).to(device)
+            h_r = torch.from_numpy(h_r).to(device)
+            labels = torch.as_tensor(y, dtype=torch.long, device=device)
+            logits = clf_heads[ticker](model(h_v, h_t, h_r))
+            loss = loss_fn(logits, labels)
+            total_loss += float(loss.item()) * len(labels)
+            n_items += len(labels)
+            y_true[ticker].extend(labels.cpu().tolist())
+            y_pred[ticker].extend(logits.argmax(dim=1).cpu().tolist())
+    by_ticker = {
+        ticker: _macro_f1(y_true[ticker], y_pred[ticker]) for ticker in clf_heads
+    }
+    return {
+        "loss": total_loss / max(n_items, 1),
+        "macro_f1": float(np.mean(list(by_ticker.values()))),
+        "macro_f1_by_ticker": by_ticker,
+        "n": n_items,
+    }
+
+
+def train_multi_with_validation(model, train_batches, validation_batches, epochs: int, lr: float,
+                                device: str, tickers: list[str],
+                                class_weights_by_ticker: dict | None = None):
+    model.to(device)
+    clf_heads = {ticker: nn.Linear(model.head.out_features, 3).to(device) for ticker in tickers}
+    parameters = list(model.parameters())
+    for head in clf_heads.values():
+        parameters.extend(head.parameters())
+    optimizer = torch.optim.AdamW(parameters, lr=lr)
+    history = []
+    best_score, best_loss, best_epoch = -1.0, float("inf"), 0
+    best_model_state = None
+    best_head_states = None
+
+    for epoch in range(1, epochs + 1):
+        model.train()
+        for head in clf_heads.values():
+            head.train()
+        total_loss, n_items = 0.0, 0
+        for batch_index, (ticker, h_v, h_t, h_r, y) in enumerate(train_batches, start=1):
+            h_v = torch.from_numpy(h_v).to(device)
+            h_t = torch.from_numpy(h_t).to(device)
+            h_r = torch.from_numpy(h_r).to(device)
+            labels = torch.as_tensor(y, dtype=torch.long, device=device)
+            loss_fn = nn.CrossEntropyLoss(weight=(class_weights_by_ticker or {}).get(ticker))
+            loss = loss_fn(clf_heads[ticker](model(h_v, h_t, h_r)), labels)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            total_loss += float(loss.item()) * len(labels)
+            n_items += len(labels)
+            if batch_index == len(train_batches) or batch_index % 50 == 0:
+                print(f"[train] epoch {epoch}/{epochs} batch "
+                      f"{batch_index}/{len(train_batches)}")
+
+        train_loss = total_loss / max(n_items, 1)
+        validation = evaluate_multi_heads(model, clf_heads, validation_batches, device)
+        row = {
+            "epoch": epoch,
+            "train_loss": round(train_loss, 6),
+            "validation_loss": round(validation["loss"], 6),
+            "validation_macro_f1": round(validation["macro_f1"], 6),
+            "validation_macro_f1_by_ticker": {
+                ticker: round(score, 6)
+                for ticker, score in validation["macro_f1_by_ticker"].items()
+            },
+        }
+        history.append(row)
+        print(
+            f"[train] epoch {epoch}/{epochs} train_loss={train_loss:.4f} "
+            f"val_loss={validation['loss']:.4f} val_macro_f1={validation['macro_f1']:.4f}"
+        )
+        score = validation["macro_f1"]
+        if score > best_score or (score == best_score and validation["loss"] < best_loss):
+            best_score, best_loss, best_epoch = score, validation["loss"], epoch
+            best_model_state = copy.deepcopy(model.state_dict())
+            best_head_states = {
+                ticker: copy.deepcopy(head.state_dict()) for ticker, head in clf_heads.items()
+            }
+
+    model.load_state_dict(best_model_state)
+    for ticker, state in best_head_states.items():
+        clf_heads[ticker].load_state_dict(state)
+    print(f"[train] 採用 epoch {best_epoch}：val_macro_f1={best_score:.4f}, val_loss={best_loss:.4f}")
+    return clf_heads, history, best_epoch
+
+
 def export_z_fused(model, ticker: str, days, device: str, batch: int = 8,
                    ablate_news: bool = False, ablate_vision: bool = False):
     """對所有日期輸出 Z_fused 到 data/outputs/z_fused/。"""
@@ -203,7 +453,7 @@ def export_z_fused(model, ticker: str, days, device: str, batch: int = 8,
     out_dir = paths.OUTPUTS / "z_fused" / ticker
     out_dir.mkdir(parents=True, exist_ok=True)
     with torch.no_grad():
-        for date, _y in days:
+        for index, (date, _y) in enumerate(days, start=1):
             h_v, h_t, h_r = load_day(ticker, date, ablate_news=ablate_news, ablate_vision=ablate_vision)
             z = model(
                 torch.from_numpy(h_v[None]).to(device),
@@ -211,6 +461,8 @@ def export_z_fused(model, ticker: str, days, device: str, batch: int = 8,
                 torch.from_numpy(h_r[None]).to(device),
             )[0].cpu().numpy()
             np.save(out_dir / f"{date}.npy", z)
+            if index == len(days) or index % 100 == 0:
+                print(f"[train] 輸出 {ticker} Z_fused: {index}/{len(days)} 天")
     print(f"[train] Z_fused x{len(days)} -> {out_dir}")
 
 
@@ -238,10 +490,25 @@ def main():
                          "沒訓練過的股票的泛化能力用，搭配 --ticker 指定要套用在哪支股票")
     args = ap.parse_args()
 
+    if args.epochs < 1:
+        raise SystemExit("--epochs 必須至少為 1")
+    if args.batch < 1:
+        raise SystemExit("--batch 必須至少為 1")
+    if args.fake and args.n < 1:
+        raise SystemExit("--n 必須至少為 1")
+
     torch.manual_seed(cfg["seed"])
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"[train] device={device}")
     k = cfg["rag"]["top_k"]
     model = build_model(cfg)
+    requested_tickers = args.tickers if args.tickers else [args.ticker]
+    if args.fake:
+        ckpt = paths.OUTPUTS / "checkpoints" / "fusion_fake.pt"
+    elif len(requested_tickers) > 1:
+        ckpt = paths.OUTPUTS / "checkpoints" / f"fusion_{'_'.join(requested_tickers)}.pt"
+    else:
+        ckpt = paths.OUTPUTS / "checkpoints" / "fusion.pt"
 
     if args.apply_checkpoint:
         # ---- 泛化測試：套用既有權重，不訓練，只對指定股票跑前向運算產生 Z_fused ----
@@ -249,20 +516,23 @@ def main():
         days = load_dataset(ticker)
         if not days:
             raise SystemExit(f"找不到 {ticker} 的 B 向量，先跑 module_b_encoder.generate_vectors --ticker {ticker}")
+        _manifest, groups = load_split_dataset(ticker, days)
+        export_days = protocol_days(groups)
         state = torch.load(args.apply_checkpoint, map_location=device)
         model.load_state_dict(state)
         model.to(device)
-        export_z_fused(model, ticker, days, device,
+        export_z_fused(model, ticker, export_days, device,
                        ablate_news=args.ablate_news, ablate_vision=args.ablate_vision)
 
         from module_c_fusion.fusion.consolidate import build_index, save_index
         index_data = build_index(ticker)
         if index_data:
-            save_index(ticker, index_data)
+            save_index(ticker, index_data, checkpoint_path=args.apply_checkpoint)
 
-        date_range = [days[0][0], days[-1][0]] if days else None
-        log_run("apply_checkpoint", ticker, len(days), 0, args.batch, args.lr, [],
+        date_range = [export_days[0][0], export_days[-1][0]] if export_days else None
+        log_run("apply_checkpoint", ticker, len(export_days), 0, args.batch, args.lr, [],
                date_range=date_range,
+               split_manifest=str(paths.temporal_split_path(ticker)),
                note=f"泛化測試，套用 checkpoint={args.apply_checkpoint}，未訓練")
         print(f"[train] 已套用 {args.apply_checkpoint} 對 {ticker} 產生 Z_fused（未訓練，權重完全沿用該 checkpoint）")
         return
@@ -282,106 +552,134 @@ def main():
     elif args.tickers and len(args.tickers) > 1:
         # ---- 多股票聯合訓練：融合層本體共用，分類 loss 的輸出層各股票分開 ----
         tickers = args.tickers
-        days_by_ticker = {}
+        groups_by_ticker = {}
         for t in tickers:
             d = load_dataset(t)
             if not d:
                 raise SystemExit(f"找不到 {t} 的 B 向量，先跑 module_b_encoder.generate_vectors --ticker {t}")
-            days_by_ticker[t] = d
+            _, groups = load_split_dataset(t, d)
+            groups_by_ticker[t] = groups
 
-        batches = []  # [(ticker, h_v, h_t, h_r, y)]，batch 邊界不跨股票
+        train_batches, validation_batches = [], []
         for t in tickers:
-            days = days_by_ticker[t]
-            for i in range(0, len(days), args.batch):
-                chunk = days[i:i + args.batch]
-                arrs = [load_day(t, d, ablate_news=args.ablate_news, ablate_vision=args.ablate_vision)
-                       for d, _ in chunk]
-                batches.append((
-                    t,
-                    np.stack([a[0] for a in arrs]),
-                    np.stack([a[1] for a in arrs]),
-                    np.stack([a[2] for a in arrs]),
-                    np.array([y for _, y in chunk]),
-                ))
+            train_batches.extend(multi_batches(t, make_batches(
+                t, groups_by_ticker[t]["train"], args.batch,
+                ablate_news=args.ablate_news, ablate_vision=args.ablate_vision,
+                split_name="Train",
+            )))
+            validation_batches.extend(multi_batches(t, make_batches(
+                t, groups_by_ticker[t]["validation"], args.batch,
+                ablate_news=args.ablate_news, ablate_vision=args.ablate_vision,
+                split_name="Validation",
+            )))
 
         class_weights_by_ticker = None
         if args.weighted:
             class_weights_by_ticker = {}
             for t in tickers:
-                days = days_by_ticker[t]
-                counts = np.bincount([y for _, y in days], minlength=3).astype(np.float32)
-                counts[counts == 0] = 1
-                weights = len(days) / (3.0 * counts)
-                class_weights_by_ticker[t] = torch.tensor(weights, dtype=torch.float32, device=device)
-                print(f"[train] {t} 類別加權啟用，權重（BEARISH/NEUTRAL/BULLISH 順序）={weights.tolist()}")
+                weights = class_weights_for_days(groups_by_ticker[t]["train"], device)
+                class_weights_by_ticker[t] = weights
+                print(f"[train] {t} Train-only 類別權重="
+                      f"{weights.detach().cpu().tolist()}")
 
-        _, losses = train_multi(model, batches, args.epochs, args.lr, device, tickers,
-                                class_weights_by_ticker=class_weights_by_ticker)
+        _, history, best_epoch = train_multi_with_validation(
+            model, train_batches, validation_batches, args.epochs, args.lr, device, tickers,
+            class_weights_by_ticker=class_weights_by_ticker,
+        )
+        losses = [row["train_loss"] for row in history]
 
-        from module_c_fusion.fusion.consolidate import build_index, save_index
         for t in tickers:
-            days = days_by_ticker[t]
-            export_z_fused(model, t, days, device,
+            export_days = protocol_days(groups_by_ticker[t])
+            export_z_fused(model, t, export_days, device,
                            ablate_news=args.ablate_news, ablate_vision=args.ablate_vision)
-            index_data = build_index(t)
-            if index_data:
-                save_index(t, index_data)
+        exported_tickers = tickers
 
-        total_days = sum(len(d) for d in days_by_ticker.values())
+        total_days = sum(len(groups_by_ticker[t]["train"]) for t in tickers)
         note = (f"joint training tickers={tickers}, "
                f"news={'off' if args.ablate_news else 'on'}, "
-               f"vision={'off' if args.ablate_vision else 'on'}, weighted={args.weighted}")
+               f"vision={'off' if args.ablate_vision else 'on'}, weighted={args.weighted}, "
+               "strict temporal split; test labels never used")
         log_run("real_multi", "+".join(tickers), total_days, args.epochs, args.batch, args.lr, losses,
-               note=note)
+               note=note, validation_history=history, best_epoch=best_epoch,
+               split_manifest=", ".join(str(paths.temporal_split_path(t)) for t in tickers))
+
+        write_json({
+            "protocol": "strict_temporal_v1",
+            "tickers": tickers,
+            "split_manifests": {
+                t: str(paths.temporal_split_path(t)) for t in tickers
+            },
+            "epochs_requested": args.epochs,
+            "best_epoch": best_epoch,
+            "history": history,
+            "checkpoint": str(ckpt),
+        }, paths.OUTPUTS / "metrics" / f"fusion_train_report_{'_'.join(tickers)}.json")
 
     else:
         ticker = args.tickers[0] if args.tickers else args.ticker
         days = load_dataset(ticker)
         if not days:
             raise SystemExit("找不到 B 的向量，先跑 module_b_encoder.generate_vectors")
-        batches = []
-        for i in range(0, len(days), args.batch):
-            chunk = days[i:i + args.batch]
-            arrs = [load_day(ticker, d, ablate_news=args.ablate_news, ablate_vision=args.ablate_vision)
-                   for d, _ in chunk]
-            batches.append((
-                np.stack([a[0] for a in arrs]),
-                np.stack([a[1] for a in arrs]),
-                np.stack([a[2] for a in arrs]),
-                np.array([y for _, y in chunk]),
-            ))
+        manifest, groups = load_split_dataset(ticker, days)
+        train_batches = make_batches(
+            ticker, groups["train"], args.batch,
+            ablate_news=args.ablate_news, ablate_vision=args.ablate_vision,
+            split_name="Train",
+        )
+        validation_batches = make_batches(
+            ticker, groups["validation"], args.batch,
+            ablate_news=args.ablate_news, ablate_vision=args.ablate_vision,
+            split_name="Validation",
+        )
 
         class_weights = None
         if args.weighted:
-            counts = np.bincount([y for _, y in days], minlength=3).astype(np.float32)
-            counts[counts == 0] = 1  # 避免除以 0（理論上三類都該有資料）
-            weights = len(days) / (3.0 * counts)
-            class_weights = torch.tensor(weights, dtype=torch.float32, device=device)
-            print(f"[train] 類別加權啟用，權重（BEARISH/NEUTRAL/BULLISH 順序）={weights.tolist()}")
+            class_weights = class_weights_for_days(groups["train"], device)
+            print(f"[train] Train-only 類別權重（BEARISH/NEUTRAL/BULLISH）="
+                  f"{class_weights.detach().cpu().tolist()}")
 
-        _, losses = train(model, batches, args.epochs, args.lr, device, class_weights=class_weights)
-        export_z_fused(model, ticker, days, device,
+        _, history, best_epoch = train_with_validation(
+            model, train_batches, validation_batches, args.epochs, args.lr, device,
+            class_weights=class_weights,
+        )
+        losses = [row["train_loss"] for row in history]
+        export_days = protocol_days(groups)
+        export_z_fused(model, ticker, export_days, device,
                        ablate_news=args.ablate_news, ablate_vision=args.ablate_vision)
 
-        # 整段時間範圍都產完了，自動彙整成單一索引檔，供分類驗證/回測/RL 訓練直接讀取
-        from module_c_fusion.fusion.consolidate import build_index, save_index
-        index_data = build_index(ticker)
-        if index_data:
-            save_index(ticker, index_data)
+        exported_tickers = [ticker]
 
-        date_range = [days[0][0], days[-1][0]] if days else None
+        date_range = [export_days[0][0], export_days[-1][0]] if export_days else None
         note = (f"news={'off' if args.ablate_news else 'on'}, "
-               f"vision={'off' if args.ablate_vision else 'on'}, weighted={args.weighted}")
-        log_run("real", ticker, len(days), args.epochs, args.batch, args.lr, losses,
-               date_range=date_range, note=note)
+               f"vision={'off' if args.ablate_vision else 'on'}, weighted={args.weighted}, "
+               "strict temporal split; test labels never used")
+        log_run("real", ticker, len(groups["train"]), args.epochs, args.batch, args.lr, losses,
+               date_range=date_range, note=note, validation_history=history,
+               best_epoch=best_epoch,
+               split_manifest=str(paths.temporal_split_path(ticker)))
+        write_json({
+            "protocol": manifest["protocol"],
+            "ticker": ticker,
+            "split_manifest": str(paths.temporal_split_path(ticker)),
+            "split_counts": manifest["counts"],
+            "split_periods": manifest["periods"],
+            "epochs_requested": args.epochs,
+            "best_epoch": best_epoch,
+            "history": history,
+            "checkpoint": str(ckpt),
+        }, paths.OUTPUTS / "metrics" / f"fusion_train_report_{ticker}.json")
 
-    if args.tickers and len(args.tickers) > 1:
-        ckpt = paths.OUTPUTS / "checkpoints" / f"fusion_{'_'.join(args.tickers)}.pt"
-    else:
-        ckpt = paths.OUTPUTS / "checkpoints" / "fusion.pt"
     ckpt.parent.mkdir(parents=True, exist_ok=True)
     torch.save(model.state_dict(), ckpt)
     print(f"[train] checkpoint -> {ckpt}")
+    if not args.fake:
+        # 先存最佳 checkpoint，再建索引；metadata 會寫入實際權重的 SHA256，
+        # 防止之後把舊 Z_fused 與新權重混用。
+        from module_c_fusion.fusion.consolidate import build_index, save_index
+        for exported_ticker in exported_tickers:
+            index_data = build_index(exported_ticker)
+            if index_data:
+                save_index(exported_ticker, index_data, checkpoint_path=ckpt)
 
 
 if __name__ == "__main__":

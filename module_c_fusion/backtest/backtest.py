@@ -16,6 +16,7 @@ import datetime as dt
 import numpy as np
 
 from shared import paths
+from shared.temporal_split import load_temporal_manifest, split_rows
 from shared.utils import load_config, read_json, write_json
 from module_c_fusion.fusion.consolidate import load_index
 
@@ -60,8 +61,8 @@ def load_series(ticker: str):
     """回傳 (dates, z_seq, next_day_returns)。
 
     優先讀彙整索引；索引不存在時 fallback 成逐日掃描。
-    注意：這裡回傳整段期間的序列，不自動切測試期——切分邏輯由呼叫端（策略函式）決定，
-    例如 weights_rule_based() 內部用前 70% fit、其餘出訊號。
+    注意：這裡回傳整段期間的序列，不自動切測試期。main() 會用共用
+    manifest 只取 Test；rule_based 的模型選擇則只使用 Train/Validation。
     """
     idx = load_index(ticker)
     if idx is not None:
@@ -84,17 +85,28 @@ def weights_buy_and_hold(n: int, **_) -> np.ndarray:
     return np.ones(n)
 
 
-def weights_rule_based(z_seq: np.ndarray, ticker: str, **_) -> np.ndarray:
-    """用 validation 的 LogisticRegression 在訓練期 fit、測試期出訊號的簡化版：
-    這裡直接以 Z_fused 重新 fit 前 70% 再對全序列出權重，僅供 pipeline 對照，
-    正式實驗請沿用 classifier.py 的切分。"""
+def weights_rule_based(z_seq: np.ndarray, ticker: str, weighted: bool = False, **_) -> np.ndarray:
+    """沿用 manifest：Train 選模型、Train+Validation refit、只對 Test 出訊號。"""
     from sklearn.linear_model import LogisticRegression
-    from module_c_fusion.validation.classifier import load_z_and_labels
+    from module_c_fusion.validation.classifier import arrays, load_z_and_labels, metrics
     rows = load_z_and_labels(ticker)
-    n_train = int(len(rows) * 0.7)
-    X = np.stack([z for _, z, _ in rows])
-    y = [lab for _, _, lab in rows]
-    clf = LogisticRegression(max_iter=1000).fit(X[:n_train], y[:n_train])
+    groups = split_rows(rows, load_temporal_manifest(ticker), require_all_manifest_dates=True)
+    Xtr, ytr = arrays(groups["train"])
+    Xval, yval = arrays(groups["validation"])
+    class_weight = "balanced" if weighted else None
+    best = None
+    for c_value in (0.01, 0.1, 1.0, 10.0):
+        candidate = LogisticRegression(
+            max_iter=1000, class_weight=class_weight, C=c_value
+        ).fit(Xtr, ytr)
+        result = metrics(yval, candidate.predict(Xval))
+        key = (result["macro_f1"], result["accuracy"], -c_value)
+        if best is None or key > best[0]:
+            best = (key, c_value)
+    Xfit, yfit = arrays(groups["train"] + groups["validation"])
+    clf = LogisticRegression(
+        max_iter=1000, class_weight=class_weight, C=best[1]
+    ).fit(Xfit, yfit)
     pred = clf.predict(z_seq)  # 0=BEARISH,1=NEUTRAL,2=BULLISH
     return np.select([pred == 2, pred == 1], [1.0, 0.5], default=0.0)
 
@@ -123,20 +135,34 @@ def main():
     ap.add_argument("--ticker", default=cfg["tickers"][0])
     ap.add_argument("--strategy", choices=STRATEGIES, default="buy_and_hold")
     ap.add_argument("--cost", type=float, default=0.001)
+    ap.add_argument("--weighted", action="store_true",
+                    help="rule_based 分類器使用 class_weight=balanced")
     args = ap.parse_args()
 
     dates, z_seq, returns = load_series(args.ticker)
     if len(dates) < 10:
         raise SystemExit("Z_fused 不足，先跑 module_c_fusion.fusion.train")
 
+    manifest = load_temporal_manifest(args.ticker)
+    rows = list(zip(dates, list(z_seq), returns.tolist()))
+    groups = split_rows(rows, manifest, require_all_manifest_dates=True)
+    test_rows = groups["test"]
+    dates = [row[0] for row in test_rows]
+    z_seq = np.stack([row[1] for row in test_rows])
+    returns = np.asarray([row[2] for row in test_rows])
+
     fn = STRATEGIES[args.strategy]
-    weights = fn(n=len(dates), z_seq=z_seq, ticker=args.ticker)
+    weights = fn(n=len(dates), z_seq=z_seq, ticker=args.ticker, weighted=args.weighted)
     result = run_backtest(np.asarray(weights, dtype=float), returns, args.cost)
 
     run_id = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
     report = {
         "run_id": run_id, "ticker": args.ticker, "strategy": args.strategy,
-        "period": [dates[0], dates[-1]], "cost": args.cost, **result,
+        "protocol": manifest["protocol"],
+        "period": [dates[0], dates[-1]], "cost": args.cost,
+        "split": "test", "split_manifest": str(paths.temporal_split_path(args.ticker)),
+        "weighted_classifier": args.weighted if args.strategy == "rule_based" else None,
+        **result,
     }
     out = paths.OUTPUTS / "backtest" / f"report_{run_id}.json"
     write_json(report, out)

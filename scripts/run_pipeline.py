@@ -73,7 +73,9 @@ def main():
     run("module_c_fusion.validation.classifier", "--ticker", args.ticker, *weighted_args)
     run("module_c_fusion.rl.train_ppo", "--ticker", args.ticker)
     for strategy in ("buy_and_hold", "rule_based", "ppo"):
-        run("module_c_fusion.backtest.backtest", "--ticker", args.ticker, "--strategy", strategy)
+        strategy_args = weighted_args if strategy == "rule_based" else []
+        run("module_c_fusion.backtest.backtest", "--ticker", args.ticker,
+            "--strategy", strategy, *strategy_args)
 
     print("\n[pipeline] A -> B -> C 完成")
 

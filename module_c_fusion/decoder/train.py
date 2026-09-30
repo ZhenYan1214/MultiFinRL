@@ -17,8 +17,9 @@ backbone LLaMA-2 全程凍結，只訓練：
     - checkpoint 只在 val loss 創新低時才覆寫存檔，不是無條件存最後一個 epoch的
       結果——如果過擬合在後面幾個 epoch 才出現，最後一個 epoch 反而不是最好的版本。
 
-train/val/test 依時間切分（70/15/15，跟 classifier.py 同一套慣例，不可隨機打散，避免
-時間洩漏）：train 拿去訓練，val 每個 epoch 結束後算一次 loss（不參與訓練、不更新參數），
+train/val/test 沿用 A 建立的唯一 strict temporal manifest（70/15/15 並在邊界留 gap，
+不可在此重切或隨機打散）：train 拿去訓練，val 每個 epoch 結束後算一次 loss
+（不參與訓練、不更新參數），
 用來跟 train loss 對照——如果 val loss 跟 train loss 差不多，代表學到的是可以類化的規律；
 如果 val loss 明顯比 train loss差很多，代表在死記硬背訓練集，不是真的學會。test 這次先
 保留不用，是給之後要做「生成文字品質」人工檢查用的（模型完全沒看過的天，見 decisions.md）。
@@ -53,6 +54,7 @@ from torch.utils.data import Dataset, DataLoader
 from transformers import get_cosine_schedule_with_warmup
 
 from shared import paths
+from shared.temporal_split import load_temporal_manifest, split_rows
 from shared.utils import load_config, read_json, write_json
 from module_c_fusion.fusion.consolidate import load_index
 from module_c_fusion.decoder.model import ZFusedDecoder, load_backbone, load_backbone_for_resume
@@ -81,11 +83,11 @@ def load_paired_samples(ticker: str) -> list[tuple[str, "np.ndarray", str]]:
     return samples  # index 的 dates 本來就已依時間排序，這裡不再重新排序
 
 
-def time_split(rows: list, train_ratio: float = 0.7, val_ratio: float = 0.15):
-    """時間序切分：前 70% train、中 15% val、後 15% test（跟 classifier.py 同一套慣例）。"""
-    n = len(rows)
-    i, j = int(n * train_ratio), int(n * (train_ratio + val_ratio))
-    return rows[:i], rows[i:j], rows[j:]
+def time_split(rows: list, ticker: str):
+    """沿用全專案唯一 manifest；y_belief 缺少的日期可跳過，但不可重算切分。"""
+    manifest = load_temporal_manifest(ticker)
+    groups = split_rows(rows, manifest, require_all_manifest_dates=False)
+    return groups["train"], groups["validation"], groups["test"]
 
 
 class YBeliefDataset(Dataset):
@@ -166,9 +168,11 @@ def main():
     report_path = paths.OUTPUTS / "metrics" / "decoder_train_report.json"
 
     samples = load_paired_samples(args.ticker)
-    train_rows, val_rows, test_rows = time_split(samples)
+    train_rows, val_rows, test_rows = time_split(samples, args.ticker)
     print(f"[decoder.train] {args.ticker}: 共 {len(samples)} 天可訓練樣本（Z_fused ∩ y_belief），"
          f"train={len(train_rows)} val={len(val_rows)} test={len(test_rows)}（依時間序切分，不打散）")
+    if not train_rows or not val_rows or not test_rows:
+        raise SystemExit("manifest 與 y_belief 交集後的 train/validation/test 有空集合，請先補齊資料")
 
     start_epoch = 0
     best_val = float("inf")
@@ -260,7 +264,9 @@ def main():
         # 訓練報告也改成每個 epoch 都覆寫一次（原本只在訓練全部結束後才寫），
         # 中途中斷也留得下目前為止的紀錄，不會甚麼都沒有
         report = {
+            "protocol": "strict_temporal_v1",
             "ticker": args.ticker,
+            "split_manifest": str(paths.temporal_split_path(args.ticker)),
             "n_train": len(train_rows), "n_val": len(val_rows), "n_test": len(test_rows),
             "test_period": [test_rows[0][0], test_rows[-1][0]] if test_rows else [],
             "best_epoch": best_epoch, "best_val_loss": best_val,

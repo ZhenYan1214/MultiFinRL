@@ -2,7 +2,7 @@
 
 這份文件持續更新，不是一次性報告。新增資料來源、重跑一次分類驗證，都回來這裡補一行。
 
-## 一、資料來源（截至 2026-08-08）
+## 一、資料來源（截至 2026-09-30）
 
 | 資料類型 | 來源 | 抓取腳本 | 目前涵蓋範圍 | 狀態 |
 |---|---|---|---|---|
@@ -10,9 +10,9 @@
 | K 線圖 | 用 OHLCV 自畫（mplfinance，20 日窗口） | `chart_generator.py` | AAPL／NVDA／MSFT／JPM 各 1386 張（頭尾幾天因窗口不足缺圖） | 四檔皆完成 |
 | 成交量圖 | 用 OHLCV Volume 自畫（20 日窗口） | `chart_generator.py` | AAPL／NVDA／MSFT／JPM 各 1386 張 | 四檔皆完成；作為雙圖 ViT 的第二張輸入 |
 | 新聞（近期） | yfinance | `fetch_news.py` | 僅最新 8~10 則，歷史價值低 | 可用，範圍小 |
-| 新聞（歷史回補） | Alpaca News API（來源 Benzinga，官方 API 非爬蟲） | `fetch_news_alpaca.py` | AAPL 2021-01-01 ~ 2026-08-08，15,989 則 / 1,459 天 | 2026-08 新增，已抽樣驗證為真實全文 |
-| 財報 10-K/10-Q | SEC EDGAR（官方 API，原生 requests） | `fetch_filings.py` | 22 份，2021 ~ 2026 | 可用；唯一版本，`fetch_filings_edgartools.py` 候選方案已刪除（decisions.md #41，取代 #31） |
-| 法說會逐字稿 | Alpha Vantage API（官方，取代原本從未成功端到端跑過的 foolcalls） | `fetch_transcripts.py` | 待本機執行後補上實際涵蓋範圍 | 2026-08 改用 Alpha Vantage，`foolcalls/` 已移除，見 decisions.md #67 |
+| 新聞（歷史回補） | Alpaca News API（來源 Benzinga，官方 API 非爬蟲） | `fetch_news_alpaca.py` | AAPL raw 共 16,318 則 / 1,497 個日期檔；dataset 期間 1,381 天皆有當日或 7 日內回補新聞 | 2026-09-30 全 pipeline 重抓並驗證 |
+| 財報 10-K/10-Q/8-K | SEC EDGAR（官方 API，原生 requests） | `fetch_filings.py` | AAPL 共 71 份：10-K 5、10-Q 18、8-K 48；2021-01-05 ~ 2026-07-31 | 1,381 個 dataset 日皆有可用背景 chunk |
+| 法說會逐字稿 | Alpha Vantage API（官方，取代原本從未成功端到端跑過的 foolcalls） | `fetch_transcripts.py` | AAPL 共 22 份，2021-04-28 ~ 2026-07-30 | 已流入 dataset 與 H_r；dataset 前 60 天尚無歷史逐字稿，其餘 1,321 天有背景 chunk |
 
 **已放棄的路徑**（保留記錄，程式碼已刪除）：FNSPID 爬蟲工具與 FNSPID 現成 HuggingFace dataset，兩者都驗證不可行（自動化偵測擋爬蟲、頁面改版、dataset 全文欄位是空的）。詳見 `docs/decisions.md` #26。
 
@@ -30,6 +30,7 @@
 | 2026-08-09（延伸日期範圍 + RAG query 修正，加權預設開啟） | OHLCV/K線圖延伸到 2026-08-07（資料集實際到 2026-07-31，最後幾天缺 label）；RAG query 從單純平均改成正規化+alpha 加權（alpha=0.5） | 966 / 207 / 208 | 0.3029 | 0.1875 | 0.3497 | 0.3212 | macro f1≈0.286，跟前一輪「有新聞+加權」（macro f1=0.303）相比持平、略降，沒有明顯進步。**重要限制**：這次同時改了兩件事（延伸範圍 + RAG 修正），且測試集因為時間序切分跟著往後移動（這次測試期間 2025-10-02~2026-07-31，跟前一輪 2025-03-31~2025-12-22 不同），無法從這次比較單獨歸因是哪個改動造成差異，也可能只是新測試期間本身難度不同。要乾淨驗證 RAG 修正的效果，需要同一個日期範圍、只切換 RAG 新舊版本的對照實驗，目前尚未做。`classification_report_2026-08_extended_range_rag_fix.json` |
 | 2026-08-10（漲跌標籤改為分位數門檻，見 decisions.md #30） | 只改標籤定義（固定±2% → 分位數1/3門檻），日期範圍、RAG、加權都跟上一輪相同 | 966 / 207 / 208（跟上一輪完全相同的切分與測試期間，可乾淨對照） | 0.3269 | 0.2689 | 0.3313 | 0.3731 | macro f1 從 0.286 提升到 0.324（+0.038），是這一路診斷下來第一次有乾淨、無混雜因素的正向結果——這次 n_train/val/test 筆數與測試期間跟上一輪完全一樣，只有標籤定義變了，可以放心把差異歸因到標籤改動本身。BEARISH f1 進步最多（0.188→0.269），BULLISH 也進步（0.321→0.373），NEUTRAL 略降（0.350→0.331）。測試集類別分布也從原本 BEARISH 明顯偏少（原本 support 39~48）變成三類接近平均（support 65/67/76）。誠實記錄：macro f1=0.324 仍不算「表現良好」，只是目前為止最好的一次。過程中曾因為 sandbox 執行 `build_dataset.py` 中途被 timeout 打斷，導致新舊標籤混雜跑出一次不可信的結果（accuracy=0.3221），已作廢重跑並逐日核對 208 天全部一致才採信這次結果。`classification_report_2026-08_quantile_labels.json` |
 | 2026-09-19（雙圖 ViT：K 線 + 成交量） | 同一個 frozen ViT 以 batch 一次編碼兩張獨立圖片，H_v `[197,768]` → `[2,197,768]`；fusion 加入圖別 slot embedding。兩組皆使用 1,381 天、seed=42、weighted、3 epochs | 966 / 207 / 208 | 0.3413（固定相同 H_t/H_r 的單圖對照 0.3173，+0.0240） | 0.3036（0.2810） | 0.3432（0.3353） | 0.3704（0.3281） | macro f1 0.3390，受控單圖對照 0.3148，+0.0242；三類 f1 全數上升。另有導入前完整 pipeline 基準 0.3060，但因 H_v 也參與 RAG query，主要結論採固定 H_t/H_r 的受控結果。只跑一個 seed，尚未做顯著性檢驗。報告：`data/outputs/experiments/dual_image_vit/AAPL/` |
+| 2026-09-30（第一筆 strict temporal baseline） | 修正 Fusion test-label leakage；標籤門檻只用 Train；邊界各留 5 日 gap；Fusion 只用 Train 更新並用 Validation 選 epoch；classifier 用 Validation 選 C=10，Train+Validation refit 後只評估一次 Test | 966 / 202 / 203 | **0.3547** | 0.3401 | 0.3443 | 0.3796 | **macro F1=0.3547**，confusion matrix=`[[25,18,18],[28,21,15],[33,19,26]]`。Validation 候選 C 的 macro F1 為 0.3062/0.3120/0.3037/**0.3667**。這是第一筆可作正式基準的無洩漏數字；舊雙圖 0.3390 使用不同標籤門檻與切分，不能把 +0.0157 直接歸因為模型變強。`data/outputs/metrics/classification_report.json` |
 
 ### 視覺輸入實驗：K 線疊加 Bollinger Bands（2026-09-18）
 
@@ -90,10 +91,44 @@ SMA 由 validation 選出後，在 203 天 held-out test 得到 accuracy=0.3399�
 再把 `chart.vision_inputs` 改成 `[candlestick, technical/sma]` 並重建正式 H_v/H_r。完整報告在
 `data/outputs/experiments/auxiliary_vision/AAPL/report.json`；技術圖與 ViT 快取暫時保留以便續跑。
 
-另外，本輪發現正式 `fusion.train` 目前會先用全日期 label 訓練 fusion，classifier 才做
+另外，本輪發現當時正式 `fusion.train` 會先用全日期 label 訓練 fusion，classifier 才做
 70/15/15 切分，會讓 test label 間接洩漏進 Z_fused。上述新實驗已避開此問題；過往正式
-classifier 數字仍可作同流程工程比較，但不應再稱為嚴格 held-out 成效。正式 pipeline 的
-時間切分需另開修正，不在本輪指標比較中順手改動。
+classifier 數字仍可作同流程工程比較，但不應再稱為嚴格 held-out 成效。此問題已於
+2026-09-30 正式修正（decisions.md #85）：現在先建立共用時間切分 manifest，邊界各留 5 日
+gap，Fusion 只用 Train label 更新並由 Validation 選 checkpoint，classifier 沿用相同日期。
+修正後的完整 pipeline 已於 2026-09-30 全量重跑；新結果見本節後方 strict baseline 與
+「六、strict temporal 全 pipeline 重跑分析」。較早的舊數字仍只作歷史工程比較，不冒充
+新流程的 held-out 成效。
+
+實作期間的操作紀錄：短測 `fusion.train --fake` 一度沿用舊檔名而覆寫
+`data/outputs/checkpoints/fusion.pt`。發現後已立即把 fake 權重分離為 `fusion_fake.pt`，
+並以 2026-09-19 的真實 AAPL checkpoint `fusion_AAPL.pt` 回復 `fusion.pt`。原本
+2026-09-22 的 `fusion.pt` 沒有獨立備份，無法逐 bit 復原；新流程本來就必須重訓，
+且現在 fake 模式已固定只寫 `fusion_fake.pt`，不會再覆蓋正式權重。
+
+2026-09-30 已實際重跑 AAPL `build_dataset.py`：共 1,381 天，切分為
+Train 966／5 日 gap／Validation 202／5 日 gap／Test 203。Train 期間三類標籤
+剛好各 322 天；只依 Train 報酬計算的門檻為 bearish `< -0.0106526`、
+bullish `> 0.0186615`。Validation 類別計數為 75/58/69（bearish/neutral/bullish），
+Test 為 61/64/78。現有 AAPL vectors 也是 1,381 天，與 manifest 日期零缺漏、
+零多餘，因 B 不讀 label/prices，這次不重跑 Encoder。嚴格 Fusion 正式訓練與
+當時嚴格 Fusion 與下游新指標尚未執行；現已完成並記錄如下，全程不把舊指標當成新流程結果。
+
+2026-09-30 嚴格 Fusion 訓練也已完成（CPU、seed=42、weighted、3 epochs）。
+Train loss 1.3206→1.1861→1.1649，Validation loss 1.4402→1.3747→1.2835；
+Validation macro F1 三個 epoch 皆為 0.1487，因此依 tie-break 的最低 validation loss
+選 epoch 3。這個 0.1487 符合臨時 Fusion 訓練頭幾乎只猜 NEUTRAL 的類別坍縮，
+是需要保留的診斷警訊；但凍結 Z_fused 後另訓練的 Logistic Regression 在 Test
+三類 F1 皆為 0.34～0.38，沒有跟著坍縮。Checkpoint SHA256 為
+`418693e147aae5a4bba432de152fb3121a06574855737901f187ac0d1fe118ad`；1,381 個 Z_fused
+皆為 finite float32 `[768]`，與 manifest 日期、split 計數完全一致。
+
+同版本事件驗證頭在共用 manifest 下只有 103/23/22 個 Train/Validation/Test
+ground-truth 日。只有 PRODUCT_LAUNCH 與 LAWSUIT 在三個區間都有足夠正樣本：
+Test F1 分別為 0.000 與 0.222，合併 micro F1=0.111（TP=1, FP=12, FN=4）。
+其餘五類因 Validation/Test 無正樣本或 Train 過少而不評分。這與舊的隨機
+5-fold CV micro F1=0.229 不是同一評估協定，不可直接宣稱表現下降；目前更明確的
+結論是事件 ground truth 對嚴格時間評估來說過少且分布不均。
 
 ### ViT-only 分類頭與部分 Fine-tune（2026-09-24）
 
@@ -339,3 +374,106 @@ test 維持 locked、完成的 seed 可在中斷續跑時自動跳過、`--summa
 | DIVIDEND | 6 | 0.100 | 0.833 | 0.179 |
 
 micro-avg（5 類合計）：precision=0.147、recall=0.514、f1=0.229，跟事件抽取直接讀文字的 f1=0.273 同一個量級，代表 Z_fused 確實吸收了一定程度的事件相關資訊，沒有在 B/C 的編碼融合過程中把這類資訊完全丟失。**誠實記錄**：樣本數小（149 天）、輸入維度高（768），屬於高維度低樣本的困難設定，數字噪音大，是初步結果不是定論；`class_weight="balanced"` 讓 recall 明顯偏高、precision 偏低，跟未用平衡權重的事件抽取數字不是完全同條件的對照。
+
+## 六、strict temporal 全 pipeline 重跑分析（2026-09-30）
+
+執行 `python scripts/run_pipeline.py --ticker AAPL`，A→B→C 全部跑完。這次 pipeline 實際包含：
+OHLCV、雙圖、財報、新聞、法說會、dataset、H_v/H_t/H_r、keyword 事件抽取、Fusion、
+分類 probe、預設 PPO 10,000 steps，以及三種 Test 回測。它**不包含**事件驗證頭、生成式
+decoder、decoder evaluation、curriculum PPO 或 Integrated Gradients；這些模組磁碟上即使有舊報告，
+也不能算成本次 pipeline 的新結果。
+
+### 資料與中間產物完整性
+
+- OHLCV 1,405 日（2021-01-04～2026-08-07）；K 線與 Volume 圖各 1,386 張；最後可產生
+  5 日未來標籤的 dataset 共 1,381 日（2021-02-01～2026-07-31）。
+- 共用切分為 Train 966／gap 5／Validation 202／gap 5／Test 203；標籤門檻只由 Train
+  計算，bearish `< -1.0653%`、bullish `> +1.8662%`。Train 三類剛好各 322 天。
+- 1,381 日皆有新聞與 filing 背景；法說會自 2021-04-28 起可用，共覆蓋 1,321 日。
+- 1,381 組向量全部存在且無 NaN/Inf：`H_v=[2,197,768]`、`H_t=[512,768]`、
+  `H_r=[3,512,768]`；`Z_fused=[1381,768]` 也全部 finite，日期與 split 零缺漏。
+- Fusion checkpoint SHA256 為
+  `418693e147aae5a4bba432de152fb3121a06574855737901f187ac0d1fe118ad`，與
+  `AAPL_index.meta.json` 記錄一致。這也與同日上午單獨重跑 strict Fusion 的 checkpoint
+  完全相同，訓練結果可重現。
+- 本次未帶 `generate_vectors --balance_sources`。4,143 個 RAG top-3 名額中，逐字稿占
+  3,191（77.0%）、財報占 952（23.0%）；這是已知的來源偏斜，但先前 quota 實驗沒有改善
+  分類表現，因此本次保留正式預設設定。
+
+另發現兩個**不影響本次下游計算、但會影響結果追溯**的產物問題：
+
+1. `data/processed/dataset/AAPL_manifest.json` 仍是舊版 2026-09-19 artifact，記載舊門檻與
+   961/202/208 切分；現在真正被下游讀取的是
+   `data/processed/temporal_splits/AAPL.json`（966/202/203）。舊 manifest 應後續刪除或改由
+   `build_dataset.py` 同步覆寫，避免人工查看時混淆。
+2. 本次 keyword 事件抽取寫到 `event_extraction_report.json`；帶 ticker 的
+   `event_extraction_report_AAPL.json` 仍是 2026-09-19 舊檔，不能拿錯檔。
+
+### Fusion 與市場方向分類
+
+Fusion 三個 epoch 的 Train loss 為 1.3206→1.1861→1.1649，Validation loss 為
+1.4402→1.3747→1.2835；Validation macro F1 三次都等於 0.1487。依 Validation loss
+tie-break 選 epoch 3。0.1487 正好對應 Validation 全猜 NEUTRAL 的 macro F1，表示 Fusion
+訓練用的臨時分類 head 已類別坍縮；loss 下降不代表分類能力同步改善。
+
+凍結 `Z_fused` 後的 balanced Logistic Regression 由 Validation 選出 `C=10`，再用
+Train+Validation refit，Test 結果如下：
+
+| 指標 | 結果 |
+|---|---:|
+| Accuracy | 0.3547（72/203） |
+| Macro F1 | 0.3547 |
+| BEARISH F1 | 0.3401 |
+| NEUTRAL F1 | 0.3443 |
+| BULLISH F1 | 0.3796 |
+
+分類器沒有坍縮，Test 預測 BEARISH/NEUTRAL/BULLISH 為 86/58/59 天；但訊號仍弱。
+它的 accuracy 低於「全部猜 Test 多數類 BULLISH」的 78/203=0.3842，不過 macro F1
+高於全猜 BULLISH 的約 0.185，代表模型的價值主要是三類較平均，而不是提高總命中率。
+這次數字與同日上午的第一輪 strict baseline 完全一致，所以全量重建向量沒有帶來額外提升，
+也沒有破壞可重現性。
+
+### Keyword 事件抽取
+
+1,381 天中有 1,287 天至少抽到一個事件，共 7,748 個事件 mention；平均每個有事件的日期
+約 6.0 個，密度過高，本身就是過度觸發的警訊。149 天 ground truth 上：precision=0.1610、
+recall=0.8684、F1=0.2716（TP=66、FP=344、FN=10）。與舊報告 F1=0.2733 幾乎相同；加入
+逐字稿事件後多出 3 個 FP，沒有增加 TP。結論仍是「高 recall、低 precision」的規則式
+baseline，不適合把抽到的每個事件都當成可靠事實。
+
+嚴格時間切分的事件驗證頭**不在本次 pipeline 內**；目前磁碟上的 F1=0.111 是本次 pipeline
+之前單獨執行的結果，不能說是這輪自動重跑所得。
+
+### PPO 與 held-out Test 回測
+
+PPO 僅使用 966 個 Train 日，預設 10,000 timesteps、`curriculum=false`、`ent_coef=0`。
+三策略都只在相同 Test 203 日（2025-10-09～2026-07-31）回測，交易成本 0.1%。
+
+| 策略 | 累積報酬 | Sharpe | 最大回撤 | 解讀 |
+|---|---:|---:|---:|---|
+| Buy & Hold | **+19.314%** | **0.984** | 13.823% | 本輪明確最佳報酬基準 |
+| Rule-based | -3.120% | -0.161 | 11.887% | 訊號毛報酬 +3.294%，但頻繁換倉後轉負 |
+| PPO | +0.135% | 0.981 | **0.098%** | 幾乎空手，不是有效超額報酬 |
+
+Rule-based 平均持倉 43.35%，共 91 天改變部位，累計 turnover=64；不計成本時仍只有
++3.294%，加上每次 0.1% 成本後變成 -3.120%。這表示目前分類訊號不只沒有擊敗 Buy & Hold，
+而且對交易成本非常敏感。
+
+PPO 的持倉介於 0.6634%～0.6679%，平均 0.6657%、標準差只有 0.00094 個百分點，實質上是
+固定持有約 0.67% AAPL、其餘現金。它的 Sharpe 0.981 看起來接近 Buy & Hold，只是把同一段
+資產報酬縮小約 150 倍；總報酬只有 0.135%。因此不能用低回撤或 Sharpe 宣稱 PPO 有效，
+這是一個明確的 near-cash policy collapse。
+
+### 本輪結論與下一步優先順序
+
+1. **資料管線與 leakage 修正成功**：日期、向量、checkpoint、split 全部一致，Test 沒有進
+   Fusion/PPO 訓練；這次結果可作正式、可重現的 strict baseline。
+2. **預測能力尚未達到可交易程度**：分類 macro F1=0.355 只有弱訊號，rule-based 在成本後
+   虧損，PPO 則退化成幾乎空手；目前不能宣稱模型勝過簡單持有。
+3. 下一個最有資訊量的工作不是直接增加 PPO timesteps，而是先修 PPO 評估/訓練診斷：報告
+   action mean/std、turnover、現金比例並加入「低於最小曝險」的 collapse 警告；再用
+   Validation 選 reward penalty、`ent_coef` 與 curriculum，Test 保持鎖住。
+4. Fusion 臨時 head 全猜 NEUTRAL，也應先做 epoch/LR/head 的 Validation-only 診斷；只有
+   Validation macro F1 穩定高於簡單基準後，再值得重跑昂貴的下游。
+5. 清理兩個 provenance 問題：淘汰舊 `AAPL_manifest.json`，並統一事件報告檔名。這不會改變
+   本次數字，但可防止之後讀錯報告。

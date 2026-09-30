@@ -15,6 +15,7 @@ RAW_TRANSCRIPTS = RAW / "transcripts"
 RAW_MACRO = RAW / "macro"          # ETF/指數用的總經資料（decisions.md #38），架構已寫、未實作
 
 DATASET = DATA / "processed" / "dataset"   # A 的交付物
+TEMPORAL_SPLITS = DATA / "processed" / "temporal_splits"  # 共用時間切分 manifest
 VECTORS = DATA / "vectors"                  # B 的交付物
 OUTPUTS = DATA / "outputs"                  # C 的產出
 LABELS = DATA / "labels"                    # 人工／LLM 標記的答案卷（進版本控制，見 .gitignore）
@@ -28,6 +29,11 @@ def daily_json(ticker: str, date: str) -> Path:
 def vector_dir(ticker: str, date: str) -> Path:
     """B 的每日向量目錄路徑。"""
     return VECTORS / ticker / date
+
+
+def temporal_split_path(ticker: str) -> Path:
+    """A/B/C 共用的時間切分 manifest；所有會學習參數的模組都必須沿用。"""
+    return TEMPORAL_SPLITS / f"{ticker}.json"
 
 
 def event_ground_truth_path(ticker: str) -> Path:

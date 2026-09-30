@@ -27,7 +27,7 @@ py -m module_a_data.crawler.fetch_transcripts --ticker AAPL --start 2021-01-01 -
 
 py -m module_a_data.build_dataset --ticker AAPL --limit 100
 # 把以上所有資料彙整成一天一筆的 JSON，存到 data/processed/dataset/AAPL/
-# 漲跌標籤用分位數門檻（decisions.md #30），門檻依整段報酬分布自動算出，不用手動設定
+# 漲跌標籤門檻只依 Train 報酬分布計算，再固定套用 Validation/Test
 # 這一步一定要放在其他 A 指令「之後」，因為它是彙整、不是抓取
 ```
 
@@ -88,30 +88,42 @@ py -m module_b_encoder.event_extraction --ticker AAPL
 ```bash
 py -m module_c_fusion.fusion.train --fake --n 32 --epochs 1
 # 第一次先測：用假向量測 Cross-Modal Transformer 架構通不通
+# fake checkpoint 只會寫到 data/outputs/checkpoints/fusion_fake.pt，不會覆蓋正式 fusion.pt
+
+py -m module_a_data.build_dataset --ticker AAPL
+# 先重建 daily JSON 與共用時間切分 manifest；分位數門檻只使用 Train 報酬
+
+# 2026-09-30 已驗證 AAPL manifest 預期 1,381 日與現有 vectors 1,381 日完全一致，
+# 且 B 不讀 label/prices，這次只改標籤與切分，所以不必重跑耗時的 generate_vectors。
+# 若以後改圖、新聞、文件或 Fusion 回報缺少 manifest 日期，才需重跑：
+# py -u -m module_b_encoder.generate_vectors --ticker AAPL
 
 py -m module_c_fusion.fusion.train --ticker AAPL --weighted
-# 正式執行：讀 B 的向量，訓練融合模型，產出每日 Z_fused，跑完自動彙整成
+# 正式執行：只用 manifest 的 Train 日期更新 Fusion，以 Validation 選最佳 epoch；
+# Test label 全程封存。產出每日 Z_fused，跑完自動彙整成
 # data/outputs/z_fused/AAPL_index.npz（給下面三支直接讀，不用再逐日掃描）
 # --weighted：類別加權，decisions.md #28 定案為預設做法，不加這個旗標分類效果會明顯變差
 
 py -m module_c_fusion.validation.classifier --ticker AAPL --weighted
-# 用 Z_fused 做情緒分類驗證，準確率存到 data/outputs/metrics/classification_report.json
+# 沿用同一 manifest；Validation 選 C，Test 最後評估一次
+# 準確率與 macro F1 存到 data/outputs/metrics/classification_report.json
 
 py -m module_c_fusion.validation.event_validation_head --ticker AAPL
-# 用 Z_fused 做事件類型多標籤驗證（7 類），需要 data/labels/event_ground_truth/AAPL.json
+# 用 Z_fused 做事件類型多標籤驗證（7 類），也沿用 Train/Validation/Test manifest
+# 需要 data/labels/event_ground_truth/AAPL.json
 
 py -m module_c_fusion.rl.train_ppo --ticker AAPL
 # 訓練 PPO 投資組合配置 agent，存到 data/outputs/checkpoints/ppo_agent.zip
 # --curriculum 開啟 curriculum learning（依滾動波動度分階段訓練，decisions.md #52~#55）
 
 py -m module_c_fusion.explainability.integrated_gradients --ticker AAPL
-# 對訓練好的 PPO policy 做跨模態歸因（captum Integrated Gradients），
+# 只在 Test 期間對訓練好的 PPO policy 做跨模態歸因（captum Integrated Gradients），
 # 需要先有 Z_fused 跟 ppo_agent.zip，輸出到 data/outputs/explainability/
 
 py -m module_c_fusion.backtest.backtest --ticker AAPL --strategy buy_and_hold
 # 回測策略一：全程滿倉（baseline 對照組）
 
-py -m module_c_fusion.backtest.backtest --ticker AAPL --strategy rule_based
+py -m module_c_fusion.backtest.backtest --ticker AAPL --strategy rule_based --weighted
 # 回測策略二：用分類結果決定持股比例（無 RL 對照組）
 
 py -m module_c_fusion.backtest.backtest --ticker AAPL --strategy ppo

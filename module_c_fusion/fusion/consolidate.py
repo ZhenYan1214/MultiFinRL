@@ -9,7 +9,7 @@
         label:        [N] int，0=BEARISH 1=NEUTRAL 2=BULLISH（對照 A 的 label）
         return_next:  [N] float，t -> t+1 的實際報酬（RL / 回測用，來自 A 的 future_closes[0]）
 
-    data/outputs/z_fused/{TICKER}_index.meta.json   # 人類可讀的摘要
+    data/outputs/z_fused/{TICKER}_index.meta.json   # 摘要＋split manifest＋checkpoint SHA256
 
 train.py 跑完整段時間範圍、產完所有逐日 Z_fused 後，會自動呼叫本檔重建索引；
 也可單獨執行（例如手動補產某支股票的索引）：
@@ -17,10 +17,13 @@ train.py 跑完整段時間範圍、產完所有逐日 Z_fused 後，會自動�
     python -m module_c_fusion.fusion.consolidate --ticker AAPL
 """
 import argparse
+import hashlib
+from pathlib import Path
 
 import numpy as np
 
 from shared import paths
+from shared.temporal_split import load_temporal_manifest, split_name_by_date
 from shared.utils import read_json, write_json
 
 LABEL_TO_ID = {"BEARISH": 0, "NEUTRAL": 1, "BULLISH": 2}
@@ -35,9 +38,16 @@ def build_index(ticker: str) -> dict:
     z_dir = paths.OUTPUTS / "z_fused" / ticker
     files = sorted(z_dir.glob("*.npy"))  # 檔名即日期，字串排序 = 時間排序（YYYY-MM-DD）
 
-    dates, zs, labels, next_returns = [], [], [], []
+    split_lookup = None
+    if paths.temporal_split_path(ticker).exists():
+        split_lookup = split_name_by_date(load_temporal_manifest(ticker))
+    dates, zs, labels, next_returns, splits = [], [], [], [], []
     for f in files:
         date = f.stem
+        if split_lookup is not None and date not in split_lookup:
+            # 舊實驗可能留下 manifest 外的 .npy；不可把它們包進綁定新
+            # checkpoint SHA256 的索引，否則 provenance 會是假的。
+            continue
         record_file = paths.daily_json(ticker, date)
         if not record_file.exists():
             continue  # 找不到對應 A 的標籤就跳過，避免索引裡出現無 label 的天
@@ -47,6 +57,7 @@ def build_index(ticker: str) -> dict:
         zs.append(np.load(f))
         labels.append(LABEL_TO_ID[record["label"]])
         next_returns.append(prices["future_closes"][0] / prices["close_t0"] - 1)
+        splits.append(split_lookup[date] if split_lookup else "legacy_unknown")
 
     if not dates:
         return {}
@@ -55,10 +66,19 @@ def build_index(ticker: str) -> dict:
         "z": np.stack(zs).astype(np.float32),
         "label": np.array(labels, dtype=np.int64),
         "return_next": np.array(next_returns, dtype=np.float32),
+        "split": np.array(splits),
     }
 
 
-def save_index(ticker: str, data: dict) -> None:
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as file:
+        for chunk in iter(lambda: file.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def save_index(ticker: str, data: dict, checkpoint_path: str | Path | None = None) -> None:
     out_dir = paths.OUTPUTS / "z_fused"
     out_dir.mkdir(parents=True, exist_ok=True)
     npz_path = out_dir / f"{ticker}_index.npz"
@@ -70,7 +90,26 @@ def save_index(ticker: str, data: dict) -> None:
         "date_range": [str(data["dates"][0]), str(data["dates"][-1])],
         "z_dim": int(data["z"].shape[1]),
         "label_map": ID_TO_LABEL,
+        "split_counts": {
+            str(name): int((data["split"] == name).sum()) for name in np.unique(data["split"])
+        },
+        "split_manifest": str(paths.temporal_split_path(ticker))
+        if paths.temporal_split_path(ticker).exists() else None,
+        "fusion_checkpoint": None,
     }
+    if checkpoint_path is not None:
+        checkpoint_path = Path(checkpoint_path)
+        if not checkpoint_path.exists():
+            raise FileNotFoundError(f"找不到產生 Z_fused 的 checkpoint：{checkpoint_path}")
+        if not paths.temporal_split_path(ticker).exists():
+            raise FileNotFoundError(
+                "要綁定 checkpoint 前必須先有共用時間切分 manifest，"
+                f"請先重跑 module_a_data.build_dataset --ticker {ticker}"
+            )
+        meta["fusion_checkpoint"] = {
+            "path": str(checkpoint_path),
+            "sha256": _sha256(checkpoint_path),
+        }
     write_json(meta, out_dir / f"{ticker}_index.meta.json")
     print(f"[consolidate] {ticker}: {meta['n_days']} days ({meta['date_range'][0]} ~ "
           f"{meta['date_range'][1]}) -> {npz_path}")
@@ -91,6 +130,8 @@ def load_index(ticker: str) -> dict | None:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ticker", default="AAPL")
+    ap.add_argument("--checkpoint", default=None,
+                    help="選填：產生這批 Z_fused 的 Fusion checkpoint，會寫入路徑與 SHA256")
     args = ap.parse_args()
     data = build_index(args.ticker)
     if not data:
@@ -98,7 +139,7 @@ def main():
             f"找不到可彙整的 Z_fused: data/outputs/z_fused/{args.ticker}/，"
             "先跑 module_c_fusion.fusion.train"
         )
-    save_index(args.ticker, data)
+    save_index(args.ticker, data, checkpoint_path=args.checkpoint)
 
 
 if __name__ == "__main__":

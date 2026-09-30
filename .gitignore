@@ -43,3 +43,6 @@ foolcalls/
 
 
 tests/
+!tests/
+tests/*
+!tests/test_temporal_protocol.py

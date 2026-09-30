@@ -12,11 +12,10 @@
 輸出：
     data/outputs/metrics/event_validation_head_report.json
 
-樣本數只有 ground truth 涵蓋的天數（目前 149 天），用 k-fold cross-validation
-盡量把有限的資料用滿，而不是切一份固定的 train/test（樣本太少切了會不穩定）。
-部分事件類別（如 MA、MANAGEMENT_CHANGE）在 149 天裡只出現 1 次，這種類別
-無法用 cross-validation 做有意義的評估（一定會有某個 fold 的訓練集完全沒看過
-正樣本），會在報告裡明確標注「資料量不足，不評估」，不是程式壞掉。
+樣本數只有 ground truth 涵蓋的天數（目前 149 天），仍必須沿用 A 的共用
+strict temporal manifest：Train fit、Validation 選 C、Train+Validation refit，Test 最後只評估
+一次。某類事件若在任一區間正樣本過少，報告會明確標注「資料量不足，
+不評估」；不會為了多用幾筆資料改回隨機 cross-validation。
 
 用法：
     python -m module_c_fusion.validation.event_validation_head --ticker AAPL
@@ -25,65 +24,122 @@ import argparse
 
 import numpy as np
 from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import StratifiedKFold, cross_val_predict
-from sklearn.multiclass import OneVsRestClassifier
 
 from shared import paths
+from shared.temporal_split import load_temporal_manifest, split_rows
 from shared.utils import read_json, write_json
 
 EVENT_TYPES = ["EARNINGS", "MA", "PRODUCT_LAUNCH", "LAWSUIT",
                "GUIDANCE", "DIVIDEND", "MANAGEMENT_CHANGE"]
-MIN_POSITIVES_FOR_CV = 5  # 少於這個數字的類別，cross-validation 結果不可信，只報計數不評分
+MIN_TRAIN_POSITIVES = 5
 
 
-def load_data(ticker: str):
+def load_data(ticker: str, allowed_dates: set[str] | None = None):
     gt = read_json(paths.event_ground_truth_path(ticker))
-    dates = sorted(gt.keys())
+    dates = sorted(date for date in gt if allowed_dates is None or date in allowed_dates)
     X, Y = [], []
     for d in dates:
         z = np.load(paths.OUTPUTS / "z_fused" / ticker / f"{d}.npy")
         X.append(z)
         Y.append([1 if e in gt[d] else 0 for e in EVENT_TYPES])
-    return dates, np.stack(X), np.array(Y)
+    return [(date, x, y) for date, x, y in zip(dates, X, Y)]
 
 
-def evaluate_category(x: np.ndarray, y: np.ndarray, n_splits: int = 5, seed: int = 0) -> dict:
-    """單一事件類別的 cross-validation P/R/F1。y 是 0/1 向量。"""
-    n_pos = int(y.sum())
-    if n_pos < MIN_POSITIVES_FOR_CV:
-        return {"n_positive_days": n_pos, "evaluated": False,
-               "reason": f"正樣本只有 {n_pos} 天，少於門檻 {MIN_POSITIVES_FOR_CV}，cross-validation 不可信"}
-
-    skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed)
-    clf = LogisticRegression(class_weight="balanced", max_iter=2000, C=0.1)
-    pred = cross_val_predict(clf, x, y, cv=skf)
-
-    tp = int(((pred == 1) & (y == 1)).sum())
-    fp = int(((pred == 1) & (y == 0)).sum())
-    fn = int(((pred == 0) & (y == 1)).sum())
+def _binary_metrics(y: np.ndarray, prediction: np.ndarray) -> dict:
+    tp = int(((prediction == 1) & (y == 1)).sum())
+    fp = int(((prediction == 1) & (y == 0)).sum())
+    fn = int(((prediction == 0) & (y == 1)).sum())
     precision = tp / (tp + fp) if tp + fp else 0.0
     recall = tp / (tp + fn) if tp + fn else 0.0
     f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
-    return {"n_positive_days": n_pos, "evaluated": True,
-            "precision": precision, "recall": recall, "f1": f1,
+    accuracy = float((prediction == y).mean())
+    return {"accuracy": accuracy, "precision": precision, "recall": recall, "f1": f1,
             "tp": tp, "fp": fp, "fn": fn}
+
+
+def evaluate_category(train_rows: list, validation_rows: list, test_rows: list,
+                      category_index: int, c_values: list[float]) -> dict:
+    def arrays(rows):
+        return (np.stack([row[1] for row in rows]),
+                np.asarray([row[2][category_index] for row in rows]))
+
+    x_train, y_train = arrays(train_rows)
+    x_validation, y_validation = arrays(validation_rows)
+    x_test, y_test = arrays(test_rows)
+    counts = {
+        "train": int(y_train.sum()),
+        "validation": int(y_validation.sum()),
+        "test": int(y_test.sum()),
+    }
+    if counts["train"] < MIN_TRAIN_POSITIVES or len(np.unique(y_train)) < 2:
+        return {
+            "positive_days": counts,
+            "evaluated": False,
+            "reason": f"Train 正樣本只有 {counts['train']} 天，無法穩定 fit",
+        }
+    if counts["validation"] == 0 or counts["test"] == 0:
+        return {
+            "positive_days": counts,
+            "evaluated": False,
+            "reason": "Validation 或 Test 沒有正樣本，不回報無意義的 F1",
+        }
+
+    candidates = []
+    best = None
+    for c_value in c_values:
+        classifier = LogisticRegression(
+            class_weight="balanced", max_iter=2000, C=c_value,
+        ).fit(x_train, y_train)
+        result = _binary_metrics(y_validation, classifier.predict(x_validation))
+        candidates.append({"C": c_value, "f1": result["f1"], "accuracy": result["accuracy"]})
+        key = (result["f1"], result["accuracy"], -c_value)
+        if best is None or key > best[0]:
+            best = (key, c_value)
+
+    x_fit = np.concatenate([x_train, x_validation], axis=0)
+    y_fit = np.concatenate([y_train, y_validation], axis=0)
+    classifier = LogisticRegression(
+        class_weight="balanced", max_iter=2000, C=best[1],
+    ).fit(x_fit, y_fit)
+    result = _binary_metrics(y_test, classifier.predict(x_test))
+    return {
+        "positive_days": counts,
+        "evaluated": True,
+        "selected_C": best[1],
+        "validation_candidates": candidates,
+        **result,
+    }
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ticker", default="AAPL")
-    ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--c_values", nargs="+", type=float, default=[0.01, 0.1, 1.0, 10.0])
     args = ap.parse_args()
 
-    dates, X, Y = load_data(args.ticker)
-    print(f"[event_validation_head] {args.ticker}: {len(dates)} 天，Z_fused 維度={X.shape[1]}")
+    manifest = load_temporal_manifest(args.ticker)
+    allowed_dates = {
+        date for dates in manifest["dates"].values() for date in dates
+    }
+    rows = load_data(args.ticker, allowed_dates)
+    groups = split_rows(rows, manifest, require_all_manifest_dates=False)
+    train_rows = groups["train"]
+    validation_rows = groups["validation"]
+    test_rows = groups["test"]
+    if not train_rows or not validation_rows or not test_rows:
+        raise SystemExit("event ground truth 與 manifest 交集後有空集合，無法做嚴格時間評估")
+    z_dim = int(train_rows[0][1].shape[0])
+    print(f"[event_validation_head] {args.ticker}: train={len(train_rows)} "
+          f"validation={len(validation_rows)} test={len(test_rows)}，Z_fused 維度={z_dim}")
 
     per_category = {}
     for i, event_type in enumerate(EVENT_TYPES):
-        result = evaluate_category(X, Y[:, i], seed=args.seed)
+        result = evaluate_category(
+            train_rows, validation_rows, test_rows, i, args.c_values,
+        )
         per_category[event_type] = result
         if result["evaluated"]:
-            print(f"  {event_type}: n={result['n_positive_days']} "
+            print(f"  {event_type}: positives={result['positive_days']} C={result['selected_C']} "
                  f"precision={result['precision']:.3f} recall={result['recall']:.3f} f1={result['f1']:.3f}")
         else:
             print(f"  {event_type}: {result['reason']}")
@@ -98,10 +154,15 @@ def main():
                if micro_precision + micro_recall else 0.0)
 
     report = {
+        "protocol": manifest["protocol"],
         "ticker": args.ticker,
-        "n_days": len(dates),
-        "z_fused_dim": int(X.shape[1]),
-        "cv_folds": 5,
+        "split_manifest": str(paths.temporal_split_path(args.ticker)),
+        "n_train": len(train_rows),
+        "n_validation": len(validation_rows),
+        "n_test": len(test_rows),
+        "z_fused_dim": z_dim,
+        "selection_metric": "validation.f1",
+        "final_fit": "train_plus_validation",
         "per_category": per_category,
         "micro_avg": {"precision": micro_precision, "recall": micro_recall, "f1": micro_f1,
                      "tp": tp, "fp": fp, "fn": fn,

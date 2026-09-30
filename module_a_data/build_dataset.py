@@ -17,6 +17,7 @@ import argparse
 import datetime as dt
 
 from shared import paths, schemas
+from shared.temporal_split import build_temporal_manifest, save_temporal_manifest
 from shared.utils import load_config, read_json, write_json
 from module_a_data.crawler.fetch_ohlcv import load_ohlcv
 from module_a_data.labeling import build_price_and_label, compute_quantile_thresholds
@@ -108,8 +109,8 @@ def build_daily_record(ticker: str, date: str, df, cfg,
                        bullish_threshold: float, bearish_threshold: float) -> dict | None:
     """組一筆每日 JSON；K 線圖不存在或標籤產不出來（資料頭尾）回傳 None。
 
-    bullish_threshold/bearish_threshold：整段 df 只算一次（見 main()），
-    每一天共用同一組門檻，不是每天重算。
+    bullish_threshold/bearish_threshold：只用 train 日期算一次（見 main()），
+    再固定套用到 train/validation/test，不是每天或每個區間重算。
     """
     input_types = cfg["chart"].get("vision_inputs", ["candlestick", "volume"])
     if len(input_types) != 2:
@@ -150,6 +151,21 @@ def build_daily_record(ticker: str, date: str, df, cfg,
     }
 
 
+def eligible_dates(ticker: str, df, cfg) -> list[str]:
+    """列出能產生完整雙圖與未來報酬標籤的日期，不讀取未來文字內容。"""
+    horizon = cfg["label"]["horizon_trading_days"]
+    input_types = cfg["chart"].get("vision_inputs", ["candlestick", "volume"])
+    dates = []
+    for index, timestamp in enumerate(df.index):
+        if index + horizon >= len(df):
+            continue
+        date = timestamp.strftime("%Y-%m-%d")
+        if all(_chart_input_path(ticker, date, input_type).exists()
+               for input_type in input_types):
+            dates.append(date)
+    return dates
+
+
 def main():
     cfg = load_config()
     ap = argparse.ArgumentParser()
@@ -159,17 +175,41 @@ def main():
 
     df = load_ohlcv(args.ticker)
     horizon = cfg["label"]["horizon_trading_days"]
+    dates = eligible_dates(args.ticker, df, cfg)
+    if args.limit:
+        dates = dates[:args.limit]
+    split_cfg = cfg.get("temporal_split", {})
+    manifest = build_temporal_manifest(
+        args.ticker,
+        dates,
+        train_ratio=split_cfg.get("train_ratio", 0.7),
+        validation_ratio=split_cfg.get("validation_ratio", 0.15),
+        gap_trading_days=split_cfg.get("gap_trading_days", horizon),
+        metadata={"label_horizon_trading_days": horizon},
+    )
     bearish_threshold, bullish_threshold = compute_quantile_thresholds(
         df, horizon,
         low_q=cfg["label"].get("quantile_low", 1 / 3),
         high_q=cfg["label"].get("quantile_high", 2 / 3),
+        dates=manifest["dates"]["train"],
     )
-    print(f"[build_dataset] 分位數門檻（依 {args.ticker} 整段報酬分布算出）："
+    manifest["metadata"]["label_quantile_thresholds"] = {
+        "source_split": "train",
+        "low_quantile": cfg["label"].get("quantile_low", 1 / 3),
+        "high_quantile": cfg["label"].get("quantile_high", 2 / 3),
+        "bearish_below": bearish_threshold,
+        "bullish_above": bullish_threshold,
+    }
+    save_temporal_manifest(manifest)
+    print(f"[build_dataset] 分位數門檻（只依 {args.ticker} Train 報酬分布算出）："
          f"bearish<{bearish_threshold:.4f}, bullish>{bullish_threshold:.4f}")
+    print(f"[build_dataset] split train/val/test="
+          f"{manifest['counts']['train']}/{manifest['counts']['validation']}/"
+          f"{manifest['counts']['test']}，gap={manifest['gap_trading_days']} "
+          f"-> {paths.temporal_split_path(args.ticker)}")
 
     n = 0
-    for d in df.index:
-        date = d.strftime("%Y-%m-%d")
+    for date in dates:
         record = build_daily_record(args.ticker, date, df, cfg,
                                     bullish_threshold, bearish_threshold)
         if record is None:
@@ -177,8 +217,6 @@ def main():
         schemas.validate_daily_record(record)  # 不合法會 raise，直接中斷
         write_json(record, paths.daily_json(args.ticker, date))
         n += 1
-        if args.limit and n >= args.limit:
-            break
     print(f"[build_dataset] {args.ticker}: {n} records -> {paths.DATASET / args.ticker}")
 
 

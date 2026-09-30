@@ -78,7 +78,7 @@
 | `*_chunks[].text` | 每段 ≤512 token（以 FinBERT tokenizer 計） |
 | `filing_chunks` / `transcript_chunks` | 「最新一份沿用到下一份發布為止」；當日無有效文件時為空陣列 `[]` |
 | `prices.future_closes` | 未來第 1~5 個交易日收盤價（標籤依據，**僅供產生標籤與回測，不可作為模型輸入**） |
-| `label` | 依 close_t5 vs close_t0 報酬，用整段期間報酬分布的 1/3、2/3 分位數當門檻（2026-08 起，見 decisions.md #30）：報酬最高 1/3 → `BULLISH`；最低 1/3 → `BEARISH`；中間 1/3 → `NEUTRAL`。門檻數值本身依資料算出、非固定百分比，見 `module_a_data/labeling.py` |
+| `label` | 依 close_t5 vs close_t0 報酬，**只用 Train 期間**報酬分布的 1/3、2/3 分位數當門檻；門檻固定後才套用至 Validation/Test。報酬最高 1/3 → `BULLISH`；最低 1/3 → `BEARISH`；中間 1/3 → `NEUTRAL`。門檻數值依 Train 資料算出、非固定百分比，見 `module_a_data/labeling.py` |
 
 ---
 
@@ -136,7 +136,7 @@ data/outputs/
 ├── z_fused/
 │   ├── {TICKER}/{YYYY-MM-DD}.npy       # 每日 Z_fused 向量（除錯/可解釋性分析用）
 │   ├── {TICKER}_index.npz              # ★ 彙整索引：整段時間範圍一次讀取用
-│   └── {TICKER}_index.meta.json        # 索引摘要（天數、日期範圍、z_dim）
+│   └── {TICKER}_index.meta.json        # 索引摘要（split manifest、checkpoint SHA256）
 ├── checkpoints/                         # Fusion 模型與 RL agent 權重
 ├── metrics/
 │   ├── classification_report.json      # 情緒分類準確率（對照 A 的 label）
@@ -153,12 +153,28 @@ data/outputs/
 | `z` | [N, z_dim] | 每日 Z_fused，float32 |
 | `label` | [N] | 0=BEARISH 1=NEUTRAL 2=BULLISH，對照 A 的 label |
 | `return_next` | [N] | t → t+1 實際報酬，來自 A 的 `future_closes[0]` / `close_t0` |
+| `split` | [N] | 每日對應 `train` / `validation` / `test` / 兩段 gap，來自共用 manifest |
 
 `train.py` 跑完整段時間範圍後自動產生此索引；分類驗證、回測、RL 訓練一律優先讀這個檔案。
 
 ---
 
-## 4. 通用約定
+## 4. 共用時間切分 manifest
+
+**路徑規則**：`data/processed/temporal_splits/{TICKER}.json`
+
+A 會先根據能同時產生雙圖與未來報酬標籤的日期，建立一份 `strict_temporal_v1`
+manifest。內容直接列出 Train、Validation、Test 與兩段 gap 的日期，不只記錄比例。
+所有下游模組必須沿用這份 manifest，不可因個別資料源缺日期就自行重切。
+
+- Train：允許 fit/更新模型參數。
+- Validation：只用於選 epoch/超參數，不更新 Fusion 權重。
+- Test：定案後只評估一次，不參與訓練或選模。
+- Gap：邊界各留 `label.horizon_trading_days` 個交易日，不參與三個主要區間。
+
+---
+
+## 5. 通用約定
 
 1. **編碼**：所有 JSON 一律 UTF-8、無 BOM。
 2. **路徑**：一律使用相對 repo 根目錄的正斜線路徑，程式中透過 `shared/paths.py` 取得，不硬編。
