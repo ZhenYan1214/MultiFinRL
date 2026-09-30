@@ -60,18 +60,29 @@ def download_filings(ticker: str, start: str) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     index = []
+    downloaded = 0
+    skipped = 0
     for f in filings:
-        url = f"https://www.sec.gov/Archives/edgar/data/{int(cik)}/{f['accession']}/{f['document']}"
         fname = f"{f['form']}_{f['filing_date']}.html"
+        out_path = out_dir / fname
+        index.append({"form": f["form"], "filing_date": f["filing_date"], "file": fname})
+
+        if out_path.is_file():
+            skipped += 1
+            print(f"[fetch_filings] {ticker} {f['form']} {f['filing_date']} 已存在，跳過")
+            continue
+
+        url = f"https://www.sec.gov/Archives/edgar/data/{int(cik)}/{f['accession']}/{f['document']}"
         r = requests.get(url, headers=HEADERS, timeout=60)
         r.raise_for_status()
-        (out_dir / fname).write_bytes(r.content)
-        index.append({"form": f["form"], "filing_date": f["filing_date"], "file": fname})
+        out_path.write_bytes(r.content)
+        downloaded += 1
         print(f"[fetch_filings] {ticker} {f['form']} {f['filing_date']}")
         time.sleep(0.2)  # SEC 流量限制：每秒 <= 10 requests
 
     write_json({"ticker": ticker, "cik": cik, "filings": index}, out_dir / "index.json")
-    print(f"[fetch_filings] {ticker}: {len(index)} filings -> {out_dir}")
+    print(f"[fetch_filings] {ticker}: 共 {len(index)} 份，下載 {downloaded} 份，"
+          f"跳過 {skipped} 份 -> {out_dir}")
 
 
 def main():

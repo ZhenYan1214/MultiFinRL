@@ -1,7 +1,8 @@
 """RAG 檢索：以 H_v + H_t 合併成 query，檢索 top-K 相關文件 -> H_r。
 
 - K=3（configs/config.yaml 的 rag.top_k）。
-- query 做法（2026-08 修正，見 docs/decisions.md）：H_v 與 H_t 各自 mean-pool 成 [768] 後，
+- query 做法（2026-08 修正，2026-09 擴充雙圖）：H_v 的圖別與 token 維度、H_t 的 token
+  維度各自 mean-pool 成 [768] 後，
   各自做 L2 正規化（避免兩個不同模型出來的向量數值量級不同、其中一個不成比例主導 query），
   再依 alpha 加權合併（alpha 是 H_v 的權重，預設 0.5 對半，可在 configs/config.yaml 的
   rag.query_alpha 調整，不用改程式碼）。真正的可學習/attention-based 加權留待之後。
@@ -22,11 +23,13 @@ import numpy as np
 
 
 def build_query(h_v: np.ndarray, h_t: np.ndarray, alpha: float = 0.5) -> np.ndarray:
-    """H_v [197,768] + H_t [512,768] -> query [768]。
+    """H_v [N_image,N_token,768] + H_t [512,768] -> query [768]。
 
     各自 mean-pool 後 L2 正規化，再依 alpha 加權合併（alpha 為 H_v 權重）。
     """
-    v = h_v.mean(axis=0)
+    if h_v.ndim < 2:
+        raise ValueError(f"H_v 至少需要 token 與 hidden 兩維，實際 shape={h_v.shape}")
+    v = h_v.reshape(-1, h_v.shape[-1]).mean(axis=0)
     t = h_t.mean(axis=0)
     v = v / (np.linalg.norm(v) + 1e-8)
     t = t / (np.linalg.norm(t) + 1e-8)

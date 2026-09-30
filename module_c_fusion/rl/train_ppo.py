@@ -17,19 +17,24 @@ import argparse
 import numpy as np
 
 from shared import paths
-from shared.utils import load_config, read_json
+from shared.temporal_split import load_temporal_manifest, split_rows
+from shared.utils import load_config, read_json, write_json
 from module_c_fusion.rl.env import PortfolioEnv
 from module_c_fusion.fusion.consolidate import load_index
 
 
-def load_real(ticker: str):
+def load_real(ticker: str, split_name: str = "train"):
     """讀 Z_fused 序列與對應次日報酬（用 A 的 future_closes[0] 對 close_t0）。
 
     優先讀彙整索引；索引不存在時 fallback 成逐日掃描。
     """
+    manifest = load_temporal_manifest(ticker)
     idx = load_index(ticker)
     if idx is not None:
-        return idx["z"], idx["return_next"]
+        rows = list(zip(idx["dates"].tolist(), list(idx["z"]), idx["return_next"].tolist()))
+        groups = split_rows(rows, manifest, require_all_manifest_dates=True)
+        selected = groups[split_name]
+        return np.stack([row[1] for row in selected]), np.asarray([row[2] for row in selected])
 
     z_dir = paths.OUTPUTS / "z_fused" / ticker
     z_list, r_list = [], []
@@ -40,7 +45,14 @@ def load_real(ticker: str):
         prices = read_json(record_file)["prices"]
         z_list.append(np.load(f))
         r_list.append(prices["future_closes"][0] / prices["close_t0"] - 1)
-    return np.stack(z_list), np.array(r_list)
+    rows = list(zip(
+        [f.stem for f in sorted(z_dir.glob("*.npy")) if paths.daily_json(ticker, f.stem).exists()],
+        z_list,
+        r_list,
+    ))
+    groups = split_rows(rows, manifest, require_all_manifest_dates=True)
+    selected = groups[split_name]
+    return np.stack([row[1] for row in selected]), np.asarray([row[2] for row in selected])
 
 
 def make_fake(n: int = 200, z_dim: int = 768, seed: int = 42):
@@ -127,9 +139,10 @@ def main():
     if args.fake:
         z_seq, returns = make_fake(z_dim=cfg["fusion"]["z_dim"], seed=cfg["seed"])
     else:
-        z_seq, returns = load_real(args.ticker)
+        z_seq, returns = load_real(args.ticker, "train")
         if len(z_seq) < 30:
             raise SystemExit("Z_fused 不足，先跑 module_c_fusion.fusion.train")
+        print(f"[train_ppo] 僅使用 manifest Train split：{len(z_seq)} 天；Validation/Test 未參與訓練")
 
     from stable_baselines3 import PPO
 
@@ -158,7 +171,22 @@ def main():
     out = paths.OUTPUTS / "checkpoints" / "ppo_agent.zip"
     out.parent.mkdir(parents=True, exist_ok=True)
     model.save(out)
+    report = {
+        "protocol": "fake" if args.fake else "strict_temporal_v1",
+        "ticker": args.ticker,
+        "training_split": "fake" if args.fake else "train",
+        "split_manifest": None if args.fake else str(paths.temporal_split_path(args.ticker)),
+        "n_training_days": int(len(z_seq)),
+        "timesteps": args.timesteps,
+        "curriculum": args.curriculum,
+        "curriculum_stages": args.curriculum_stages if args.curriculum else 1,
+        "ent_coef": args.ent_coef,
+        "checkpoint": str(out),
+    }
+    report_path = paths.OUTPUTS / "metrics" / "ppo_train_report.json"
+    write_json(report, report_path)
     print(f"[train_ppo] agent -> {out}")
+    print(f"[train_ppo] report -> {report_path}")
 
 
 if __name__ == "__main__":

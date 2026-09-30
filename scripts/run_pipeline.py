@@ -18,9 +18,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-from shared.utils import load_config
-
 ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from shared.utils import load_config
 
 
 def run(module: str, *args: str) -> None:
@@ -54,6 +56,7 @@ def main():
 
     # A：資料工程
     run("module_a_data.crawler.fetch_ohlcv", "--ticker", args.ticker)
+    # 要產生哪些視覺圖由 config.yaml 的 chart.vision_inputs 決定。
     run("module_a_data.preprocess.chart_generator", "--ticker", args.ticker, *limit_args)
     run("module_a_data.crawler.fetch_filings", "--ticker", args.ticker)
     run("module_a_data.crawler.fetch_news_alpaca", "--ticker", args.ticker)
@@ -70,7 +73,9 @@ def main():
     run("module_c_fusion.validation.classifier", "--ticker", args.ticker, *weighted_args)
     run("module_c_fusion.rl.train_ppo", "--ticker", args.ticker)
     for strategy in ("buy_and_hold", "rule_based", "ppo"):
-        run("module_c_fusion.backtest.backtest", "--ticker", args.ticker, "--strategy", strategy)
+        strategy_args = weighted_args if strategy == "rule_based" else []
+        run("module_c_fusion.backtest.backtest", "--ticker", args.ticker,
+            "--strategy", strategy, *strategy_args)
 
     print("\n[pipeline] A -> B -> C 完成")
 

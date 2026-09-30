@@ -4,7 +4,8 @@
   進 multi-head self-attention 融合層，CLS token 池化輸出 Z_fused。
 - 輸出 Z_fused 為每日一筆的固定維度向量（config.yaml 的 fusion.z_dim），
   是第二年 RL 的 state。
-- 為控制序列長度（197 + 512 + 3*512 太長），H_t 與 H_r 先各自 mean-pool
+- H_v 保留每張圖的 197 個 token，並加入可學習的圖別 slot embedding；為控制其餘
+  序列長度，H_t 與 H_r 先各自 mean-pool
   成段落級 token；C 可自行改成更精細的做法，但 Z_fused 維度定案後不可變。
 """
 import torch
@@ -13,11 +14,13 @@ import torch.nn as nn
 
 class CrossModalTransformer(nn.Module):
     def __init__(self, d_in: int = 768, d_model: int = 768, n_heads: int = 8,
-                 n_layers: int = 2, z_dim: int = 768, k: int = 3):
+                 n_layers: int = 2, z_dim: int = 768, k: int = 3,
+                 n_vision_inputs: int = 2):
         super().__init__()
         self.proj_v = nn.Linear(d_in, d_model)
         self.proj_t = nn.Linear(d_in, d_model)
         self.proj_r = nn.Linear(d_in, d_model)
+        self.vision_slot_emb = nn.Embedding(n_vision_inputs, d_model)
         # 模態 embedding：0=CLS, 1=vision, 2=text, 3=retrieval
         self.modality_emb = nn.Embedding(4, d_model)
         self.cls_token = nn.Parameter(torch.zeros(1, 1, d_model))
@@ -26,11 +29,18 @@ class CrossModalTransformer(nn.Module):
         self.encoder = nn.TransformerEncoder(layer, num_layers=n_layers)
         self.head = nn.Linear(d_model, z_dim)
         self.k = k
+        self.n_vision_inputs = n_vision_inputs
 
     def forward(self, h_v: torch.Tensor, h_t: torch.Tensor, h_r: torch.Tensor) -> torch.Tensor:
-        """h_v [B,197,768], h_t [B,512,768], h_r [B,K,512,768] -> Z_fused [B,z_dim]。"""
+        """h_v [B,I,P,768], h_t [B,512,768], h_r [B,K,512,768] -> Z_fused [B,z_dim]。"""
+        if h_v.ndim != 4 or h_v.size(1) != self.n_vision_inputs:
+            raise ValueError(
+                f"H_v 應為 [B,{self.n_vision_inputs},P,hidden]，實際 shape={tuple(h_v.shape)}"
+            )
         B = h_v.size(0)
-        t_v = self.proj_v(h_v)                       # [B,197,d]
+        t_v = self.proj_v(h_v)                       # [B,I,P,d]
+        slot = self.vision_slot_emb.weight[None, :, None, :]
+        t_v = (t_v + slot).flatten(1, 2)             # [B,I*P,d]
         t_t = self.proj_t(h_t.mean(dim=1, keepdim=True))   # [B,1,d] 段落級
         t_r = self.proj_r(h_r.mean(dim=2))           # [B,K,d]  每份文件一個 token
 
@@ -39,7 +49,7 @@ class CrossModalTransformer(nn.Module):
         t_r = t_r + self.modality_emb.weight[3]
         cls = self.cls_token.expand(B, -1, -1) + self.modality_emb.weight[0]
 
-        seq = torch.cat([cls, t_v, t_t, t_r], dim=1)  # [B, 1+197+1+K, d]
+        seq = torch.cat([cls, t_v, t_t, t_r], dim=1)  # [B, 1+I*P+1+K, d]
         out = self.encoder(seq)
         return self.head(out[:, 0])                   # CLS -> Z_fused
 
@@ -50,4 +60,5 @@ def build_model(cfg: dict) -> CrossModalTransformer:
     return CrossModalTransformer(
         d_model=f["d_model"], n_heads=f["n_heads"],
         n_layers=f["n_layers"], z_dim=f["z_dim"], k=cfg["rag"]["top_k"],
+        n_vision_inputs=len(cfg["chart"]["vision_inputs"]),
     )

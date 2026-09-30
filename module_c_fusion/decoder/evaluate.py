@@ -74,7 +74,7 @@ def main():
     args = ap.parse_args()
 
     samples = load_paired_samples(args.ticker)
-    _, _, test_rows = time_split(samples)
+    _, _, test_rows = time_split(samples, args.ticker)
     if not test_rows:
         raise SystemExit("test set 是空的，資料量不足以切出 15% 的 test，檢查 y_belief/Z_fused 天數")
     print(f"[decoder.evaluate] {args.ticker}: test set 共 {len(test_rows)} 天"

@@ -10,16 +10,25 @@ chart:
   image_size: [224, 224]
   channels: 3
   format: png
+  # ViT 依序讀入兩張圖。第二項日後可換成 technical/<indicator_set>，
+  # 只要 build_dataset 寫出的 chart.inputs 路徑與此順序一致即可。
+  vision_inputs: [candlestick, volume]
 
 label:
   horizon_trading_days: 5   # 未來第 5 個交易日收盤 vs 當日收盤
   # 2026-08 起改用分位數門檻（decisions.md #30，取代原本固定 ±2%，見 #16）：
-  # 依整段期間的報酬分布，取 1/3、2/3 分位數當 BEARISH/BULLISH 門檻，讓三類天數自然接近平衡。
+  # 只依 Train 期間報酬分布取 1/3、2/3 分位數，再固定套用到 Validation/Test。
   quantile_low: 0.3333       # 最低 1/3 -> BEARISH
   quantile_high: 0.6667      # 最高 1/3 -> BULLISH，中間 1/3 -> NEUTRAL
   # 舊版固定門檻（保留參考、供 ablation 對照用，見 labeling.py 的 make_label_fixed_threshold）：
   # bullish_threshold: 0.02   # > +2% -> BULLISH
   # bearish_threshold: -0.02  # < -2% -> BEARISH，其餘 NEUTRAL
+
+# A/B/C 共用的唯一時間切分。gap 預設等於 5 日標籤 horizon，避免邊界標籤跨區間。
+temporal_split:
+  train_ratio: 0.70
+  validation_ratio: 0.15
+  gap_trading_days: 5
 
 text:
   max_chunk_tokens: 512     # FinBERT 上限
@@ -31,7 +40,7 @@ rag:
 
 # encoder 預設（B 模組讀取；shape 一旦定案不可再變，見 docs/data_format.md）
 encoders:
-  vision: google/vit-base-patch16-224   # H_v: [197, 768]
+  vision: google/vit-base-patch16-224   # H_v: [2, 197, 768]（圖別, token, hidden）
   text: ProsusAI/finbert                # H_t: [512, 768]；H_r: [3, 512, 768]
 
 # fusion / RL（C 模組讀取）

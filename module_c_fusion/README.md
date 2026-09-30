@@ -7,13 +7,16 @@
 ## Responsibilities
 
 1. Design a Cross-Modal Transformer that fuses H_v, H_t, and H_r into **Z_fused** (`fusion/model.py`).
-2. Train the fusion model (`fusion/train.py`). Full-parameter training is used today; QLoRA is planned so training stays feasible on a single high-end GPU, but is not yet implemented (`docs/decisions.md` #29).
+   Dual-image H_v enters as `[B,2,197,768]`; learned vision-slot embeddings distinguish the
+   candlestick and auxiliary image before the two token grids are flattened. Z_fused remains
+   `[B,768]`, so validation, decoder, RL, and backtest interfaces do not change.
+2. Train the fusion model (`fusion/train.py`) only on the manifest's Train dates, using Validation macro F1 to retain the best checkpoint. Test labels never update or select the Fusion model. Full-parameter training is used today; QLoRA is planned so training stays feasible on a single high-end GPU, but is not yet implemented (`docs/decisions.md` #29/#85).
 3. Validate Z_fused quality with a held-out market-sentiment classification task against A's labels (`validation/classifier.py`).
-4. Validate Z_fused a second, independent way: predict the day's event types (multi-label) directly from Z_fused and score against `data/labels/event_ground_truth/` (`validation/event_validation_head.py`, `docs/decisions.md` #33/#34/#37). This is a diagnostic/probing classifier, and it is not an optional extra — the formal proposal (p.19, "表徵效能驗證") explicitly requires diagnostic classification testing on Z_fused for both market-sentiment and event accuracy; `classifier.py` covers the sentiment half, this covers the event half. Classification validation checks predictive power for future price direction; this checks whether Z_fused faithfully retains same-day event information — the two measure different things and are read together, not merged. Architecturally, both of these standalone probes are understood as simplified stand-ins for the proposal's still-unbuilt generative decoder (item 2's `L_belief`-trained decoder, see below) — once that decoder exists, it would generate belief tokens covering both sentiment and event judgment in one pass, and could absorb what these two scripts do separately today (`docs/decisions.md` #43). That hasn't happened; the two remain separate scripts predicting different label sets and should not be merged into one until the decoder is real.
+4. Validate Z_fused a second, independent way: predict the day's event types (multi-label) directly from Z_fused and score against `data/labels/event_ground_truth/` (`validation/event_validation_head.py`, `docs/decisions.md` #33/#34/#37). This probe uses the same temporal manifest: Train fits, Validation selects C, and Test is evaluated once; sparse categories without enough positives are reported but not scored. This is a diagnostic/probing classifier, and it is not an optional extra — the formal proposal (p.19, "表徵效能驗證") explicitly requires diagnostic classification testing on Z_fused for both market-sentiment and event accuracy; `classifier.py` covers the sentiment half, this covers the event half. Classification validation checks predictive power for future price direction; this checks whether Z_fused faithfully retains same-day event information — the two measure different things and are read together, not merged.
 5. Design the PPO environment and reward function, and train an RL agent on Z_fused (`rl/env.py`, `rl/train_ppo.py`). Includes curriculum learning (`--curriculum`, proposal 3.6 anticipated challenge (2)): trains in stages of increasing rolling volatility, with per-stage timestep budgets weighted by difficulty (an equal split across stages was found to collapse into an "always hold cash" degenerate policy — see `docs/decisions.md` #52–#55 for the full diagnosis). Verified working and on par with the non-curriculum baseline (Sharpe 0.67 both).
 6. Run backtests: cumulative return, Sharpe ratio, max drawdown (`backtest/backtest.py`).
 7. Compare investment performance with and without RL.
-8. Cross-modal interpretability: Integrated Gradients on the trained PPO policy's action distribution (`explainability/integrated_gradients.py`, proposal 3.6 (4)), captum + zero-vector baseline, attributions computed against the actual holding trajectory the agent would see (not a detached hypothetical). Verified meaningful on a healthy (non-collapsed) policy: 373/768 Z_fused dimensions carry non-trivial attribution (`docs/decisions.md` #49, #56).
+8. Cross-modal interpretability: Integrated Gradients on the trained PPO policy's action distribution (`explainability/integrated_gradients.py`, proposal 3.6 (4)), evaluated on the manifest's Test period with captum + zero-vector baseline; attributions use the actual holding trajectory the agent would see (not a detached hypothetical). Historical results before the strict split remain legacy (`docs/decisions.md` #49, #56, #85).
 9. Generative decoder (`decoder/`, proposal 3.4/3.5): QLoRA-finetuned LLaMA-2 that generates `<TREND>`/`<RISK_LEVEL>` + narrative text conditioned on Z_fused as a soft prompt. Only the `L_belief` loss is implemented (`L_align`/`L_ground` are not — see `model.py`'s header for why). First full train+eval run: 100% structural format correctness, loss delta 1.97 vs. an untuned backbone (fine-tuning has a real, measurable effect), 90% RISK_LEVEL accuracy, but only 47% TREND accuracy — consistent with `classifier.py`'s own weak market-direction signal from Z_fused, not a decoder-specific shortfall. Narrative quality itself (LLM-as-judge, `evaluate.py --llm_judge`) has not yet been run. Full history including three real bugs found and fixed during training (GPU not actually being used, unmasked padding tokens causing empty-string generation, LoRA dropout left on during inference): `docs/decisions.md` #57–#64.
 
 ## Phase 1 (while waiting on real vectors from B)
@@ -25,7 +28,7 @@ Wire up the architecture against synthetic vectors first: generate random H_v / 
 ```bash
 python -m module_c_fusion.fusion.train --fake --n 32                   # phase 1: synthetic vectors (needs torch)
 python -m module_c_fusion.fusion.train --ticker AAPL --weighted        # phase 2: real training, exports Z_fused
-python -m module_c_fusion.validation.classifier --ticker AAPL --weighted   # classification validation (70/15/15 time split)
+python -m module_c_fusion.validation.classifier --ticker AAPL --weighted   # reuses the shared strict split manifest
 python -m module_c_fusion.rl.train_ppo --fake                          # PPO smoke test
 python -m module_c_fusion.backtest.backtest --ticker AAPL --strategy rule_based   # backtest
 ```
@@ -42,17 +45,17 @@ After `train.py` finishes a full run, in addition to saving one file per day (`d
 
 ```
 data/outputs/z_fused/{TICKER}_index.npz        # dates / z / label / return_next arrays
-data/outputs/z_fused/{TICKER}_index.meta.json  # human-readable summary: day count, date range, z_dim, etc.
+data/outputs/z_fused/{TICKER}_index.meta.json  # split manifest + Fusion checkpoint SHA256 + summary
 ```
 
-`classifier.py`, `backtest.py`, and `train_ppo.py` all read this index first and only fall back to scanning per-day files if it's missing. Any new downstream task should read `{TICKER}_index.npz` directly rather than rescanning the vector directory. If the index wasn't generated automatically (e.g. after only running `train.py --fake`), rebuild it with:
+All downstream consumers reuse `data/processed/temporal_splits/{TICKER}.json`. Any new task must reuse that manifest rather than calculate another 70/15/15 boundary. If the index wasn't generated automatically, rebuild it with the exact checkpoint that produced those vectors:
 
 ```bash
-python -m module_c_fusion.fusion.consolidate --ticker AAPL
+python -m module_c_fusion.fusion.consolidate --ticker AAPL --checkpoint data/outputs/checkpoints/fusion.pt
 ```
 
 ## Notes
 
 - Never use information beyond `future_closes` during backtesting; `future_closes` is only for computing the P&L of positions already taken.
 - Phase 1's backtest is intentionally simple (single-stock position sizing or a small multi-asset mix); whether a full PPO backtest is required within phase 1 itself is still open (`docs/decisions.md`).
-- Both classification validation and backtesting must use a chronological train/val/test split, never a random shuffle — shuffling would leak future information into training.
+- Classification, event validation, decoder, PPO, explainability, and backtesting must reuse the chronological manifest generated by Module A. The two boundaries keep a 5-day gap; random shuffling or recalculating a separate split is forbidden.

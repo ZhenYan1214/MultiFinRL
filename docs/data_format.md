@@ -45,6 +45,10 @@ data/raw/macro/
   "date": "2021-03-15",
   "chart": {
     "path": "data/raw/charts/AAPL/2021-03-15.png",
+    "inputs": [
+      { "type": "candlestick", "path": "data/raw/charts/AAPL/2021-03-15.png" },
+      { "type": "volume", "path": "data/raw/charts/AAPL/volume/2021-03-15.png" }
+    ],
     "window_days": 20,
     "size": [224, 224],
     "channels": 3
@@ -95,13 +99,14 @@ data/raw/macro/
 | 欄位 | 規則 |
 |---|---|
 | `date` | ISO 8601（YYYY-MM-DD），僅交易日 |
-| `chart.path` | 相對 repo 根目錄的路徑；PNG、224×224、RGB |
+| `chart.path` | 向下相容欄位，等於 `chart.inputs[0].path` |
+| `chart.inputs` | ViT 輸入的固定順序清單，目前恰好兩張：K 線、成交量；每張皆為相對 repo 根目錄的 224×224 RGB PNG。未來可將第二張換成技術指標圖，但須同步更新 config 並重跑 H_v |
 | `news[].days_ago` | 該則新聞發布日距 `date` 的天數；當日新聞為 0；當日無新聞時以近日新聞回補 |
 | `news[].published_at` | 含時區（美東），供後續切齊時間、避免 look-ahead |
 | `*_chunks[].text` | 每段 ≤512 token（以 FinBERT tokenizer 計） |
 | `filing_chunks` / `transcript_chunks` | 「最新一份沿用到下一份發布為止」；當日無有效文件時為空陣列 `[]` |
 | `prices.future_closes` | 未來第 1~5 個交易日收盤價（標籤依據，**僅供產生標籤與回測，不可作為模型輸入**） |
-| `label` | 依 close_t5 vs close_t0 報酬，用整段期間報酬分布的 1/3、2/3 分位數當門檻（2026-08 起，見 decisions.md #30）：報酬最高 1/3 → `BULLISH`；最低 1/3 → `BEARISH`；中間 1/3 → `NEUTRAL`。門檻數值本身依資料算出、非固定百分比，見 `module_a_data/labeling.py` |
+| `label` | 依 close_t5 vs close_t0 報酬，**只用 Train 期間**報酬分布的 1/3、2/3 分位數當門檻；門檻固定後才套用至 Validation/Test。報酬最高 1/3 → `BULLISH`；最低 1/3 → `BEARISH`；中間 1/3 → `NEUTRAL`。門檻數值依 Train 資料算出、非固定百分比，見 `module_a_data/labeling.py` |
 
 ---
 
@@ -125,7 +130,7 @@ data/vectors/AAPL/2021-03-15/
   "ticker": "AAPL",
   "date": "2021-03-15",
   "vectors": {
-    "H_v": { "file": "H_v.npy", "shape": [197, 768], "dtype": "float32", "encoder": "google/vit-base-patch16-224" },
+    "H_v": { "file": "H_v.npy", "shape": [2, 197, 768], "dtype": "float32", "encoder": "google/vit-base-patch16-224", "input_types": ["candlestick", "volume"] },
     "H_t": { "file": "H_t.npy", "shape": [512, 768], "dtype": "float32", "encoder": "ProsusAI/finbert" },
     "H_r": { "file": "H_r.npy", "shape": [3, 512, 768], "dtype": "float32", "encoder": "ProsusAI/finbert", "top_k": 3 }
   },
@@ -144,6 +149,7 @@ data/vectors/AAPL/2021-03-15/
 |---|---|
 | `shape` | 實際維度以最終選定的 encoder 為準，但**一旦定案不可再變**；換 encoder 需全員同意並重跑 |
 | `encoder` | HuggingFace model id，供實驗比較與論文記錄 |
+| `H_v` 第一維 | = 視覺輸入張數（目前 2），順序必須與 `chart.inputs`／`input_types` 一致；第二維為每張 ViT 的 CLS + patch tokens |
 | `retrieved_chunk_ids` | 對應 A 資料中的 `chunk_id`，供事後追溯與可解釋性分析 |
 | `H_r` 第一維 | = K（目前 K=3），順序為相似度由高至低 |
 
@@ -158,7 +164,7 @@ data/outputs/
 ├── z_fused/
 │   ├── {TICKER}/{YYYY-MM-DD}.npy       # 每日 Z_fused 向量（除錯/可解釋性分析用）
 │   ├── {TICKER}_index.npz              # ★ 彙整索引：整段時間範圍一次讀取用
-│   └── {TICKER}_index.meta.json        # 索引摘要（天數、日期範圍、z_dim）
+│   └── {TICKER}_index.meta.json        # 索引摘要（split manifest、checkpoint SHA256）
 ├── checkpoints/                         # Fusion 模型與 RL agent 權重
 ├── metrics/
 │   ├── classification_report.json      # 情緒分類準確率（對照 A 的 label）
@@ -175,12 +181,28 @@ data/outputs/
 | `z` | [N, z_dim] | 每日 Z_fused，float32 |
 | `label` | [N] | 0=BEARISH 1=NEUTRAL 2=BULLISH，對照 A 的 label |
 | `return_next` | [N] | t → t+1 實際報酬，來自 A 的 `future_closes[0]` / `close_t0` |
+| `split` | [N] | 每日對應 `train` / `validation` / `test` / 兩段 gap，來自共用 manifest |
 
 `train.py` 跑完整段時間範圍後自動產生此索引；分類驗證、回測、RL 訓練一律優先讀這個檔案。
 
 ---
 
-## 4. 通用約定
+## 4. 共用時間切分 manifest
+
+**路徑規則**：`data/processed/temporal_splits/{TICKER}.json`
+
+A 會先根據能同時產生雙圖與未來報酬標籤的日期，建立一份 `strict_temporal_v1`
+manifest。內容直接列出 Train、Validation、Test 與兩段 gap 的日期，不只記錄比例。
+所有下游模組必須沿用這份 manifest，不可因個別資料源缺日期就自行重切。
+
+- Train：允許 fit/更新模型參數。
+- Validation：只用於選 epoch/超參數，不更新 Fusion 權重。
+- Test：定案後只評估一次，不參與訓練或選模。
+- Gap：邊界各留 `label.horizon_trading_days` 個交易日，不參與三個主要區間。
+
+---
+
+## 5. 通用約定
 
 1. **編碼**：所有 JSON 一律 UTF-8、無 BOM。
 2. **路徑**：一律使用相對 repo 根目錄的正斜線路徑，程式中透過 `shared/paths.py` 取得，不硬編。

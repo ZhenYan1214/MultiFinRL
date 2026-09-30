@@ -33,6 +33,13 @@ def validate_daily_record(record: dict) -> None:
             raise ValueError(f"chart missing key: {k}")
     if list(chart["size"]) != [224, 224] or chart["channels"] != 3:
         raise ValueError(f"chart must be 224x224x3, got {chart['size']}x{chart['channels']}")
+    inputs = chart.get("inputs")
+    if not isinstance(inputs, list) or len(inputs) != 2:
+        raise ValueError("chart.inputs must contain exactly two vision inputs")
+    for i, item in enumerate(inputs):
+        for k in ("type", "path"):
+            if not item.get(k):
+                raise ValueError(f"chart.inputs[{i}] missing key: {k}")
     # news
     for i, n in enumerate(record["news"]):
         for k in ("headline", "content", "source", "published_at", "days_ago"):
@@ -69,3 +76,9 @@ def validate_vector_index(index: dict) -> None:
         for k in ("file", "shape", "dtype", "encoder"):
             if k not in index["vectors"][name]:
                 raise ValueError(f"vectors.{name} missing key: {k}")
+
+    h_v = index["vectors"]["H_v"]
+    if h_v["shape"] != [2, 197, 768]:
+        raise ValueError(f"vectors.H_v shape must be [2, 197, 768], got {h_v['shape']}")
+    if h_v.get("input_types") is None or len(h_v["input_types"]) != 2:
+        raise ValueError("vectors.H_v.input_types must contain exactly two ordered input types")

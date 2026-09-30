@@ -26,6 +26,7 @@ import argparse
 import numpy as np
 
 from shared import paths
+from shared.temporal_split import load_temporal_manifest, split_rows
 from shared.utils import write_json
 from module_c_fusion.fusion.consolidate import load_index
 
@@ -128,7 +129,11 @@ def main():
     idx = load_index(args.ticker)
     if idx is None:
         raise SystemExit(f"找不到 {args.ticker} 的 Z_fused 索引，先跑 module_c_fusion.fusion.train")
-    z_seq = idx["z"]
+    manifest = load_temporal_manifest(args.ticker)
+    rows = list(zip(idx["dates"].tolist(), list(idx["z"])))
+    groups = split_rows(rows, manifest, require_all_manifest_dates=True)
+    test_rows = groups["test"]
+    z_seq = np.stack([row[1] for row in test_rows])
     z_dim = z_seq.shape[1]
 
     agent_path = args.agent or (paths.OUTPUTS / "checkpoints" / "ppo_agent.zip")
@@ -137,6 +142,12 @@ def main():
     prev_weights = rebuild_holding_trajectory(model, z_seq)
     attributions = compute_attributions(model, z_seq, prev_weights, n_steps=args.n_steps)
     summary = summarize(attributions, z_dim)
+    summary.update({
+        "protocol": manifest["protocol"],
+        "split": "test",
+        "split_manifest": str(paths.temporal_split_path(args.ticker)),
+        "period": [test_rows[0][0], test_rows[-1][0]],
+    })
 
     out_dir = paths.OUTPUTS / "explainability" / args.ticker
     out_dir.mkdir(parents=True, exist_ok=True)

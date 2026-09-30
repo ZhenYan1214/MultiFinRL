@@ -2,7 +2,7 @@
 
 **A Multimodal Retrieval-Augmented Financial Decision Framework with Reinforcement Learning**
 
-MultiFinRL turns three kinds of daily market data — candlestick charts (visual), financial news (text), and filings / earnings-call transcripts (external knowledge) — into a single vector, `Z_fused`, that represents a stock's market state on a given trading day. A vision encoder (ViT), a text encoder (FinBERT), and a retrieval-augmented generation (RAG) module each process one modality; a Cross-Modal Transformer fuses the three into `Z_fused`. That vector is then used both to validate market-sentiment classification and event extraction, and as the state input for a PPO reinforcement-learning agent that allocates a portfolio.
+MultiFinRL turns three kinds of daily market data — two market charts (candlestick + volume), financial news (text), and filings / earnings-call transcripts (external knowledge) — into a single vector, `Z_fused`, that represents a stock's market state on a given trading day. A shared-weight dual-image vision encoder (ViT), a text encoder (FinBERT), and a retrieval-augmented generation (RAG) module process those inputs; a Cross-Modal Transformer fuses H_v/H_t/H_r into `Z_fused`. That vector is then used both to validate market-sentiment classification and event extraction, and as the state input for a PPO reinforcement-learning agent that allocates a portfolio.
 
 ---
 
@@ -13,7 +13,9 @@ MultiFinRL turns three kinds of daily market data — candlestick charts (visual
 
 Both phases run within the same year and the pipeline is expected to cover the output of both — classification, event extraction, a simple backtest, and an RL-based backtest — not one phase per year.
 
-## Architecture
+## System Architecture
+
+[✏️ Open in draw.io](https://app.diagrams.net/#Uhttps%3A%2F%2Fraw.githubusercontent.com%2FZhenYan1214%2FMultiFinRL%2Fmain%2Fdocs%2Farchitecture_diagram_detailed.drawio)
 
 ```mermaid
 flowchart LR
@@ -43,6 +45,7 @@ This runs once per trading day for the configured date range, producing one `Z_f
 
 ## Ownership and Directory Layout
 
+| Module | Directory | Responsibility | Output |
 |---|---|---|---|
 | A | `module_a_data/` | Data engineering: crawlers, chart generation, text cleaning, chunking, price-movement labels | One JSON record per day (`data/processed/dataset/`) |
 | B | `module_b_encoder/` | ViT / FinBERT encoding, RAG index and retrieval, event extraction | Daily `H_v`, `H_t`, `H_r` vectors (`data/vectors/`) in a fixed format |
@@ -129,6 +132,12 @@ MultiFinRL/
 │   │   └── train_ppo.py             # --curriculum for volatility-staged curriculum learning
 │   └── backtest/
 │       └── backtest.py              # cumulative return, Sharpe ratio, max drawdown (single-ticker only)
+├── experiments/                     # research-only code; not part of the production pipeline
+│   └── vision/
+│       ├── vision_classifier.py      # Frozen / partial fine-tune / LoRA experiment model
+│       ├── experiment_vit_adaptation.py # strict temporal ViT adaptation comparison
+│       ├── run_vit_multiseed.py      # multi-seed validation aggregation
+│       └── experiment_auxiliary_vision.py # volume / RSI / SMA / MACD comparison
 ├── scripts/
 │   └── run_pipeline.py              # runs A -> B -> C end to end
 └── data/                            # not tracked in git except data/labels/; synced locally/via cloud storage
@@ -151,14 +160,14 @@ Full definition in `docs/data_format.md`; the handoff points are:
 
 | Item | Spec |
 |---|---|
-| Market / initial universe | US equities, starting with AAPL; expansion to more large-cap names (e.g. NVDA) is a later step. Indices/ETFs are excluded for now since they have no filings. |
+| Market / initial universe | US equities. AAPL has the complete multimodal pipeline; NVDA/MSFT/JPM currently have OHLCV, dual charts, and labels for ViT experiments. Indices/ETFs are excluded for now since they have no filings. |
 | Data range | 2021-01 onward, continuously extended (currently through 2026-08; see `configs/config.yaml`) |
 | Charts | 20-day trailing window, PNG, 224×224, RGB |
-| Price-movement label | Return from close to the close 5 trading days later: > +2% → BULLISH, < −2% → BEARISH, otherwise NEUTRAL |
+| Price-movement label | Return from close to the close 5 trading days later; train-period 1/3 and 2/3 quantiles define BEARISH / NEUTRAL / BULLISH in strict experiments |
 | Text chunking | ≤512 tokens per chunk (FinBERT's input limit) |
 | RAG retrieval | top-K = 3 |
 | Missing daily news | backfilled from prior days, with a `days_ago` field so the model can weigh relevance |
-| Fine-tuning | Fusion model (`fusion/train.py`): full-parameter training. Decoder (`decoder/train.py`): QLoRA (4-bit, LoRA on all attention+MLP linear layers) fine-tuning LLaMA-2-7b, in progress |
+| Fine-tuning | Fusion model (`fusion/train.py`): full-parameter training. Decoder (`decoder/train.py`): QLoRA (4-bit, LoRA on all attention+MLP linear layers). ViT: LoRA r4 improved mean validation macro F1 over five seeds (0.3662 vs 0.3328) but won only 3/5 seeds, so Frozen remains the formal encoder pending broader cross-stock/time validation. |
 | Dev environment | `requirements.txt` in this repo is the single source of truth |
 
 ## Current Status and Roadmap
@@ -168,7 +177,7 @@ Operational today, on AAPL:
 - Data (A): OHLCV, charts, recent news, and historical news (via the Alpaca News API, 2021–2026) are all in place. Filings, including 8-K, are fetched via the SEC EDGAR official API (`fetch_filings.py`; an alternate `edgartools`-based fetcher was evaluated as a candidate but never actually produced any data and has been removed, `docs/decisions.md` #31, #41). Earnings-call transcripts switched from an unreliable third-party scraper (`foolcalls`, never completed an end-to-end run, removed) to the official Alpha Vantage API (`fetch_transcripts.py`, needs `ALPHA_VANTAGE_API_KEY`).
 - Encoding (B): ViT and FinBERT encoders and FAISS-based RAG retrieval are working. Event extraction has a 149-day LLM-labeled ground truth (`data/labels/event_ground_truth/`) and two extraction methods: the default keyword rules (precision/recall/F1 0.162 / 0.868 / 0.273 on AAPL) and an LLM-based method (`--method llm`, `docs/spec_b_event_extraction_llm.md`) that measured 0.742 / 0.605 / 0.667 on the same 149-day sample (f1 +144%); a full 1381-day run has completed, with 401 days showing at least one detected event.
 - Fusion and validation (C): the Cross-Modal Transformer, held-out classification validation, event validation head (multi-label probe of Z_fused against the same ground truth, micro F1 0.229 on AAPL), PPO training (with optional `--curriculum` volatility-staged training), Integrated Gradients attribution on the PPO policy, and backtesting (buy-and-hold / rule-based / PPO strategies) all run end to end. Class-weighted training is the current default after diagnostic testing showed it was necessary for the model to learn anything from the news input at all.
-- Decoder (C, `module_c_fusion/decoder/`): implemented and training (2026-08). `Z_fused` is used as a soft-prompt prefix into a frozen, 4-bit-quantized LLaMA-2-7b fine-tuned with QLoRA (LoRA on all attention+MLP linear layers), generating a structured `<TREND>`/`<RISK_LEVEL>` belief plus a short narrative — this is the L_belief loss from the original proposal. Training targets (`y_belief`) are LLM-bootstrapped: trend reuses Track A's existing quantile label, an LLM (DeepSeek) judges risk level and writes the narrative from that day's news/filings/transcripts (1223+/1381 AAPL days generated so far). Data is split 70/15/15 by time (train/val/test, no shuffling). The evaluation script (`evaluate.py`) confirmed the pipeline is correct end to end — an epoch-1 checkpoint reached 30/30 structured-format accuracy — but trend/risk-level content accuracy is still low at that early stage and full training has not yet finished, so there are no final numbers yet.
+- Decoder (C, `module_c_fusion/decoder/`): implemented and training (2026-08). `Z_fused` is used as a soft-prompt prefix into a frozen, 4-bit-quantized LLaMA-2-7b fine-tuned with QLoRA (LoRA on all attention+MLP linear layers), generating a structured `<TREND>`/`<RISK_LEVEL>` belief plus a short narrative — this is the L_belief loss from the original proposal. Training targets (`y_belief`) are LLM-bootstrapped: trend reuses Track A's existing quantile label, an LLM (DeepSeek) judges risk level and writes the narrative from that day's news/filings/transcripts (1223+/1381 AAPL days generated so far). All modules now reuse A's `strict_temporal_v1` manifest: Train/Validation/Test follow time order, the two boundaries include a five-trading-day gap, and Test is not used for fitting or model selection. The evaluation script (`evaluate.py`) confirmed the pipeline is correct end to end — an epoch-1 checkpoint reached 30/30 structured-format accuracy — but trend/risk-level content accuracy is still low at that early stage and full training has not yet finished, so there are no final numbers yet.
 - A domain-gap comparison for ViT on candlestick charts vs. its natural-image pretraining has been run: removing the candlestick chart drops macro F1 by 51%, showing the current (non-domain-pretrained) ViT still contributes substantially (`docs/decisions.md` #46).
 
 Known gaps, tracked in `docs/decisions.md`:
