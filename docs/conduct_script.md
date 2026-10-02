@@ -40,42 +40,16 @@ py -m module_b_encoder.generate_vectors --fake --n 10
 py -m module_b_encoder.generate_vectors --ticker AAPL --limit 100
 # 正式執行：讀 A 的 JSON，跑 ViT/FinBERT/RAG，產出 H_v/H_t/H_r，存到 data/vectors/AAPL/
 
-py experiments/vision/experiment_vit_adaptation.py --strategies frozen last1 last2 last4 --epochs 10 --patience 3 --evaluate-test
-# ViT-only 調整實驗：雙圖 CLS 接三分類頭，嚴格時間切分 + 5 日 gap；validation 選策略後才看 test
-# 正式 test 已於 2026-09-24 開啟並記錄，除非改成新的 walk-forward/multi-stock protocol，勿反覆用同一 test 調參
+# 2026-10-02：既有 ViT 訓練實驗已完成並封存，舊 runner 已移除。
+# 統一結果：docs/vit_experiments_summary_2026-10-02.md
+# 原始結果：data/outputs/experiments/
+# 以下工具只由既有 report.json 重建 Markdown／圖表，不會訓練或開啟 Test。
+python experiments/vision/render_experiment_report.py \
+  data/outputs/experiments/maxvit_s_comparison/AAPL_NVDA_MSFT/run/report.json
 
-py experiments/vision/experiment_vit_adaptation.py --evaluate-existing
-# 不重訓，從既有 checkpoints 重算 validation 勝者與 frozen baseline 的同一份 test 指標
-
-py experiments/vision/experiment_vit_adaptation.py --train-tickers AAPL NVDA --held-out-ticker MSFT --strategies frozen last4 --epochs 10 --patience 3 --evaluate-test
-# 多股票 ViT：AAPL/NVDA 各自分類頭、共用 backbone；MSFT 只訓練新 probe head，backbone 不看 MSFT 梯度
-# 這份 MSFT test 已於 2026-09-24 開啟；後續調參須換 walk-forward fold 或新的 held-out ticker
-
-mkdir -p data/outputs/experiments/vit_adaptation
-set -o pipefail
-python -u experiments/vision/experiment_vit_adaptation.py \
-  --train-tickers AAPL NVDA MSFT --held-out-ticker JPM \
-  --strategies frozen lora_r4 lora_r8 --vit-lr 1e-4 \
-  --epochs 10 --patience 3 --batch 8 --evaluate-test \
-  2>&1 | tee data/outputs/experiments/vit_adaptation/lora_AAPL_NVDA_MSFT_holdout_JPM.log
-# LoRA 正式實驗（2026-09-24 已完成）：只在 ViT 最後四個 blocks 的 query/value 掛 adapter。
-# 執行中的 terminal 會逐 epoch 顯示 loss / validation macro F1；另一個 terminal 可用：
-# tail -f data/outputs/experiments/vit_adaptation/lora_AAPL_NVDA_MSFT_holdout_JPM.log
-# 完成後報告位於 data/outputs/experiments/vit_adaptation/AAPL_NVDA_MSFT_holdout_JPM/run/report.json
-# JPM future test 已開啟並記錄；不要再依這份 test 調 LoRA rank/LR 後重跑，後續請換 walk-forward fold 或新股票。
-
-set -o pipefail
-python -u experiments/vision/run_vit_multiseed.py \
-  --seeds 40 41 42 43 44 \
-  --epochs 10 --patience 3 --batch 8 \
-  2>&1 | tee data/outputs/experiments/vit_adaptation/vit_lora_multiseed.log
-# LoRA r4 穩定性驗證（2026-09-29 已完成）：每個 seed 比較 Frozen vs r4，只使用 validation，未開 JPM test。
-# 本次 MPS 訓練約 2 小時 18 分；原 terminal 會即時顯示 seed/strategy/epoch/loss/val_macro_f1。
-# 另一個 terminal 可監看：
-# tail -f data/outputs/experiments/vit_adaptation/vit_lora_multiseed.log
-# 中途 Ctrl+C 後可重跑同一指令；已有完整 report 的 seed 會自動跳過。
-# 完成後彙整：data/outputs/experiments/vit_adaptation/AAPL_NVDA_MSFT_holdout_JPM/multiseed_summary/report.json
-# seeds 40～44 已完成且 report 齊全，除非做重現性稽核，否則不用重跑。
+# 補產全部歷史 vision 報告並建立索引：
+python experiments/vision/render_experiment_report.py \
+  --all data/outputs/experiments
 
 py -m module_b_encoder.event_extraction --ticker AAPL
 # 從新聞/財報文字抽財經事件（獨立於 Z_fused 的分析，不影響 B/C 的向量或訓練），
@@ -145,6 +119,10 @@ py -m module_c_fusion.decoder.train --ticker AAPL --epochs 3
 py -m module_c_fusion.decoder.evaluate --ticker AAPL --n_generate 30
 # 在 test set 上驗證：微調前後 loss 差異、結構化標籤準確率；--llm_judge 可選（會花 API 費用）
 ```
+
+## ViT 跨股票二分類（已封存）
+
+Pilot3 已完成且 Test 維持鎖定；舊訓練 runner 於 2026-10-02 依整理決策移除。設計與結果見 [封存說明](../experiments/vision/README_cross_stock.md)、[實驗計畫](experiment_plan_vit_cross_stock.md)及[ViT 統一總結](vit_experiments_summary_2026-10-02.md)。未來若更改 label、horizon 或圖形輸入，應建立新的實驗入口與輸出命名空間。
 
 ## pipeline：一次串完 A→B→C（整合階段用，平常各自開發不用跑這個）
 

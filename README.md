@@ -132,12 +132,12 @@ MultiFinRL/
 │   │   └── train_ppo.py             # --curriculum for volatility-staged curriculum learning
 │   └── backtest/
 │       └── backtest.py              # cumulative return, Sharpe ratio, max drawdown (single-ticker only)
-├── experiments/                     # research-only code; not part of the production pipeline
+├── experiments/                     # completed experiments are archived as reports
 │   └── vision/
-│       ├── vision_classifier.py      # Frozen / partial fine-tune / LoRA experiment model
-│       ├── experiment_vit_adaptation.py # strict temporal ViT adaptation comparison
-│       ├── run_vit_multiseed.py      # multi-seed validation aggregation
-│       └── experiment_auxiliary_vision.py # volume / RSI / SMA / MACD comparison
+│       ├── visualize_comparison_report.py # backbone comparison charts
+│       ├── cross_stock_report.py     # cross-stock binary charts + Markdown
+│       ├── render_experiment_report.py # report.json -> charts + readable Markdown
+│       └── README_cross_stock.md     # archived cross-stock design and result record
 ├── scripts/
 │   └── run_pipeline.py              # runs A -> B -> C end to end
 └── data/                            # not tracked in git except data/labels/; synced locally/via cloud storage

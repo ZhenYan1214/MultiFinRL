@@ -294,6 +294,140 @@ test 維持 locked、完成的 seed 可在中斷續跑時自動跳過、`--summa
 `data/outputs/experiments/vit_adaptation/AAPL_NVDA_MSFT_holdout_JPM/multiseed_summary/report.json`；
 完整 log：`data/outputs/experiments/vit_adaptation/vit_lora_multiseed.log`。
 
+#### Frozen ViT-B/16 vs Frozen MaxViT-T（2026-09-30）
+
+新增 `experiments/vision/experiment_maxvit_comparison.py`，只比較視覺 backbone，不修改正式
+encoder、RAG 或 Fusion。AAPL／NVDA／MSFT 使用 1,381 個共同日期，每檔 966 個 Train、5 日 gap、
+202 個 Validation；三檔合計 2,898／606 筆。每支股票的漲跌分位數門檻只由自己的 Train 計算，
+Test 全程鎖住。兩張輸入維持 K 線＋Volume；ViT-B/16 使用兩張圖的 CLS（合計 1,536 維），
+MaxViT-T 使用官方分類頭最後 class Linear 前的兩個 512 維表示（合計 1,024 維）。兩個 backbone
+完全 frozen，各自只訓練相同型態的 `LayerNorm + Dropout(0.1) + Linear` 股票分類頭；固定
+seeds 40～44、balanced cross-entropy、head LR=3e-4、weight decay=1e-3、最多 10 epochs、
+patience=3。主要指標為三檔各自 Validation macro F1 的平均。
+這是獨立 runner，backbone 特徵先固定快取後才重設 seed 初始化分類頭；因此這裡的 ViT
+0.3447 不與舊 LoRA runner 的 Frozen 0.3328 跨報告直比，模型結論只採本輪同 seed、同 runner
+內的配對差值。
+
+| Backbone | 三檔平均 macro F1 | AAPL | NVDA | MSFT | Pooled macro F1 | Pooled log loss |
+|---|---:|---:|---:|---:|---:|---:|
+| Frozen ViT-B/16 | **0.3447 ± 0.0206** | **0.3712** | **0.3010** | 0.3618 | **0.3845** | 1.1530 |
+| Frozen MaxViT-T | 0.3374 ± 0.0205 | 0.3393 | 0.2939 | **0.3790** | 0.3712 | **1.1339** |
+
+逐 seed 的 MaxViT−ViT 三檔平均差值為 -0.0184／-0.0375／+0.0186／-0.0068／+0.0077；平均
+-0.0073 ± 0.0220，MaxViT 只勝 2/5，近似 95% CI 為 -0.0266～+0.0120。未通過預先設定的
+「平均至少 +0.02 且勝 4/5 seeds」門檻。類別效果也不平均：ViT→MaxViT 的平均 F1 為
+BEARISH 0.3932→0.4321、NEUTRAL 0.4565→0.4532、BULLISH 0.3037→0.2281；MaxViT 對下跌類
+較好，但明顯犧牲上漲類。工程面上 MaxViT-T 參數較少（30.9M vs 86.4M），在本機 MPS 對
+3,504 筆雙圖樣本的特徵抽取速度幾乎相同（87.7 vs 89.2 秒），沒有形成足以抵銷準確度退化的
+明顯速度優勢。
+
+**結論：不替換正式 ViT，也不投入 MaxViT 的 H_v／RAG／Fusion 介面改造。** 這個結果只否定
+「直接換成 frozen MaxViT-T」；沒有測 MaxViT fine-tune、金融圖表領域預訓練或 MaxViT-B，不能
+外推成整個 MaxViT 家族必然無效。現階段更值得把資源放在跨產業資料、walk-forward 與既有
+LoRA 候選的泛化驗證。完整報告：
+`data/outputs/experiments/maxvit_comparison/AAPL_NVDA_MSFT/run/report.json`。
+
+#### Frozen ViT-B/16 vs Frozen MaxViT-S/224（2026-10-01，正式五 seed 完成）
+
+為釐清 MaxViT-T 未勝是否只是容量不足，新增
+`experiments/vision/experiment_maxvit_s_comparison.py`。候選使用官方 TensorFlow 權重的 PyTorch
+移植版 `maxvit_small_tf_224.in1k`（`timm`），約 68.2M backbone 參數、輸入 224×224、每張圖
+輸出 768 維 global-pooled penultimate feature；兩張圖串成 1,536 維，與現有 ViT 分類頭輸入
+寬度一致。這只是 frozen backbone 容量消融，不修改正式 encoder 或 Fusion。
+
+實驗沿用 AAPL／NVDA／MSFT 共同日期、Train-only 標籤、5 日 gap、股票分頭、seeds 40～44、
+相同分類頭與超參數；既有 ViT 特徵直接重用，Test 全程 locked。預先門檻維持 MaxViT-S−ViT
+的 mean-ticker Validation macro F1 至少 +0.02，且五個 seeds 至少勝出四個。若未通過就停止
+MaxViT 放大路線，不再測 Base／Large；若通過，才另行設計 token-level H_v 與 Fusion 對照。
+工程 Smoke 已用最近 60 個共同日期、seed 940、1 epoch 完成。每檔只有 42 筆 Train 與 4 筆
+Validation，Test 維持 locked。MaxViT-S 成功載入 68,158,956 個參數並輸出每張 768 維特徵；
+138 筆雙圖樣本抽取耗時 6.88 秒（20.05 samples/s），代表模型、預處理、特徵快取與分類頭管線
+均可正常執行。
+
+| Smoke backbone | 三檔平均 macro F1 | AAPL | NVDA | MSFT | Pooled macro F1 | Pooled log loss |
+|---|---:|---:|---:|---:|---:|---:|
+| Frozen ViT-B/16 | **0.2963** | 0.0000 | 0.2222 | **0.6667** | **0.3718** | **1.0535** |
+| Frozen MaxViT-S | 0.1481 | 0.0000 | 0.2222 | 0.2222 | 0.2815 | 1.2281 |
+
+Smoke 的 MaxViT-S−ViT 差值為 -0.1481，但**不能作為模型優劣結論**：Validation 合計僅
+12 筆（每檔 4 筆），AAPL 與 MSFT 的 Validation 完全沒有 BEARISH，且只跑一個 seed、一次 epoch；
+因此 macro F1 對單筆預測非常敏感。此階段只判定工程驗證通過，不套用正式 +0.02／4-of-5
+門檻。Smoke 報告：
+`data/outputs/experiments/maxvit_s_comparison/AAPL_NVDA_MSFT/smoke_60/report.json`。
+
+正式實驗使用完整 1,381 個共同日期：每檔 966 Train、5 日 gap、202 Validation，三檔合計
+2,898／606 筆；seeds 40～44、最多 10 epochs、patience=3，Test 全程 locked。五個 seeds 的
+主要結果如下：
+
+| Frozen backbone | 三檔平均 macro F1 | AAPL | NVDA | MSFT | Pooled macro F1 | Pooled log loss |
+|---|---:|---:|---:|---:|---:|---:|
+| ViT-B/16 | **0.3447 ± 0.0206** | **0.3712** | **0.3010** | **0.3618** | **0.3845** | **1.1530** |
+| MaxViT-S | 0.3130 ± 0.0189 | 0.3165 | 0.2728 | 0.3496 | 0.3554 | 1.1660 |
+
+逐 seed 的 MaxViT-S−ViT 差值為 -0.0287／-0.0445／-0.0001／-0.0426／-0.0426；平均
+-0.0317 ± 0.0188，勝出 0/5。探索性 paired t-test 為 `t(4)=-3.771, p=0.0196`，95% CI
+`[-0.0550, -0.0084]`；seed 數只有五個，統計結果仍應保守解讀，但方向與預設 gate 完全一致。
+分股票差值為 AAPL -0.0547、NVDA -0.0282、MSFT -0.0122，三檔均下降；分種類 F1 差值為
+BEARISH -0.0070、NEUTRAL -0.0414、BULLISH -0.0390，也沒有任何類別取得平均改善。MaxViT-S
+特徵抽取耗時 138.6 秒，較 ViT 的 89.2 秒慢約 55%，參數量則為 68.2M vs 86.4M。
+
+**結論：MaxViT-S 未通過「至少 +0.02 且勝 4/5 seeds」門檻，正式 pipeline 維持 Frozen
+ViT-B/16。依預先決策停止 MaxViT 放大路線，不再測 Base／Large，也不投入 MaxViT 的 H_v／
+RAG／Fusion 介面改造。** 這項結論只適用目前 frozen ImageNet backbone＋pooled feature＋
+小型分類頭，不代表 MaxViT 經金融圖表預訓練或 fine-tune 後一定無效。正式報告：
+`data/outputs/experiments/maxvit_s_comparison/AAPL_NVDA_MSFT/run/report.json`。
+
+自動格式化版本：[MaxViT-S 正式報告](../data/outputs/experiments/maxvit_s_comparison/AAPL_NVDA_MSFT/run/report.md)。
+圖表統一存於該實驗同目錄的 `figures/`，可直接在報告中閱讀。
+
+#### Vision 實驗自動視覺化與 Markdown 報告（2026-10-01）
+
+新增 `experiments/vision/render_experiment_report.py`，可辨識 backbone comparison、ViT adaptation、
+LoRA multi-seed summary 與 auxiliary vision 四種 JSON 格式。每份 `report.json` 旁會產生可直接閱讀的
+`report.md`，並依資料內容輸出總覽、訓練曲線、列正規化混淆矩陣與 Test 對照圖；混淆矩陣若跨
+seed 彙整，會先各自正規化再取平均，不把同一 Validation 樣本的重複預測誤當成獨立樣本。
+
+已批次處理 `data/outputs/experiments/` 下全部 25 份既有 report，共產生 25 份 Markdown 與 76 張
+PNG，無跳過項目；總索引位於 `data/outputs/experiments/experiment_reports_index.md`。四個主要
+runner 已在保存 JSON 後自動呼叫產圖／排版流程；若視覺化失敗，只會顯示 warning，不會刪除或
+覆蓋已完成的訓練 JSON。所有自動報告與圖表統一存於各實驗的 `data/outputs/`，`docs/` 只保留
+紀錄與連結；`data/outputs/` 依專案規則不進 Git，因此產物可由相同指令隨時重建。
+瀏覽入口：[全部實驗報告索引](../data/outputs/experiments/experiment_reports_index.md)。
+
+#### Frozen ViT-B/16 vs Frozen DINOv3 ViT-B/16（2026-10-01）
+
+新增 `experiments/vision/experiment_dinov3_comparison.py`，沿用上一節已驗證的 frozen
+backbone runner，固定 AAPL／NVDA／MSFT 共同日期、Train-only 分位數標籤、5 日 gap、股票分頭、
+seeds 40～44 與 Validation-only 選模。比較組為現有 `google/vit-base-patch16-224` 與
+`facebook/dinov3-vitb16-pretrain-lvd1689m`；兩者各取兩張圖的 CLS 串接，只訓練相同分類頭，
+不開 Test、不修改正式 encoder、RAG 或 Fusion。既有 ViT 特徵快取會直接重用，避免重複抽取；
+DINOv3 權重則需先接受官方 gated license 並登入 Hugging Face。
+
+工程 Smoke 先確認 gated 權重與 1,536 維雙圖特徵可正常產生；正式實驗再使用完整 1,381 個
+共同日期，每檔 966 Train／202 Validation、5 日 gap，三檔合計 2,898／606 筆。固定 seeds
+40～44、head LR=3e-4、weight decay=1e-3、dropout=0.1、最多 10 epochs、patience=3；Test
+全程 locked。預先通過門檻為 DINOv3−ViT 的 mean-ticker Validation macro F1 至少 +0.02，
+且五個 seeds 至少勝出四個。
+
+| Frozen backbone | 三檔平均 macro F1 | AAPL | NVDA | MSFT | Pooled macro F1 | Pooled log loss |
+|---|---:|---:|---:|---:|---:|---:|
+| ViT-B/16 | **0.3447 ± 0.0206** | **0.3712** | 0.3010 | **0.3618** | **0.3845** | **1.1530** |
+| DINOv3 ViT-B/16 | 0.3263 ± 0.0122 | 0.3469 | **0.3063** | 0.3258 | 0.3574 | 1.1673 |
+
+逐 seed 的 DINOv3−ViT 差值為 -0.0269／-0.0178／+0.0019／-0.0319／-0.0170；平均
+-0.0184 ± 0.0129，只勝 1/5 seeds，未通過預設門檻。探索性的 paired t-test 為
+`t(4)=-3.178, p=0.0336`，95% CI `[-0.0344, -0.0023]`；樣本只有五個 seeds，統計結果應
+保守解讀，但方向與預設 gate 一致。逐類別 F1 也全面下降：BEARISH 0.3932→0.3641、NEUTRAL
+0.4565→0.4480、BULLISH 0.3037→0.2601。DINOv3 只在 NVDA 小幅增加 +0.0053，在 AAPL／MSFT
+分別下降 -0.0243／-0.0360。特徵抽取耗時 109.2 秒，亦慢於 ViT 的 89.2 秒。
+
+**結論：在 frozen CLS＋線性分類頭協定下，DINOv3 沒有優於現有 ViT，不替換正式 encoder，
+也不投入 DINOv3 的 H_v／RAG／Fusion 重建。** 這個結果不能外推到 DINOv3 LoRA、fine-tune、
+patch/register token pooling 或金融圖表預訓練；若國科會計畫需要，可把 DINOv3 列為已評估的
+自監督 backbone baseline，而不是預定的最終模型。正式報告：
+`data/outputs/experiments/dinov3_comparison/AAPL_NVDA_MSFT/run/report.json`；Smoke 報告：
+`data/outputs/experiments/dinov3_comparison/AAPL_NVDA_MSFT/smoke_60/report.json`。
+
 **怎麼判斷有沒有進步**：不是只看 accuracy 這一個數字，因為之前的模型可能只是學會「都猜 NEUTRAL」就拿到 0.459。更要看 BEARISH/BULLISH 的 f1 有沒有從 0 附近的塌縮狀態動起來，那才代表模型真的開始從新聞（或其他輸入）學到區分漲跌的訊號，不是準確率數字好看但其實沒學到東西。
 
 ## 三、診斷實驗細節：新聞有無 × 類別加權有無（2026-08-08）
@@ -477,3 +611,141 @@ PPO 的持倉介於 0.6634%～0.6679%，平均 0.6657%、標準差只有 0.00094
    Validation macro F1 穩定高於簡單基準後，再值得重跑昂貴的下游。
 5. 清理兩個 provenance 問題：淘汰舊 `AAPL_manifest.json`，並統一事件報告檔名。這不會改變
    本次數字，但可防止之後讀錯報告。
+
+## 2026-10-01：ViT 跨股票共用分類頭實驗實作（待真實資料執行）
+
+依使用者確認，新增獨立 `experiments/vision/run_vit_cross_stock.py`，比較 Frozen 與 LoRA r4。
+目標是從雙圖學到可泛化到未見股票的漲跌訊號，**不改正式 Fusion 或舊三分類實驗**。
+
+- 股票配置：`configs/experiments/vit_cross_stock.json`，手選跨產業大型美股 30 train／10 validation／10 test，非 point-in-time S&P 500 全集，有股票池選擇與存活者偏差。
+- 日期：2016–2021 train、2022–2023 validation、2024–2025 test。按實際未來第 5 交易日排除跨期間 label；未見股票不參與任何日期的梯度更新，也不重訓新 probe head。
+- 圖形：過去 20 交易日 K 線與成交量雙圖，224×224，所有股票共用 ViT 與二分類頭。
+- Label：調整後 close 的未來 5 日報酬正負（DOWN／UP），精確零排除；yfinance 明確指定 `auto_adjust=True, actions=True` 並保存來源政策。不與舊三分類 F1 直接比較。
+- 訓練：Frozen 僅更新頭；LoRA 最後 4 blocks query／value，r4／alpha8／dropout0.1。預設 seeds40、41、42；主指標 `validation_unseen.mean_ticker_macro_f1`。數值 Logistic Regression 與訓練集多數類別作基準。
+- 防呆：資料／模型／訓練程式與配置雜湊鎖定，產圖及 Frozen 特徵可沿用，完整策略跳過；中斷策略從頭重跑。預設 Test locked，完整訓練後另加 `--evaluate-test` 才推論，開始前保存 `test_opened.json`，中斷不抹掉已開啟狀態。
+- 報告：每策略完成更新 JSON、MD、訓練曲線、二分類混淆矩陣及產業／年份圖，全部位於 `data/outputs/experiments/vit_cross_stock/`。共用 renderer 已支援新 schema，docs 不另存圖。
+
+驗證：`python -m unittest discover -s tests -v` 共 17 項通過；新增 10 項含合成 OHLCV＋本機小型隨機 ViT 的離線端到端測試，檢查 Frozen／LoRA 更新範圍、同 seed 頭初始化、切分、續跑、報告、設定不符拒絕與 Test 開啟狀態。**尚未下載這輪 50 檔真實資料，也未啟動正式大模型訓練；目前沒有改善準確度的結論。**
+
+執行：[操作說明](../experiments/vision/README_cross_stock.md)；規劃：[實驗計畫](experiment_plan_vit_cross_stock.md)。
+
+### 同日：真實 Smoke 的 Tee 相容性修正
+
+使用者已完成 7 檔 Smoke 的資料準備（manifest `7b0683e642155d3f`），但載入 Google ViT 時因 `Tee` 缺少 `isatty()` 中斷。Transformers 在載入含預訓練分類頭的 checkpoint 至 `AutoModel` 時會產生 UNEXPECTED／MISSING 報告，該報告檢查 `sys.stdout.isatty()`；原本完全匹配的小型 ViT 測試未涵蓋這條路徑。
+
+修正：Tee 新增 `isatty()`，其餘 `encoding`／`fileno` 等介面委派到原始 console；新增分類 checkpoint 載入回歸測試及 stream 介面測試。完整測試共 **19 項通過**，並另以使用者既有快取的真實 Google ViT 驗證載入，沒有執行長時間訓練或開啟 Test。
+
+原 Smoke 的資料配置雜湊未改，既有 OHLCV／雙圖可沿用；runner 原始碼雜湊已變，為保留舊失敗 run 與設定鎖定，下一次命令使用 `--smoke --run-name smoke_tee_fix`。原失敗紀錄不刪除。目前仍待使用者完成真實 Frozen／LoRA Smoke，不能作效果結論。
+
+### 同日：真實 Smoke 成功完成，正式資料仍待準備
+
+使用者回報完成，已核對 `vit_cross_stock/smoke/7b0683e642155d3f/smoke_tee_fix/report.json`、MD、terminal.log 與 checkpoint。Frozen／LoRA r4 各完成 seed40／1 epoch，`complete=true`；`test_was_opened=false` 且沒有 `test_opened.json`，沒有 Test 指標。4 張圖（overview、training_curves、confusion_matrices、group_breakdown）皆已輸出。
+
+樣本：Train 24、Validation seen 24、Validation unseen 16；保留 Test seen 24／unseen 16，未評估。Train 股票 AAPL／MSFT／NVDA，未見 Validation 為 ADBE／WFC；每檔 unseen 只有 8 筆。
+
+| 方法 | 未見 Validation 平均每股 Macro-F1 | Pooled accuracy | 正確筆數 |
+|---|---:|---:|---:|
+| Frozen | 0.5152 | 0.5625 | 9/16 |
+| LoRA r4 | 0.4182 | 0.5000 | 8/16 |
+| Numeric Logistic Regression | 0.5913 | 0.6250 | 10/16 |
+| Majority | 0.3590 | 0.5625 | 9/16 |
+
+LoRA−Frozen 平均每股 Macro-F1 = −0.0970。Frozen 與 LoRA 可訓練參數為 6,146／55,298，策略時間為 2.78／2.89 秒（Smoke 實測，不能直接當成全量時間預估）。**結論僅為程式／資料流程可跑通；24 筆訓練、1 epoch、1 seed，不能用來判定 LoRA 無效或選定正式勝者。** 舊三分類報告亦不可直接比較。
+
+另排查 log 的 `The y_prob values do not sum to one`：已保存 Frozen head／特徵的只讀重算顯示 float32 機率轉 float64 後，最大總和偏差 5.96e-8，大於本機 sklearn 的 float64 檢查容差約 1.49e-8。評估函式現先檢查 [0,1] 範圍與總和接近 1（容差 1e-6），只校正微小誤差；真正不合法機率會拒絕，不單純關閉警告。Argmax／accuracy／Macro-F1 不因此改變，原 Smoke 報告與權重保持原樣。
+
+新增浮點捨入及不合法機率的回歸測試，完整測試共 21 項通過。下一步由使用者先跑 `--prepare-only` 產生正式 50 檔資料，完成後检查各股票日期／類別／樣本覆蓋，再安排計時與正式多 seed 訓練。此輪沒有替使用者啟動長時間工作或開啟 Test。
+
+實際報告：[Smoke report.md](../data/outputs/experiments/vit_cross_stock/smoke/7b0683e642155d3f/smoke_tee_fix/report.md)。
+
+### 2026-10-02：跨股票正式資料準備完成
+
+使用者已完成 `--prepare-only`。正式 dataset fingerprint 為 `14c913bcec83cfba`；已核對
+manifest、`rows.jsonl` 與圖片完整性，Train／Validation 的檔案雜湊、日期邊界及二元 label
+均能通過載入驗證。Test 僅存在 manifest 中，`test_was_evaluated=false`，本次沒有載入 Test
+圖片進行模型推論或計算指標。
+
+| Split | 股票數 | 樣本數 | DOWN | UP |
+|---|---:|---:|---:|---:|
+| Train（2016–2021，已見股票） | 30 | 45,095 | 19,378（43.0%） | 25,717（57.0%） |
+| Validation seen（2022–2023） | 30 | 14,872 | 7,115（47.8%） | 7,757（52.2%） |
+| Validation unseen（2022–2023） | 10 | 4,955 | 2,345（47.3%） | 2,610（52.7%） |
+| Test seen（2024–2025，封存） | 30 | 14,893 | 未評估 | 未評估 |
+| Test unseen（2024–2025，封存） | 10 | 4,962 | 未評估 | 未評估 |
+
+共 50 檔、84,777 個樣本，每筆兩張 224×224 PNG，合計 169,554 張。dataset 約占 1.1 GB，
+其中 charts 約 993 MB；空間主要來自圖片數量，而非單張尺寸。正式訓練尚未開始，因此目前
+仍沒有 Frozen 與 LoRA 在大樣本上的效果結論。下一步先跑單一 seed、1 epoch 的 timing run，
+確認全量特徵抽取與 LoRA 訓練的實際耗時，再決定是否直接執行 3 seeds、最多 10 epochs。
+
+### 同日：全量單 seed／1 epoch timing 結果
+
+使用者完成 `--seeds 40 --epochs 1 --run-name timing`。run 狀態完整，Test 顯示 LOCKED，
+`test_was_opened=false`。主指標仍為完全未參與梯度更新的 10 檔 Validation 股票之
+`mean_ticker_macro_f1`。
+
+| 方法 | Unseen mean-ticker Macro-F1 | Pooled accuracy | Balanced accuracy | ROC-AUC | Log loss |
+|---|---:|---:|---:|---:|---:|
+| Frozen | 0.4471 | 0.4892 | 0.5049 | 0.5026 | 0.7152 |
+| LoRA r4 | **0.4776** | 0.4928 | 0.5025 | 0.5027 | 0.7085 |
+| Numeric Logistic | **0.4803** | **0.5068** | 0.4964 | 0.4882 | **0.6935** |
+| Majority UP | 0.3448 | **0.5267** | 0.5000 | 0.5000 | 17.0580 |
+
+LoRA − Frozen 的 mean-ticker Macro-F1 為 +0.0304，且 10/10 檔 unseen 股票的 Macro-F1
+都提高；2022、2023 及所有十個產業點也都高於 Frozen。不過這個改善主要來自預測類別較
+平均：Frozen 在 unseen 只預測 20.6% UP，LoRA 為 31.9%；LoRA 的 DOWN／UP F1 分別為
+0.5606／0.4004。實際標籤則有 52.7% UP。
+
+更重要的是，LoRA 對真實 DOWN 與 UP 樣本給出的平均 UP 機率只有 0.466691 與 0.467279，
+幾乎沒有分離；ROC-AUC=0.5027、balanced accuracy=0.5025 也都接近隨機。故目前只能說 LoRA
+修正了 Frozen 過度預測 DOWN 的傾向，**不能宣稱已學會可泛化的漲跌訊號**。它在主指標上
+仍略低於只使用 10 個數值特徵的 Logistic Regression（差 0.0027），accuracy 也低於多數類
+基準；一個 seed 無法估計訓練波動。
+
+耗時方面，Frozen 共 1,967.5 秒（32 分 48 秒），其中約 32 分 39 秒是首次抽取 Train／
+Validation 特徵，真正一個 head epoch 約 8.9 秒；380 MB 特徵快取已保存，後續同模型資料可
+直接沿用。LoRA 一個 epoch 為 3,168.6 秒（52 分 49 秒）。若直接跑 3 seeds、最多 10 epochs，
+LoRA 最壞約需 26.4 小時，因此不建議現在立刻開 Test 或直接跑滿。下一個較省成本的判別實驗
+是 seed40 跑 3 epochs，觀察 unseen ROC-AUC／balanced accuracy 是否離開 0.5，以及主指標
+是否穩定超過 Numeric Logistic；若只改變分類門檻而沒有排序能力，再增加 seeds 的價值有限。
+
+實際報告：[Timing report.md](../data/outputs/experiments/vit_cross_stock/runs/14c913bcec83cfba/timing/report.md)。
+
+### 2026-10-02：全量 seed40／3 epochs pilot 結果
+
+使用者完成 `--seeds 40 --epochs 3 --run-name pilot3`；報告完整且 Test 維持 LOCKED。
+Frozen 特徵快取成功沿用，3 epochs 共 27.2 秒；LoRA 3 epochs 共 11,240.0 秒（約 3 小時
+7 分 20 秒）。
+
+| 方法 | Best epoch | Unseen mean-ticker Macro-F1 | Accuracy | Balanced accuracy | ROC-AUC | Log loss |
+|---|---:|---:|---:|---:|---:|---:|
+| Frozen | 3 | **0.4922** | 0.4971 | **0.4951** | **0.4909** | **0.7095** |
+| LoRA r4 | 3 | 0.4908 | **0.4979** | 0.4944 | 0.4844 | 0.7136 |
+| Numeric Logistic | — | 0.4803 | **0.5068** | **0.4964** | 0.4882 | **0.6935** |
+
+依既定主指標，Frozen 比 LoRA 高 0.0014，LoRA 僅在 4/10 檔 unseen 股票勝過 Frozen。
+兩種 ViT 的 Macro-F1 都略高於 Numeric Logistic，但 accuracy、balanced accuracy、ROC-AUC
+與 log loss 沒有同步改善，因此不能把這個差距解讀為方向預測能力。
+
+學習曲線顯示：Frozen unseen mean-ticker Macro-F1 為 0.4471 → 0.4825 → 0.4922；LoRA 為
+0.4776 → 0.4782 → 0.4908。相對地，Frozen unseen ROC-AUC 為 0.5026 → 0.4854 → 0.4909；
+LoRA 為 0.5027 → 0.4866 → 0.4844。LoRA unseen log loss 也從第 1 epoch 的 0.7085 惡化到
+0.7136。也就是 Macro-F1 上升主要來自預測比例逐漸接近兩類各半，而非正負樣本的分數分離
+變好。第 3 epoch 的平均 UP 機率甚至在真實 DOWN 樣本較高（Frozen 0.5110 vs 0.5084；
+LoRA 0.5180 vs 0.5127），與低於 0.5 的 AUC 一致。
+
+結論：現有 Google ViT 圖像表示加上 LoRA r4，尚無可泛化漲跌訊號證據；目前不應開 Test，
+也不建議直接執行昂貴的 3-seed／10-epoch run。主指標需搭配 ROC-AUC、balanced accuracy 與
+log loss 的 sanity gate，否則隨機但預測比例平衡的分類器也可能獲得接近 0.5 的 Macro-F1。
+
+另確認 terminal 最後 `[report] markdown`／`[report] figures` 各出現兩次不是重複訓練：最後
+一個 strategy 完成時會先呼叫 renderer 產生增量報告，訓練迴圈結束後又呼叫一次產生最終報告。
+兩次覆寫相同輸出，數值與 checkpoint 沒有重複計算；屬於無害但可清理的重複渲染。
+
+實際報告：[Pilot3 report.md](../data/outputs/experiments/vit_cross_stock/runs/14c913bcec83cfba/pilot3/report.md)。
+
+### 2026-10-02：ViT 實驗程式封存
+
+完成結果整理後，已移除過往 ViT 訓練 runner、實驗模型、跨股票資料準備程式與專用測試，避免已結束的探索程式持續混在正式專案入口中。正式 `module_b_encoder` 沒有變更；原始 `report.json`、`report.md`、圖表、history 與 predictions 仍保留在 `data/outputs/experiments/`。
+
+統一結論、各實驗可比性與結果來源見 [ViT 實驗總結](vit_experiments_summary_2026-10-02.md)。保留的 `render_experiment_report.py`、`visualize_comparison_report.py` 與 `cross_stock_report.py` 可由既有 JSON 重建報告。若未來要跑新的 label／horizon／SMA／walk-forward 實驗，需另外建立新版 runner，不覆寫歷史輸出。

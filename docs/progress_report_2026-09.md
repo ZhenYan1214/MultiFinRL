@@ -75,6 +75,12 @@ LoRA 正式實驗只對最後四個 ViT blocks 的 attention query/value 掛 ran
 完全打平，表示效果仍受股票別影響。正式 pipeline 因此繼續使用 Frozen，不先投入 Fusion 重建；
 下一步改為增加跨產業股票／新 holdout 或新 walk-forward。完整方法與限制見決議 #81～#83。
 
+另完成 Frozen ViT-B/16 與 Frozen MaxViT-T 的五 seed、validation-only 對照。三股票 mean-ticker
+macro F1 為 ViT 0.3447±0.0206、MaxViT 0.3374±0.0205；MaxViT 平均差 -0.0073±0.0220，
+只勝 2/5，未通過 +0.02 且 4/5 勝出的門檻。MaxViT 改善 BEARISH F1（0.3932→0.4321），卻讓
+BULLISH F1 由 0.3037 降到 0.2281；正式 pipeline 因此維持 Frozen ViT-B/16，不重建 Fusion。
+完整方法與限制見決議 #88。
+
 ### 事件抽取方法比較
 
 | 方法 | Precision | Recall | F1 |
@@ -109,6 +115,6 @@ LLM 版全量 1381 天已跑完，401 天判斷有事件發生。此項為 Track
 ## 下一步建議
 
 1. 補跑 `evaluate.py --llm_judge` 驗證敘述文字品質，成本低、不需重新訓練。
-2. ViT LoRA 五 seed 未通過穩定門檻；若續做，先增加跨產業股票與新 holdout／walk-forward，不直接進 Fusion。
+2. ViT LoRA 與 MaxViT-T 都未通過穩定門檻；若續做，先增加跨產業股票與新 holdout／walk-forward，不直接進 Fusion。
 3. `fetch_transcripts.py` 已改用 Alpha Vantage API，待本機執行取得真實法說會逐字稿。
 4. 多資產回測：需先完成上述擴充實驗的資料，才有意義動工。
