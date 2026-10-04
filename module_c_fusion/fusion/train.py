@@ -486,6 +486,8 @@ def main():
     ap.add_argument("--apply_checkpoint", default=None,
                     help="套用既有 checkpoint 產生 Z_fused，完全不訓練——測試共用融合層對"
                          "沒訓練過的股票的泛化能力用，搭配 --ticker 指定要套用在哪支股票")
+    ap.add_argument("--run_id", default=None,
+                    help="同一次 pipeline 共用的 YYYYMMDD_HHMMSS；寫入報告供一致性檢查")
     args = ap.parse_args()
 
     if args.epochs < 1:
@@ -523,7 +525,8 @@ def main():
         from module_c_fusion.fusion.consolidate import build_index, save_index
         index_data = build_index(ticker)
         if index_data:
-            save_index(ticker, index_data, checkpoint_path=args.apply_checkpoint)
+            save_index(ticker, index_data, checkpoint_path=args.apply_checkpoint,
+                       run_id=args.run_id)
 
         date_range = [export_days[0][0], export_days[-1][0]] if export_days else None
         log_run("apply_checkpoint", ticker, len(export_days), 0, args.batch, args.lr, [],
@@ -600,6 +603,7 @@ def main():
                split_manifest=", ".join(str(paths.temporal_split_path(t)) for t in tickers))
 
         write_json({
+            "run_id": args.run_id,
             "protocol": "strict_temporal_v1",
             "tickers": tickers,
             "split_manifests": {
@@ -654,6 +658,7 @@ def main():
                best_epoch=best_epoch,
                split_manifest=str(paths.temporal_split_path(ticker)))
         write_json({
+            "run_id": args.run_id,
             "protocol": manifest["protocol"],
             "ticker": ticker,
             "split_manifest": str(paths.temporal_split_path(ticker)),
@@ -675,7 +680,8 @@ def main():
         for exported_ticker in exported_tickers:
             index_data = build_index(exported_ticker)
             if index_data:
-                save_index(exported_ticker, index_data, checkpoint_path=ckpt)
+                save_index(exported_ticker, index_data, checkpoint_path=ckpt,
+                           run_id=args.run_id)
 
 
 if __name__ == "__main__":

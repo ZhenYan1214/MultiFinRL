@@ -71,7 +71,7 @@ py -m module_b_encoder.event_extraction --ticker AAPL
 # --method llm 可切換成 LLM 版（需 API 金鑰，見 docs/spec_b_event_extraction_llm.md）
 ```
 
-## C：Fusion + 驗證 + RL + 回測
+## C：Fusion + 驗證（第一階段 pipeline）
 
 ```bash
 py -m module_c_fusion.fusion.train --fake --n 32 --epochs 1
@@ -100,6 +100,15 @@ py -m module_c_fusion.validation.classifier --ticker AAPL --weighted
 py -m module_c_fusion.validation.event_validation_head --ticker AAPL
 # 用 Z_fused 做事件類型多標籤驗證（7 類），也沿用 Train/Validation/Test manifest
 # 需要 data/labels/event_ground_truth/AAPL.json
+```
+
+### [第二階段 - Pending] RL + 回測
+
+以下模組與歷史實驗仍保留，但目前不由 `scripts/run_pipeline.py` 自動執行；待多資產
+state／action／reward 與回測協定確認後再接回正式 pipeline。需要檢查既有單資產 baseline
+時仍可手動執行：
+
+```bash
 
 py -m module_c_fusion.rl.train_ppo --ticker AAPL
 # 訓練 PPO 投資組合配置 agent，存到 data/outputs/checkpoints/ppo_agent_AAPL.zip
@@ -146,6 +155,9 @@ py scripts/run_pipeline.py --fake
 # 只驗證 B 產出的格式 C 讀不讀得進去，不是真的分析
 
 py scripts/run_pipeline.py --ticker AAPL
-# 真跑一次完整流程：抓資料 → 畫圖 → 彙整 → 產向量 → 訓練 → 驗證 → 回測
+# 真跑第一階段：抓資料 → 畫圖 → 彙整 → 產向量 → Fusion 訓練 → 分類驗證
+# 完成後自動輸出 data/outputs/reports/{YYYYMMDD_HHMMSS}/report.md、report.json 與 figures/
+# run_id 資料夾不含 ticker；ticker、macro/equity 模式與來源 provenance 都寫在報告內
+# [第二階段 - Pending] 不會自動執行 RL 或 Backtest
 # 用 --skip_transcripts 可以跳過法說會抓取那步（foolcalls 套件不穩定時用）
 ```

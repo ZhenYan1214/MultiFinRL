@@ -8,10 +8,11 @@ MultiFinRL turns three kinds of daily market data — two market charts (candles
 
 | Phase | Goal |
 |---|---|
-| Phase 1 | Build the full data-to-`Z_fused` pipeline; validate `Z_fused` quality via market-sentiment classification and event extraction; run a simple portfolio backtest (single-stock position sizing or a small multi-asset mix). |
+| Phase 1 | Build the full data-to-`Z_fused` pipeline; validate `Z_fused` quality via market-sentiment classification and event extraction. |
 | Phase 2 | Connect `Z_fused` to a PPO agent for portfolio allocation; run a full backtest; compare performance with and without RL (Sharpe ratio, max drawdown, etc.). |
 
-Both phases run within the same year and the pipeline is expected to cover the output of both — classification, event extraction, a simple backtest, and an RL-based backtest — not one phase per year.
+Both phases remain in the project scope. The current automated pipeline covers Phase 1 only;
+**[第二階段 - Pending]** RL and backtesting will be reconnected after the multi-asset protocol is finalized.
 
 ## System Architecture
 
@@ -29,8 +30,10 @@ flowchart LR
         C1a["Cross-Modal\nTransformer"]
         C1b["Z_fused"]
     end
-    subgraph C2["Track C — Validation, RL, Backtest"]
+    subgraph C2["Track C — Validation"]
         C2a["Sentiment /\nevent classification"]
+    end
+    subgraph C3["[第二階段 - Pending] RL, Backtest"]
         C2b["PPO portfolio\nagent"]
         C2c["Backtest\n(Sharpe, MDD, return)"]
     end
@@ -119,6 +122,8 @@ MultiFinRL/
 │   ├── validation/
 │   │   ├── classifier.py            # diagnostic probe: Z_fused -> market sentiment (3-class)
 │   │   └── event_validation_head.py # diagnostic probe: Z_fused -> event types (7-class multi-label)
+│   ├── reporting/
+│   │   └── pipeline_report.py       # Phase 1 JSON -> report.md + provenance + figures
 │   ├── decoder/                     # Z_fused -> structured belief narrative (proposal sec. 3.4/3.5)
 │   │   ├── model.py                 # ZFusedProjector + QLoRA LLaMA-2-7b backbone (4-bit)
 │   │   ├── train.py                 # QLoRA fine-tuning, L_belief loss, time-based train/val/test split, --resume
@@ -140,12 +145,12 @@ MultiFinRL/
 │       ├── render_experiment_report.py # report.json -> charts + readable Markdown
 │       └── README_cross_stock.md     # archived cross-stock design and result record
 ├── scripts/
-│   └── run_pipeline.py              # runs A -> B -> C end to end
+│   └── run_pipeline.py              # Phase 1: A -> B -> Fusion + classification validation
 └── data/                            # not tracked in git except data/labels/; synced locally/via cloud storage
     ├── raw/                         # Track A's raw inputs (ohlcv, charts, news, filings, transcripts)
     ├── processed/dataset/           # Track A's deliverable: one JSON per day
     ├── vectors/                     # Track B's deliverable: .npy vectors + index JSON
-    ├── outputs/                     # Track C's output: model checkpoints, Z_fused, backtest reports
+    ├── outputs/                     # Track C outputs; reports/{run_id}/ contains Phase 1 report bundles
     └── labels/                      # ground truth labels (event ground truth) — the one data/ subfolder tracked in git
 ```
 
@@ -177,7 +182,9 @@ Operational today, on AAPL:
 
 - Data (A): OHLCV, charts, recent news, and historical news (via the Alpaca News API, 2021–2026) are all in place. Filings, including 8-K, are fetched via the SEC EDGAR official API (`fetch_filings.py`; an alternate `edgartools`-based fetcher was evaluated as a candidate but never actually produced any data and has been removed, `docs/decisions.md` #31, #41). Earnings-call transcripts switched from an unreliable third-party scraper (`foolcalls`, never completed an end-to-end run, removed) to the official Alpha Vantage API (`fetch_transcripts.py`, needs `ALPHA_VANTAGE_API_KEY`).
 - Encoding (B): ViT and FinBERT encoders and FAISS-based RAG retrieval are working. Event extraction has a 149-day LLM-labeled ground truth (`data/labels/event_ground_truth/`) and two extraction methods: the default keyword rules (precision/recall/F1 0.162 / 0.868 / 0.273 on AAPL) and an LLM-based method (`--method llm`, `docs/spec_b_event_extraction_llm.md`) that measured 0.742 / 0.605 / 0.667 on the same 149-day sample (f1 +144%); a full 1381-day run has completed, with 401 days showing at least one detected event.
-- Fusion and validation (C): the Cross-Modal Transformer, held-out classification validation, event validation head (multi-label probe of Z_fused against the same ground truth, micro F1 0.229 on AAPL), PPO training (with optional `--curriculum` volatility-staged training), Integrated Gradients attribution on the PPO policy, and backtesting (buy-and-hold / rule-based / PPO strategies) all run end to end. Class-weighted training is the current default after diagnostic testing showed it was necessary for the model to learn anything from the news input at all.
+- Fusion and validation (C): the Cross-Modal Transformer, held-out classification validation, and event validation head (multi-label probe of Z_fused against the same ground truth, micro F1 0.229 on AAPL) are operational. Class-weighted training is the current default after diagnostic testing showed it was necessary for the model to learn anything from the news input at all. `scripts/run_pipeline.py` currently stops after Fusion and classification validation.
+- **[第二階段 - Pending] RL and backtesting:** the existing single-ticker PPO, Integrated Gradients, and buy-and-hold / rule-based / PPO backtest modules and historical results are retained, but they are no longer executed by `scripts/run_pipeline.py`. They will be reconnected after the multi-asset state/action/reward and evaluation protocol are finalized.
+- Reporting: every successful Phase 1 pipeline run writes `data/outputs/reports/{YYYYMMDD_HHMMSS}/report.md`, a frozen `report.json`, source JSON snapshots, and figures. The directory name is only the run ID; ticker and mode are recorded inside the report. Source run IDs, split counts, manifest paths, and Fusion checkpoint hashes must agree before a report is emitted.
 - Decoder (C, `module_c_fusion/decoder/`): implemented and training (2026-08). `Z_fused` is used as a soft-prompt prefix into a frozen, 4-bit-quantized LLaMA-2-7b fine-tuned with QLoRA (LoRA on all attention+MLP linear layers), generating a structured `<TREND>`/`<RISK_LEVEL>` belief plus a short narrative — this is the L_belief loss from the original proposal. Training targets (`y_belief`) are LLM-bootstrapped: trend reuses Track A's existing quantile label, an LLM (DeepSeek) judges risk level and writes the narrative from that day's news/filings/transcripts (1223+/1381 AAPL days generated so far). All modules now reuse A's `strict_temporal_v1` manifest: Train/Validation/Test follow time order, the two boundaries include a five-trading-day gap, and Test is not used for fitting or model selection. The evaluation script (`evaluate.py`) confirmed the pipeline is correct end to end — an epoch-1 checkpoint reached 30/30 structured-format accuracy — but trend/risk-level content accuracy is still low at that early stage and full training has not yet finished, so there are no final numbers yet.
 - A domain-gap comparison for ViT on candlestick charts vs. its natural-image pretraining has been run: removing the candlestick chart drops macro F1 by 51%, showing the current (non-domain-pretrained) ViT still contributes substantially (`docs/decisions.md` #46).
 
@@ -206,10 +213,10 @@ See each module's own `README.md` for how to run it.
 - B wires up ViT / FinBERT / RAG against synthetic data first — one image or chunk in, one correctly formatted vector out.
 - C wires up the Fusion Transformer against synthetic vectors — three vectors in, `Z_fused` out.
 
-**Phase 2 (once A has enough real data)**
+**[第二階段 - Pending] Phase 2 (once the multi-asset protocol is finalized)**
 - A keeps extending coverage.
 - B switches to real data, producing real `H_v` / `H_t` / `H_r`.
-- C switches to real vectors and begins actual training, RL, and backtesting.
+- C reconnects multi-asset RL and backtesting to the automated pipeline.
 
 ## Collaboration Guidelines
 

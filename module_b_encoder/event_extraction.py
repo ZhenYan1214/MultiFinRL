@@ -154,6 +154,8 @@ def main():
     ap.add_argument("--limit_to_ground_truth", action="store_true",
                     help="只處理 ground truth 涵蓋的日期（149 天），用來先驗證 LLM 方法"
                          "效果、不用付全量 1381 天的費用；--method keyword 時無意義")
+    ap.add_argument("--run_id", default=None,
+                    help="同一次 pipeline 共用的 YYYYMMDD_HHMMSS；寫入報告供一致性檢查")
     args = ap.parse_args()
     model = args.model or DEFAULT_MODEL[args.provider]
 
@@ -170,7 +172,12 @@ def main():
             raise SystemExit(f"--limit_to_ground_truth 需要 ground truth，找不到: {gt_path}")
         files = [f for f in files if f.stem in gt]
 
-    report = {"ticker": args.ticker, "method": args.method, "days": len(files)}
+    report = {
+        "run_id": args.run_id,
+        "ticker": args.ticker,
+        "method": args.method,
+        "days": len(files),
+    }
 
     if args.method == "keyword":
         per_day = {}

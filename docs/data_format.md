@@ -210,6 +210,13 @@ data/outputs/
 │   ├── classification_report_{TICKER}.json # 情緒分類準確率（對照 A 的 label）
 │   ├── ppo_train_report_{TICKER}.json   # PPO 訓練 provenance
 │   └── event_extraction_report.json    # 事件抽取 P/R/F1（B 提供）
+├── reports/
+│   ├── index.md                         # 第一階段 pipeline 報告索引
+│   └── {YYYYMMDD_HHMMSS}/               # run_id 不含 ticker；ticker 寫在報告內
+│       ├── report.json                   # 本次結果的結構化快照
+│       ├── report.md                     # 表格、解讀與圖表入口
+│       ├── sources/*.json                # manifest／metrics／provenance 原始快照
+│       └── figures/*.png                 # split、訓練曲線、分類、混淆矩陣等
 └── backtest/
     └── report_{TICKER}_{STRATEGY}_{YYYYMMDD}_{HHMMSS}.json # 報酬、Sharpe、MDD
 ```
@@ -225,6 +232,10 @@ data/outputs/
 | `split` | [N] | 每日對應 `train` / `validation` / `test` / 兩段 gap，來自共用 manifest |
 
 `train.py` 跑完整段時間範圍後自動產生此索引；分類驗證、回測、RL 訓練一律優先讀這個檔案。
+
+正式 `run_pipeline.py` 會在第一階段結束後自動產生 report bundle。同一份報告只允許合併
+相同 run_id、ticker、temporal protocol、split counts、manifest 與 Fusion checkpoint
+SHA256 的來源；任何一項不一致就拒絕產生 `report.md`，避免混入舊結果。
 
 ---
 

@@ -1,13 +1,16 @@
-"""完整 pipeline 入口：A -> B -> C 依序執行到底（第一階段成果展示用）。
+"""第一階段 pipeline 入口：A -> B -> C（Fusion／分類驗證）依序執行。
 
 平常各自開發時，直接跑自己模組的主程式即可，不需要這支；
 這支是給「要一次跑出一支股票從頭到尾的完整結果」時用的，涵蓋 A 的全部資料來源
 （股價、K 線圖、財報、新聞、法說會，或 ETF／指數的總經替代資料）、
-B 的向量與事件抽取、C 的訓練、驗證、回測。
+B 的向量與事件抽取，以及 C 的 Fusion 訓練與分類驗證。
+
+[第二階段 - Pending] RL 與 Backtest 模組目前保留，但不由本入口自動執行；待多資產
+state／action／reward 與回測協定確認後再接回 pipeline。
 
 用法：
     python scripts/run_pipeline.py --fake                     # 全 fake：驗證 B/C 銜接格式
-    python scripts/run_pipeline.py --ticker AAPL               # 真跑一次完整流程
+    python scripts/run_pipeline.py --ticker AAPL               # 真跑第一階段完整流程
     python scripts/run_pipeline.py --ticker AAPL --limit 50    # 只處理前 50 天（測試用）
     python scripts/run_pipeline.py --ticker AAPL --skip_transcripts
         # 跳過法說會逐字稿抓取（fetch_transcripts.py 現在改用 Alpha Vantage API，需要
@@ -22,6 +25,7 @@ import datetime as dt
 import subprocess
 import sys
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
@@ -60,6 +64,7 @@ def main():
 
     limit_args = ["--limit", str(args.limit)] if args.limit else []
     weighted_args = [] if args.no_weighted else ["--weighted"]
+    run_id = dt.datetime.now(ZoneInfo("Asia/Taipei")).strftime("%Y%m%d_%H%M%S")
 
     # A：資料工程
     run("module_a_data.crawler.fetch_ohlcv", "--ticker", args.ticker)
@@ -97,18 +102,32 @@ def main():
     if args.macro:
         print("\n[pipeline] macro 模式略過公司事件抽取：現有七類 ground truth 不適用 ETF／指數")
     else:
-        run("module_b_encoder.event_extraction", "--ticker", args.ticker)
+        run("module_b_encoder.event_extraction", "--ticker", args.ticker,
+            "--run_id", run_id)
 
-    # C：融合訓練 + 分類驗證 + RL + 回測
-    run("module_c_fusion.fusion.train", "--ticker", args.ticker, *weighted_args)
-    run("module_c_fusion.validation.classifier", "--ticker", args.ticker, *weighted_args)
-    run("module_c_fusion.rl.train_ppo", "--ticker", args.ticker)
-    for strategy in ("buy_and_hold", "rule_based", "ppo"):
-        strategy_args = weighted_args if strategy == "rule_based" else []
-        run("module_c_fusion.backtest.backtest", "--ticker", args.ticker,
-            "--strategy", strategy, *strategy_args)
+    # C（第一階段）：融合訓練 + 分類驗證
+    run("module_c_fusion.fusion.train", "--ticker", args.ticker,
+        "--run_id", run_id, *weighted_args)
+    run("module_c_fusion.validation.classifier", "--ticker", args.ticker,
+        "--run_id", run_id, *weighted_args)
 
-    print("\n[pipeline] A -> B -> C 完成")
+    # 將這次 pipeline 的來源 JSON 凍結成一份可追溯的 Markdown＋圖表報告。
+    try:
+        run("module_c_fusion.reporting.pipeline_report", "--ticker", args.ticker,
+            "--run_id", run_id)
+    except subprocess.CalledProcessError as error:
+        print(f"\n[pipeline] WARNING: 模型產物已完成，但報告產生失敗：{error}")
+
+    # [第二階段 - Pending] 保留原始 RL／Backtest pipeline，現階段先不執行。
+    # 待多資產 state／action／reward 與回測協定確認後，再解除下列註解：
+    # run("module_c_fusion.rl.train_ppo", "--ticker", args.ticker)
+    # for strategy in ("buy_and_hold", "rule_based", "ppo"):
+    #     strategy_args = weighted_args if strategy == "rule_based" else []
+    #     run("module_c_fusion.backtest.backtest", "--ticker", args.ticker,
+    #         "--strategy", strategy, *strategy_args)
+
+    print("\n[pipeline] 第一階段 A -> B -> C（Fusion + 分類驗證）完成")
+    print("[pipeline] [第二階段 - Pending] RL 與 Backtest 未執行")
 
 
 if __name__ == "__main__":

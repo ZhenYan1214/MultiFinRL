@@ -21,6 +21,7 @@ DATASET = DATA / "processed" / "dataset"   # A 的交付物
 TEMPORAL_SPLITS = DATA / "processed" / "temporal_splits"  # 共用時間切分 manifest
 VECTORS = DATA / "vectors"                  # B 的交付物
 OUTPUTS = DATA / "outputs"                  # C 的產出
+PIPELINE_REPORTS = OUTPUTS / "reports"      # 每次正式 pipeline 的 Markdown／圖表 bundle
 LABELS = DATA / "labels"                    # 人工／LLM 標記的答案卷（進版本控制，見 .gitignore）
 
 
@@ -82,3 +83,8 @@ def ppo_train_report_path(ticker: str, *, fake: bool = False) -> Path:
 def backtest_report_path(ticker: str, strategy: str, run_id: str) -> Path:
     """回測報告同時含 ticker、strategy 與秒級 run_id，不同策略不會在同秒互蓋。"""
     return OUTPUTS / "backtest" / f"report_{ticker}_{strategy}_{run_id}.json"
+
+
+def pipeline_report_dir(run_id: str) -> Path:
+    """Pipeline 報告只以秒級 run_id 分目錄；ticker 寫在報告內容，不放入路徑。"""
+    return PIPELINE_REPORTS / run_id
