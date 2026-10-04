@@ -14,6 +14,12 @@ chart:
   # 只要 build_dataset 寫出的 chart.inputs 路徑與此順序一致即可。
   vision_inputs: [candlestick, volume]
 
+# ETF／指數使用 `run_pipeline.py --macro` 時的視覺輸入：K 線＋FOMC SEP 點陣圖。
+# FRED 指標與 FOMC 新聞另外走 H_t/H_r；雙圖 shape 契約維持不變。
+macro:
+  vision_inputs: [candlestick, macro_dot_plot]
+  news_backfill_days: 7
+
 label:
   horizon_trading_days: 5   # 未來第 5 個交易日收盤 vs 當日收盤
   # 2026-08 起改用分位數門檻（decisions.md #30，取代原本固定 ±2%，見 #16）：

@@ -19,7 +19,12 @@ pi(a|x) 這裡取 policy 動作分布的 mean（確定性動作），不是隨�
     python -m module_c_fusion.explainability.integrated_gradients --ticker AAPL
 
 前置：先跑過 module_c_fusion.fusion.train（產出 Z_fused）跟 module_c_fusion.rl.train_ppo
-（產出 data/outputs/checkpoints/ppo_agent.zip）。
+（產出 data/outputs/checkpoints/ppo_agent_{TICKER}.zip）。
+
+目前歸因對象是單一 ticker agent 的一維持倉 action，屬於工程 baseline。依計畫書第 15～16
+頁，最終 multi-asset PPO 會輸出 N 維資產權重；屆時 Integrated Gradients 應明確指定要解釋
+哪個資產權重（或整體 portfolio objective），並把完整前期持倉向量納入歸因。本次先記錄
+介面差距，不改現有計算。
 """
 import argparse
 
@@ -123,7 +128,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ticker", default="AAPL")
     ap.add_argument("--n_steps", type=int, default=50, help="Integrated Gradients 積分黎曼和切割數")
-    ap.add_argument("--agent", default=None, help="不指定就用 data/outputs/checkpoints/ppo_agent.zip")
+    ap.add_argument("--agent", default=None,
+                    help="不指定就用 data/outputs/checkpoints/ppo_agent_{TICKER}.zip")
     args = ap.parse_args()
 
     idx = load_index(args.ticker)
@@ -136,7 +142,7 @@ def main():
     z_seq = np.stack([row[1] for row in test_rows])
     z_dim = z_seq.shape[1]
 
-    agent_path = args.agent or (paths.OUTPUTS / "checkpoints" / "ppo_agent.zip")
+    agent_path = args.agent or paths.ppo_checkpoint_path(args.ticker)
     model = load_agent(agent_path)
 
     prev_weights = rebuild_holding_trajectory(model, z_seq)

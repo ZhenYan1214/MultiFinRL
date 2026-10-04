@@ -1,4 +1,4 @@
-"""彙整 OHLCV / 雙視覺輸入 / 新聞 / 文件 Chunk / 標籤，輸出每日 JSON。
+"""彙整 OHLCV / 雙視覺輸入 / 新聞 / 文件或總經 context / 標籤，輸出每日 JSON。
 
 輸出：data/processed/dataset/{TICKER}/{YYYY-MM-DD}.json（一天一筆）
 寫出前必須通過 shared.schemas.validate_daily_record()。
@@ -8,10 +8,12 @@
     python -m module_a_data.preprocess.chart_generator --ticker AAPL
     python -m module_a_data.crawler.fetch_news --ticker AAPL       # 可先跳過，新聞為空陣列
     python -m module_a_data.crawler.fetch_filings --ticker AAPL    # 可先跳過，chunk 為空陣列
+    python -m module_a_data.crawler.fetch_macro --kind all         # ETF／指數 --macro 模式
 
 用法：
     python -m module_a_data.build_dataset --ticker AAPL --limit 100   # 先交付 50-100 筆樣本
     python -m module_a_data.build_dataset --ticker AAPL               # 全量
+    python -m module_a_data.build_dataset --ticker SPY --macro        # 總經模式，圖片讀 macro.vision_inputs
 """
 import argparse
 import datetime as dt
@@ -21,6 +23,7 @@ from shared.temporal_split import build_temporal_manifest, save_temporal_manifes
 from shared.utils import load_config, read_json, write_json
 from module_a_data.crawler.fetch_ohlcv import load_ohlcv
 from module_a_data.labeling import build_price_and_label, compute_quantile_thresholds
+from module_a_data.macro_context import MacroDataStore
 from module_a_data.preprocess.chunker import make_chunks
 from module_a_data.preprocess.text_cleaner import clean
 
@@ -93,7 +96,18 @@ def collect_transcript_chunks(ticker: str, date: str, max_tokens: int) -> list[d
                        max_tokens, date_key="event_date")
 
 
-def _chart_input_path(ticker: str, date: str, input_type: str):
+def _vision_input_types(cfg: dict, macro_store: MacroDataStore | None) -> list[str]:
+    if macro_store is not None:
+        return cfg.get("macro", {}).get("vision_inputs", ["candlestick", "volume"])
+    return cfg["chart"].get("vision_inputs", ["candlestick", "volume"])
+
+
+def _chart_input_path(
+    ticker: str,
+    date: str,
+    input_type: str,
+    macro_store: MacroDataStore | None = None,
+):
     """把 config 的視覺輸入名稱解析成圖檔路徑；technical/<set> 可供未來擴充。"""
     if input_type == "candlestick":
         return paths.RAW_CHARTS / ticker / f"{date}.png"
@@ -102,21 +116,32 @@ def _chart_input_path(ticker: str, date: str, input_type: str):
     if input_type.startswith("technical/"):
         indicator_set = input_type.removeprefix("technical/")
         return paths.RAW_CHARTS / ticker / "technical" / indicator_set / f"{date}.png"
+    if input_type == "macro_dot_plot":
+        if macro_store is None:
+            raise ValueError("macro_dot_plot 只能在 --macro 模式使用")
+        dot_plot = macro_store.dot_plot_as_of(date)
+        return macro_store.root / dot_plot["path"] if dot_plot else None
     raise ValueError(f"不支援的 chart.vision_inputs 類型: {input_type}")
 
 
 def build_daily_record(ticker: str, date: str, df, cfg,
-                       bullish_threshold: float, bearish_threshold: float) -> dict | None:
+                       bullish_threshold: float, bearish_threshold: float,
+                       macro_store: MacroDataStore | None = None) -> dict | None:
     """組一筆每日 JSON；K 線圖不存在或標籤產不出來（資料頭尾）回傳 None。
 
     bullish_threshold/bearish_threshold：只用 train 日期算一次（見 main()），
     再固定套用到 train/validation/test，不是每天或每個區間重算。
     """
-    input_types = cfg["chart"].get("vision_inputs", ["candlestick", "volume"])
+    input_types = _vision_input_types(cfg, macro_store)
     if len(input_types) != 2:
         raise ValueError(f"雙圖 ViT 目前要求 chart.vision_inputs 恰好 2 項，實際為 {input_types}")
-    chart_paths = [_chart_input_path(ticker, date, input_type) for input_type in input_types]
-    if any(not path.exists() for path in chart_paths):
+    chart_paths = [
+        _chart_input_path(ticker, date, input_type, macro_store) for input_type in input_types
+    ]
+    if any(path is None or not path.exists() for path in chart_paths):
+        return None
+    macro = macro_store.build_daily_context(date) if macro_store else None
+    if macro_store and macro is None:
         return None
     pl = build_price_and_label(
         df, date,
@@ -127,7 +152,7 @@ def build_daily_record(ticker: str, date: str, df, cfg,
     if pl is None:
         return None
     max_tokens = cfg["text"]["max_chunk_tokens"]
-    return {
+    record = {
         "ticker": ticker,
         "date": date,
         "chart": {
@@ -145,23 +170,34 @@ def build_daily_record(ticker: str, date: str, df, cfg,
             "channels": cfg["chart"]["channels"],
         },
         "news": collect_news(ticker, date),
-        "filing_chunks": collect_filing_chunks(ticker, date, max_tokens),
-        "transcript_chunks": collect_transcript_chunks(ticker, date, max_tokens),
+        # ETF／指數沒有公司財報與法說會；--macro 模式用下方 macro context 取代。
+        "filing_chunks": [] if macro_store else collect_filing_chunks(ticker, date, max_tokens),
+        "transcript_chunks": [] if macro_store else collect_transcript_chunks(ticker, date, max_tokens),
         **pl,  # prices + label
     }
+    if macro is not None:
+        record["macro"] = macro
+    return record
 
 
-def eligible_dates(ticker: str, df, cfg) -> list[str]:
+def eligible_dates(
+    ticker: str,
+    df,
+    cfg,
+    macro_store: MacroDataStore | None = None,
+) -> list[str]:
     """列出能產生完整雙圖與未來報酬標籤的日期，不讀取未來文字內容。"""
     horizon = cfg["label"]["horizon_trading_days"]
-    input_types = cfg["chart"].get("vision_inputs", ["candlestick", "volume"])
+    input_types = _vision_input_types(cfg, macro_store)
     dates = []
     for index, timestamp in enumerate(df.index):
         if index + horizon >= len(df):
             continue
         date = timestamp.strftime("%Y-%m-%d")
-        if all(_chart_input_path(ticker, date, input_type).exists()
-               for input_type in input_types):
+        chart_paths = [
+            _chart_input_path(ticker, date, input_type, macro_store) for input_type in input_types
+        ]
+        if all(path is not None and path.exists() for path in chart_paths):
             dates.append(date)
     return dates
 
@@ -171,11 +207,19 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ticker", default=cfg["tickers"][0])
     ap.add_argument("--limit", type=int, default=None, help="只產前 N 筆（樣本交付用）")
+    ap.add_argument(
+        "--macro", action="store_true",
+        help="ETF／指數總經模式：圖片讀 macro.vision_inputs，加入 point-in-time 指標與新聞",
+    )
     args = ap.parse_args()
 
     df = load_ohlcv(args.ticker)
+    macro_cfg = cfg.get("macro", {})
+    macro_store = MacroDataStore(
+        news_backfill_days=macro_cfg.get("news_backfill_days", 7),
+    ) if args.macro else None
     horizon = cfg["label"]["horizon_trading_days"]
-    dates = eligible_dates(args.ticker, df, cfg)
+    dates = eligible_dates(args.ticker, df, cfg, macro_store)
     if args.limit:
         dates = dates[:args.limit]
     split_cfg = cfg.get("temporal_split", {})
@@ -185,7 +229,11 @@ def main():
         train_ratio=split_cfg.get("train_ratio", 0.7),
         validation_ratio=split_cfg.get("validation_ratio", 0.15),
         gap_trading_days=split_cfg.get("gap_trading_days", horizon),
-        metadata={"label_horizon_trading_days": horizon},
+        metadata={
+            "label_horizon_trading_days": horizon,
+            "macro_mode": args.macro,
+            "vision_input_types": _vision_input_types(cfg, macro_store),
+        },
     )
     bearish_threshold, bullish_threshold = compute_quantile_thresholds(
         df, horizon,
@@ -211,13 +259,14 @@ def main():
     n = 0
     for date in dates:
         record = build_daily_record(args.ticker, date, df, cfg,
-                                    bullish_threshold, bearish_threshold)
+                                    bullish_threshold, bearish_threshold, macro_store)
         if record is None:
             continue
         schemas.validate_daily_record(record)  # 不合法會 raise，直接中斷
         write_json(record, paths.daily_json(args.ticker, date))
         n += 1
-    print(f"[build_dataset] {args.ticker}: {n} records -> {paths.DATASET / args.ticker}")
+    mode = "macro" if args.macro else "equity"
+    print(f"[build_dataset] {args.ticker}: {n} records ({mode}) -> {paths.DATASET / args.ticker}")
 
 
 if __name__ == "__main__":

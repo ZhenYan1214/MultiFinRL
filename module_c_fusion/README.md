@@ -51,7 +51,7 @@ data/outputs/z_fused/{TICKER}_index.meta.json  # split manifest + Fusion checkpo
 All downstream consumers reuse `data/processed/temporal_splits/{TICKER}.json`. Any new task must reuse that manifest rather than calculate another 70/15/15 boundary. If the index wasn't generated automatically, rebuild it with the exact checkpoint that produced those vectors:
 
 ```bash
-python -m module_c_fusion.fusion.consolidate --ticker AAPL --checkpoint data/outputs/checkpoints/fusion.pt
+python -m module_c_fusion.fusion.consolidate --ticker AAPL --checkpoint data/outputs/checkpoints/fusion_AAPL.pt
 ```
 
 ## Notes

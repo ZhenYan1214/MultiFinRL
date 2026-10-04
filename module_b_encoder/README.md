@@ -6,12 +6,12 @@
 
 ## Responsibilities
 
-1. Encode the candlestick and auxiliary chart (currently volume) together with one shared-weight
+1. Encode the candlestick and auxiliary chart (volume for equities; FOMC dot plot for the current macro configuration) together with one shared-weight
    pretrained ViT (`encoders/vision_encoder.py`). **H_v** preserves both token grids as
    `[2, 197, 768]`; the second image can later be replaced by a technical-indicator chart without
    changing the encoder interface.
-2. Encode news text into a feature vector **H_t** with FinBERT or LLaMA (`encoders/text_encoder.py`).
-3. Build a FAISS vector index over filing/transcript chunks (`rag/vector_db.py`).
+2. Encode news text into a feature vector **H_t** with FinBERT or LLaMA (`encoders/text_encoder.py`). Macro mode prepends the point-in-time indicator snapshot and recent FOMC news.
+3. Build a FAISS vector index over filing/transcript chunks, or over traceable macro indicator/FOMC-news chunks in macro mode (`rag/vector_db.py`).
 4. Combine H_v and H_t into a query and retrieve the top-K (K=3) most relevant chunks to produce **H_r** (`rag/retriever.py`).
 5. Compare different ViT and text-encoder options and record which combination performs best.
 6. **Not a proposal-mandated step, kept as a Track A dataset-quality check** — extract notable financial events from A's raw news, filings, and transcripts, and evaluate against ground truth with precision / recall / F1 (`event_extraction.py`, keyword or LLM-based method via `--method`). This is a standalone analysis of A's raw data, separate from the H_v/H_t/H_r/Z_fused pipeline — it does not feed into steps 1-4 or 7, and does not validate Z_fused (that's `module_c_fusion/validation/event_validation_head.py`, which the formal proposal does explicitly require — see `docs/decisions.md` #37). Its only defensible role is confirming A's collected text substantively captures real events rather than noise; the 149-day sample result already establishes that, so there's no need to keep expanding or re-running this beyond what exists.
@@ -39,5 +39,8 @@ Entry point: `run_real()` in `generate_vectors.py` wires together `encoders/` an
 
 - Vector shapes are locked in once finalized; changing an encoder requires agreement across all three tracks.
 - `index.json` must record the encoder's HuggingFace model id and the `retrieved_chunk_ids` used.
+- Fake vectors are isolated under `data/vectors/_AAPL_FAKE/` (or the selected ticker's `_..._FAKE`
+  namespace) and never overwrite production dates. A `--limit` run also leaves the canonical full-period
+  FAISS index untouched.
 - ViT is pretrained on natural images, which is a domain gap from candlestick charts. This comparison is flagged in `docs/decisions.md` (#10) but has not actually been run — the encoder is currently used frozen, with no fine-tuning and no benchmark against the gap.
 - Event extraction has two methods, switchable with `--method` (`event_extraction.py`). `keyword` (default, free, `EVENT_KEYWORDS`) has no semantic understanding; measured on AAPL against the 149-day ground truth: precision=0.162, recall=0.868, f1=0.273 — recall is high (rarely misses a real event) but precision is low (plenty of false positives, e.g. it can't reliably tell "discussing" something apart from "announcing" it that day). See `docs/decisions.md` #32 for the full before/after breakdown and root-cause analysis. `llm` calls an LLM API per day (`--provider claude/openai/deepseek`, shared calling logic in `llm_client.py`) using the same prompt and judging standard as the ground truth labeling; supports resumable caching and a `--limit_to_ground_truth` flag to validate cheaply on the 149-day sample before spending on a full run. Design: `docs/spec_b_event_extraction_llm.md`. **Measured on AAPL with `--provider deepseek` on the 149-day sample: precision=0.742, recall=0.605, f1=0.667** — a large improvement over keyword (f1 +144%); precision is far better (the LLM rarely over-triggers) but recall dropped (it's more conservative and misses some real events, notably LAWSUIT: 21/36 caught, and the single MA day: missed entirely). See `docs/decisions.md` #35 for the full per-category breakdown. **Full 1381-day run on AAPL is complete**: 401 days have at least one detected event (LAWSUIT 218, PRODUCT_LAUNCH 129, MANAGEMENT_CHANGE 49, EARNINGS 43, GUIDANCE 38, DIVIDEND 34, MA 10); P/R/F1 is unchanged from the 149-day test since `evaluate()` only ever scores against the ground-truth-covered dates. `module_b_encoder/event_ground_truth_llm.py` and `event_extraction.py --method llm` share the same `llm_client.py`, so ground truth labeling and production extraction stay consistent.

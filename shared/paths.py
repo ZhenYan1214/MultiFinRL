@@ -56,3 +56,29 @@ def y_belief_path(ticker: str) -> Path:
     見 module_c_fusion/decoder/generate_y_belief.py。
     """
     return LABELS / "y_belief" / f"{ticker}.json"
+
+
+def fusion_checkpoint_path(tickers: str | list[str]) -> Path:
+    """Fusion checkpoint；單股與多股都把 ticker 寫進檔名，避免互相覆蓋。"""
+    names = [tickers] if isinstance(tickers, str) else tickers
+    return OUTPUTS / "checkpoints" / f"fusion_{'_'.join(names)}.pt"
+
+
+def ppo_checkpoint_path(ticker: str, *, fake: bool = False) -> Path:
+    """PPO agent checkpoint；fake 使用獨立 namespace。"""
+    suffix = "fake" if fake else ticker
+    return OUTPUTS / "checkpoints" / f"ppo_agent_{suffix}.zip"
+
+
+def classification_report_path(ticker: str) -> Path:
+    return OUTPUTS / "metrics" / f"classification_report_{ticker}.json"
+
+
+def ppo_train_report_path(ticker: str, *, fake: bool = False) -> Path:
+    suffix = "fake" if fake else ticker
+    return OUTPUTS / "metrics" / f"ppo_train_report_{suffix}.json"
+
+
+def backtest_report_path(ticker: str, strategy: str, run_id: str) -> Path:
+    """回測報告同時含 ticker、strategy 與秒級 run_id，不同策略不會在同秒互蓋。"""
+    return OUTPUTS / "backtest" / f"report_{ticker}_{strategy}_{run_id}.json"

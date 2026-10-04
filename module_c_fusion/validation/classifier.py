@@ -3,7 +3,7 @@
 - 對照 A 產生的 label（BULLISH/BEARISH/NEUTRAL）計算準確率。
 - 沿用 A 建立的唯一時間切分 manifest；classifier 不可自行重切日期。
 - train fit、validation 選 C、test 最後只評估一次。
-- 報告輸出到 data/outputs/metrics/classification_report.json。
+- 報告輸出到 data/outputs/metrics/classification_report_{TICKER}.json。
 
 用法：
     python -m module_c_fusion.validation.classifier --ticker AAPL
@@ -121,7 +121,7 @@ def main():
         "final_fit": "train_plus_validation",
         **test_result,
     }
-    out = paths.OUTPUTS / "metrics" / "classification_report.json"
+    out = paths.classification_report_path(args.ticker)
     write_json(report, out)
     print(f"[classifier] selected C={selected_c} on validation macro F1")
     print(f"[classifier] test accuracy={report['accuracy']:.4f}, "

@@ -5,7 +5,7 @@
 - 真實資料一律沿用 A 建立的 strict temporal manifest：只用 Train 更新參數，
   Validation 選最佳 epoch，Test 不參與訓練或選模。兩個邊界的 gap 日也不參與。
 - 產出：Z_fused 到 data/outputs/z_fused/{TICKER}/{date}.npy，真實訓練 checkpoint
-  到 data/outputs/checkpoints/fusion.pt；--fake 獨立寫到 fusion_fake.pt。
+  到 data/outputs/checkpoints/fusion_{TICKER}.pt；--fake 獨立寫到 fusion_fake.pt。
 
 用法：
     python -m module_c_fusion.fusion.train --fake --n 32     # 第一階段：假向量測通
@@ -32,10 +32,8 @@
   照著「共用主幹、分開輸出層」的架構做，不是只共用主幹卻仍然只有一個輸出層。
   這個 `clf_head` 本身只是訓練時提供梯度訊號用的鷹架，不會被存進 checkpoint（只存
   `model.state_dict()`），所以每支股票各自一個不會影響到之後怎麼載入這個 checkpoint。
-  單一 ticker（`--ticker` 或只給一個 `--tickers`）時，行為與加入這個功能之前完全一樣，
-  checkpoint 仍存到 `fusion.pt`；給多個 tickers 時，checkpoint 改存到
-  `fusion_{TICKER1}_{TICKER2}_....pt`，不會覆蓋掉單一 ticker 訓練出來的 `fusion.pt`，
-  兩者可以並存比較，不需要手動備份。
+  單一 ticker 與多 ticker 都把股票代號寫進 checkpoint：`fusion_AAPL.pt`、
+  `fusion_AAPL_NVDA.pt`，不同標的不會互相覆蓋。
 """
 import argparse
 import copy
@@ -505,10 +503,8 @@ def main():
     requested_tickers = args.tickers if args.tickers else [args.ticker]
     if args.fake:
         ckpt = paths.OUTPUTS / "checkpoints" / "fusion_fake.pt"
-    elif len(requested_tickers) > 1:
-        ckpt = paths.OUTPUTS / "checkpoints" / f"fusion_{'_'.join(requested_tickers)}.pt"
     else:
-        ckpt = paths.OUTPUTS / "checkpoints" / "fusion.pt"
+        ckpt = paths.fusion_checkpoint_path(requested_tickers)
 
     if args.apply_checkpoint:
         # ---- 泛化測試：套用既有權重，不訓練，只對指定股票跑前向運算產生 Z_fused ----

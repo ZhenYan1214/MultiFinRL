@@ -89,12 +89,13 @@ MultiFinRL/
 │   │   ├── fetch_news_alpaca.py     # historical news backfill via Alpaca News API
 │   │   ├── fetch_filings.py         # SEC EDGAR filings (10-K/10-Q only, no 8-K — see decisions.md #41)
 │   │   ├── fetch_transcripts.py     # earnings-call transcripts via Alpha Vantage API (ALPHA_VANTAGE_API_KEY)
-│   │   └── fetch_macro.py           # ETF/index macro data — scaffold only, not implemented (decisions.md #38)
+│   │   └── fetch_macro.py           # point-in-time FRED/FOMC data for ETF/index --macro mode
 │   ├── preprocess/
 │   │   ├── chart_generator.py       # mplfinance candlestick charts, 20-day window
 │   │   ├── text_cleaner.py          # HTML/noise cleanup (news + filing-specific iXBRL/hidden-content stripping)
 │   │   └── chunker.py               # document chunking (≤512 tokens)
 │   ├── labeling.py                  # BULLISH / BEARISH / NEUTRAL label generation (quantile thresholds)
+│   ├── macro_context.py             # point-in-time as-of join for indicators/news/dot plots
 │   └── build_dataset.py             # assembles the daily JSON records
 ├── module_b_encoder/                # Track B — encoders + RAG + event extraction
 │   ├── README.md
@@ -160,7 +161,7 @@ Full definition in `docs/data_format.md`; the handoff points are:
 
 | Item | Spec |
 |---|---|
-| Market / initial universe | US equities. AAPL has the complete multimodal pipeline; NVDA/MSFT/JPM currently have OHLCV, dual charts, and labels for ViT experiments. Indices/ETFs are excluded for now since they have no filings. |
+| Market / initial universe | US equities. AAPL has the complete multimodal pipeline; ETF/index runs are supported through `run_pipeline.py --ticker SPY --macro`, replacing company documents with point-in-time FRED/FOMC context and using K-line＋FOMC SEP dot plot as the current ViT inputs. Volume remains available as an ablation. |
 | Data range | 2021-01 onward, continuously extended (currently through 2026-08; see `configs/config.yaml`) |
 | Charts | 20-day trailing window, PNG, 224×224, RGB |
 | Price-movement label | Return from close to the close 5 trading days later; train-period 1/3 and 2/3 quantiles define BEARISH / NEUTRAL / BULLISH in strict experiments |

@@ -56,6 +56,49 @@ def validate_daily_record(record: dict) -> None:
             for k in keys:
                 if k not in c:
                     raise ValueError(f"{field}[{i}] missing key: {k}")
+    # ETF／指數才會有 macro；個股舊資料沒有此欄位仍保持相容。
+    macro = record.get("macro")
+    if macro is not None:
+        for key in ("as_of_date", "indicators", "news", "dot_plot"):
+            if key not in macro:
+                raise ValueError(f"macro missing key: {key}")
+        if macro["as_of_date"] != record["date"]:
+            raise ValueError("macro.as_of_date must equal record.date")
+        for i, item in enumerate(macro["indicators"]):
+            for key in (
+                "series_id", "name", "frequency", "units", "observation_date",
+                "available_date", "value", "source",
+            ):
+                if key not in item:
+                    raise ValueError(f"macro.indicators[{i}] missing key: {key}")
+            if item["available_date"] > record["date"]:
+                raise ValueError(f"macro.indicators[{i}] uses future available_date")
+        for i, item in enumerate(macro["news"]):
+            for key in ("headline", "content", "source", "published_at", "days_ago", "category"):
+                if key not in item:
+                    raise ValueError(f"macro.news[{i}] missing key: {key}")
+            if not isinstance(item["days_ago"], int) or item["days_ago"] < 0:
+                raise ValueError(f"macro.news[{i}].days_ago must be int >= 0")
+            if item["published_at"][:10] > record["date"]:
+                raise ValueError(f"macro.news[{i}] is from the future")
+        dot_plot = macro["dot_plot"]
+        for key in ("available_date", "meeting_date", "path", "source_json", "source"):
+            if not dot_plot.get(key):
+                raise ValueError(f"macro.dot_plot missing key: {key}")
+        if dot_plot["available_date"] > record["date"]:
+            raise ValueError("macro.dot_plot uses future available_date")
+        input_types = [item["type"] for item in inputs]
+        valid_macro_inputs = (
+            ["candlestick", "volume"],
+            ["candlestick", "macro_dot_plot"],
+        )
+        if input_types not in valid_macro_inputs:
+            raise ValueError(
+                "macro record chart.inputs must be ['candlestick', 'volume'] or "
+                "['candlestick', 'macro_dot_plot']"
+            )
+        if input_types[1] == "macro_dot_plot" and inputs[1]["path"] != dot_plot["path"]:
+            raise ValueError("macro.dot_plot.path must match chart.inputs[1].path")
     # prices
     prices = record["prices"]
     for k in ("close_t0", "close_t5", "future_closes"):

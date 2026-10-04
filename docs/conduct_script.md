@@ -31,6 +31,20 @@ py -m module_a_data.build_dataset --ticker AAPL --limit 100
 # 這一步一定要放在其他 A 指令「之後」，因為它是彙整、不是抓取
 ```
 
+### ETF／指數總經模式
+
+先在 `.env` 設定 `FRED_API_KEY`，再用同一支 pipeline。以下會跳過公司財報／法說會，
+以 point-in-time 指標與 FOMC 新聞取代公司文件；ViT 使用 K 線＋FOMC SEP 點陣圖：
+
+```bash
+python scripts/run_pipeline.py --ticker SPY --macro
+```
+
+總經合併依 `available_date <= 交易日`，只 forward-fill、不 backfill。第一次下載及重建向量、
+Fusion 會耗時；terminal 會顯示目前階段。若只想先驗證少量資料，可加 `--limit 50`。
+若要比較 Volume 視覺輸入，把 `config.yaml` 的 `macro.vision_inputs` 改成
+`[candlestick, volume]` 後重建 dataset 與 vectors。
+
 ## B：Encoder + RAG + 事件抽取
 
 ```bash
@@ -62,7 +76,8 @@ py -m module_b_encoder.event_extraction --ticker AAPL
 ```bash
 py -m module_c_fusion.fusion.train --fake --n 32 --epochs 1
 # 第一次先測：用假向量測 Cross-Modal Transformer 架構通不通
-# fake checkpoint 只會寫到 data/outputs/checkpoints/fusion_fake.pt，不會覆蓋正式 fusion.pt
+# fake checkpoint 只會寫到 data/outputs/checkpoints/fusion_fake.pt，
+# 正式單股 checkpoint 為 fusion_{TICKER}.pt，彼此不會覆蓋
 
 py -m module_a_data.build_dataset --ticker AAPL
 # 先重建 daily JSON 與共用時間切分 manifest；分位數門檻只使用 Train 報酬
@@ -80,19 +95,19 @@ py -m module_c_fusion.fusion.train --ticker AAPL --weighted
 
 py -m module_c_fusion.validation.classifier --ticker AAPL --weighted
 # 沿用同一 manifest；Validation 選 C，Test 最後評估一次
-# 準確率與 macro F1 存到 data/outputs/metrics/classification_report.json
+# 準確率與 macro F1 存到 data/outputs/metrics/classification_report_AAPL.json
 
 py -m module_c_fusion.validation.event_validation_head --ticker AAPL
 # 用 Z_fused 做事件類型多標籤驗證（7 類），也沿用 Train/Validation/Test manifest
 # 需要 data/labels/event_ground_truth/AAPL.json
 
 py -m module_c_fusion.rl.train_ppo --ticker AAPL
-# 訓練 PPO 投資組合配置 agent，存到 data/outputs/checkpoints/ppo_agent.zip
+# 訓練 PPO 投資組合配置 agent，存到 data/outputs/checkpoints/ppo_agent_AAPL.zip
 # --curriculum 開啟 curriculum learning（依滾動波動度分階段訓練，decisions.md #52~#55）
 
 py -m module_c_fusion.explainability.integrated_gradients --ticker AAPL
 # 只在 Test 期間對訓練好的 PPO policy 做跨模態歸因（captum Integrated Gradients），
-# 需要先有 Z_fused 跟 ppo_agent.zip，輸出到 data/outputs/explainability/
+# 需要先有 Z_fused 跟 ppo_agent_AAPL.zip，輸出到 data/outputs/explainability/
 
 py -m module_c_fusion.backtest.backtest --ticker AAPL --strategy buy_and_hold
 # 回測策略一：全程滿倉（baseline 對照組）

@@ -320,8 +320,6 @@ def _render_dot_plot(data: dict, out: Path) -> None:
     ax.set_xticks(range(len(horizons)))
     ax.set_xticklabels([h.replace("Longer run", "Long run") for h in horizons], fontsize=5)
     ax.tick_params(axis="y", labelsize=5)
-    ax.set_ylabel("Fed funds rate (%)", fontsize=6)
-    ax.set_title(f"FOMC dot plot {data['meeting_date']}", fontsize=7)
     ax.grid(axis="y", color="#d9d9d9", linewidth=0.5)
     fig.tight_layout(pad=0.6)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -335,6 +333,14 @@ def _render_dot_plot(data: dict, out: Path) -> None:
 def fetch_fed_dot_plot(meeting_date: str) -> str:
     """下載並解析某次 FOMC SEP 點陣圖，回傳 224x224 PNG 的路徑。"""
     dt.date.fromisoformat(meeting_date)
+    out_dir = paths.RAW_MACRO_FOMC / meeting_date
+    source_path = out_dir / "source.html"
+    data_path = out_dir / "dot_plot.json"
+    image_path = out_dir / "dot_plot.png"
+    required_paths = (source_path, data_path, image_path)
+    if all(path.is_file() and path.stat().st_size > 0 for path in required_paths):
+        return str(image_path)
+
     compact_date = meeting_date.replace("-", "")
     response = None
     url = ""
@@ -356,13 +362,10 @@ def fetch_fed_dot_plot(meeting_date: str) -> str:
     data = _parse_dot_plot_html(response.text, meeting_date)
     data["url"] = url
 
-    out_dir = paths.RAW_MACRO_FOMC / meeting_date
     out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / "source.html").write_text(response.text, encoding="utf-8")
-    write_json(data, out_dir / "dot_plot.json")
-    image_path = out_dir / "dot_plot.png"
+    source_path.write_text(response.text, encoding="utf-8")
+    write_json(data, data_path)
     _render_dot_plot(data, image_path)
-    print(f"[fetch_macro] FOMC dot plot {meeting_date} -> {image_path}")
     return str(image_path)
 
 
@@ -424,8 +427,41 @@ def _published_at(release_date: str) -> str:
     return dt.datetime.combine(day, dt.time(14, 0), tzinfo=ET).isoformat()
 
 
+def _load_existing_macro_news(start: str, end: str) -> dict[str, dict]:
+    """讀取要求期間內已保存的 FOMC 新聞，以 URL 建立本機快取索引。
+
+    每日 JSON 存在但沒有對應 URL 時，不視為該文章已完成，避免部分寫入的檔案讓
+    crawler 錯誤跳過。無法解析或格式不符的檔案也交由後續下載流程補齊。
+    """
+    cached: dict[str, dict] = {}
+    if not paths.RAW_MACRO_NEWS.exists():
+        return cached
+
+    for file in sorted(paths.RAW_MACRO_NEWS.glob("*.json")):
+        try:
+            file_date = dt.date.fromisoformat(file.stem).isoformat()
+            if not start <= file_date <= end:
+                continue
+            payload = read_json(file)
+        except (OSError, ValueError, TypeError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        for item in payload.get("news", []):
+            if not isinstance(item, dict):
+                continue
+            url = item.get("url")
+            if url:
+                cached[url] = item
+    return cached
+
+
 def fetch_macro_news(start: str, end: str) -> list[dict]:
-    """抓取指定期間的 Fed FOMC 新聞，格式比照 ``fetch_news_alpaca.py``。"""
+    """抓取指定期間的 Fed FOMC 新聞，格式比照 ``fetch_news_alpaca.py``。
+
+    Archive 頁仍需查詢，以辨認 Fed 是否新增發布內容；文章 URL 若已存在於本機每日
+    JSON，則直接沿用現有資料，不再次下載文章頁。
+    """
     _validate_date_range(start, end)
     start_date = dt.date.fromisoformat(start)
     end_date = dt.date.fromisoformat(end)
@@ -438,8 +474,25 @@ def fetch_macro_news(start: str, end: str) -> list[dict]:
         print(f"[fetch_macro] FOMC archive {year}: 累積 {len(links)} 個連結")
         time.sleep(REQUEST_DELAY_SEC)
 
+    cached_by_url = _load_existing_macro_news(start, end)
+    ordered_links = sorted(links.values(), key=lambda value: value["date"])
+    cached_count = sum(item["url"] in cached_by_url for item in ordered_links)
+    print(
+        f"[fetch_macro] FOMC news: {len(ordered_links)} 則，"
+        f"本機已有 {cached_count} 則、需下載 {len(ordered_links) - cached_count} 則"
+    )
+
     items = []
-    for index, item in enumerate(sorted(links.values(), key=lambda value: value["date"]), start=1):
+    downloaded = 0
+    for item in ordered_links:
+        cached = cached_by_url.get(item["url"])
+        if cached is not None:
+            # 舊資料若沒有 category，從標題補上，確保 --kind all 仍能找出 SEP 日期。
+            cached = dict(cached)
+            cached.setdefault("category", _fomc_category(cached.get("headline", "")))
+            items.append(cached)
+            continue
+
         response = _get(item["url"])
         parsed_headline, content = _parse_fomc_article(response.text)
         # Archive 頁的連結文字最穩定；文章頁標題只在 archive 缺字時補用。
@@ -452,25 +505,37 @@ def fetch_macro_news(start: str, end: str) -> list[dict]:
             "url": item["url"],
             "category": _fomc_category(headline),
         })
-        print(f"[fetch_macro] FOMC news {index}/{len(links)}: {item['date']} {headline}")
+        downloaded += 1
+        print(
+            f"[fetch_macro] FOMC news 下載 {downloaded}/{len(ordered_links) - cached_count}: "
+            f"{item['date']} {headline}"
+        )
         time.sleep(REQUEST_DELAY_SEC)
     return items
 
 
 def save_macro_news(items: list[dict]) -> Path:
-    """依發布日保存，既有檔案按 URL 合併去重，行為與個股新聞 crawler 一致。"""
+    """依發布日保存，既有檔案按 URL 合併去重；內容未變時不覆寫檔案。"""
     by_day: dict[str, list[dict]] = {}
     for item in items:
         day = dt.datetime.fromisoformat(item["published_at"]).date().isoformat()
         by_day.setdefault(day, []).append(item)
 
+    changed_days = 0
     for day, day_items in by_day.items():
         out = paths.RAW_MACRO_NEWS / f"{day}.json"
         existing = read_json(out).get("news", []) if out.exists() else []
         seen_urls = {item.get("url") for item in existing if item.get("url")}
-        merged = existing + [item for item in day_items if item.get("url") not in seen_urls]
+        additions = [item for item in day_items if item.get("url") not in seen_urls]
+        if not additions and out.exists():
+            continue
+        merged = existing + additions
         write_json({"date": day, "news": merged}, out)
-    print(f"[fetch_macro] news: {len(items)} 則 -> {len(by_day)} 天 -> {paths.RAW_MACRO_NEWS}")
+        changed_days += 1
+    print(
+        f"[fetch_macro] news: {len(items)} 則、更新 {changed_days}/{len(by_day)} 天 "
+        f"-> {paths.RAW_MACRO_NEWS}"
+    )
     return paths.RAW_MACRO_NEWS
 
 
@@ -504,9 +569,24 @@ def main():
     if args.kind == "dot_plot" and not meeting_dates:
         ap.error("--kind dot_plot 必須至少提供一個 --meeting_date")
     if args.kind in ("all", "dot_plot"):
-        for meeting_date in meeting_dates:
+        completed_dates = []
+        total = len(meeting_dates)
+        for index, meeting_date in enumerate(meeting_dates, start=1):
+            print(
+                f"\r[fetch_macro] FOMC dot plot {index}/{total}: {meeting_date}",
+                end="",
+                flush=True,
+            )
             fetch_fed_dot_plot(meeting_date)
+            completed_dates.append(meeting_date)
             time.sleep(REQUEST_DELAY_SEC)
+        if completed_dates:
+            print(
+                f"\r[fetch_macro] FOMC dot plot 完成：{len(completed_dates)} 張，"
+                f"期間 {min(completed_dates)}～{max(completed_dates)}"
+            )
+        else:
+            print("[fetch_macro] FOMC dot plot 完成：0 張，期間無資料")
 
 
 if __name__ == "__main__":

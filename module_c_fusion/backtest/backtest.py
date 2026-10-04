@@ -5,7 +5,12 @@
     buy_and_hold   全程滿倉（baseline）
     rule_based     分類器預測 BULLISH 滿倉 / BEARISH 空倉 / NEUTRAL 半倉（無 RL 對照組）
     ppo            用訓練好的 PPO agent 決定權重（RL 組）
-- 報告輸出到 data/outputs/backtest/report_{run_id}.json。
+- 報告輸出到 data/outputs/backtest/report_{TICKER}_{STRATEGY}_{run_id}.json。
+
+目前三種策略都只回測「單一 ticker＋現金」，屬於計畫書 multi-asset portfolio management
+之前的 baseline。計畫書最終版需一次接收 N 維資產權重，使用對齊後的多資產報酬矩陣計算
+portfolio return、turnover、Sharpe 與 MDD；不可把多支股票各自的單股報告直接視為
+同一個多資產投資組合結果。本次只記錄此限制，不改現行回測邏輯。
 
 用法：
     python -m module_c_fusion.backtest.backtest --ticker AAPL --strategy buy_and_hold
@@ -63,6 +68,7 @@ def load_series(ticker: str):
     優先讀彙整索引；索引不存在時 fallback 成逐日掃描。
     注意：這裡回傳整段期間的序列，不自動切測試期。main() 會用共用
     manifest 只取 Test；rule_based 的模型選擇則只使用 Train/Validation。
+    此 loader 只服務單資產 baseline；multi-asset 回測必須先取多 ticker 日期交集並對齊報酬。
     """
     idx = load_index(ticker)
     if idx is not None:
@@ -111,9 +117,9 @@ def weights_rule_based(z_seq: np.ndarray, ticker: str, weighted: bool = False, *
     return np.select([pred == 2, pred == 1], [1.0, 0.5], default=0.0)
 
 
-def weights_ppo(z_seq: np.ndarray, **_) -> np.ndarray:
+def weights_ppo(z_seq: np.ndarray, ticker: str, **_) -> np.ndarray:
     from stable_baselines3 import PPO
-    agent = PPO.load(paths.OUTPUTS / "checkpoints" / "ppo_agent.zip")
+    agent = PPO.load(paths.ppo_checkpoint_path(ticker))
     weights, w_prev = [], 0.0
     for z in z_seq:
         obs = np.concatenate([z, [w_prev]]).astype(np.float32)
@@ -164,7 +170,7 @@ def main():
         "weighted_classifier": args.weighted if args.strategy == "rule_based" else None,
         **result,
     }
-    out = paths.OUTPUTS / "backtest" / f"report_{run_id}.json"
+    out = paths.backtest_report_path(args.ticker, args.strategy, run_id)
     write_json(report, out)
     print(f"[backtest] {args.strategy}: cum={result['cumulative_return']:.2%} "
           f"sharpe={result['sharpe_ratio']:.2f} mdd={result['max_drawdown']:.2%} -> {out}")

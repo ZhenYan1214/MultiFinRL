@@ -8,7 +8,8 @@
 
 ## 0.5 Module A 的總經 raw data（ETF／指數擴充）
 
-由 `module_a_data/crawler/fetch_macro.py` 產生，尚未加入每日資料 JSON 的必填欄位。
+由 `module_a_data/crawler/fetch_macro.py` 產生。ETF／指數以 `build_dataset --macro`
+啟用；個股 record 保持原格式，不會自動混入總經資料。
 
 ```
 data/raw/macro/
@@ -31,6 +32,8 @@ data/raw/macro/
   `published_at`、`url`，另加 `category`。
 - `dot_plot.png` 固定為 224×224；`dot_plot.json` 保留各預測年度、利率水準與委員人數。
   點陣圖從 `available_date` 起沿用至下一份 SEP 發布為止。
+- `--macro` 每日以 `available_date <= date` 做 as-of join：每個指標取當時最新一期、
+  FOMC 新聞最多往前 7 個日曆日、點陣圖只向後沿用。不可 backfill 未公布資料。
 
 ---
 
@@ -94,6 +97,37 @@ data/raw/macro/
 }
 ```
 
+ETF／指數的 `--macro` record 將 `filing_chunks`、`transcript_chunks` 設為空陣列，
+視覺輸入依 `config.yaml` 的 `macro.vision_inputs` 決定（目前為 K 線＋FOMC 點陣圖），並額外加入：
+
+```json
+{
+  "macro": {
+    "as_of_date": "2021-03-15",
+    "indicators": [
+      {
+        "series_id": "UNRATE",
+        "name": "unemployment_rate",
+        "frequency": "monthly",
+        "units": "percent",
+        "observation_date": "2021-02-01",
+        "available_date": "2021-03-05",
+        "value": 6.2,
+        "source": "fred_alfred_initial_release"
+      }
+    ],
+    "news": [],
+    "dot_plot": {
+      "available_date": "2020-12-16",
+      "meeting_date": "2020-12-16",
+      "path": "data/raw/macro/fomc/2020-12-16/dot_plot.png",
+      "source_json": "data/raw/macro/fomc/2020-12-16/dot_plot.json",
+      "source": "federal_reserve_sep_accessible_html"
+    }
+  }
+}
+```
+
 ### 欄位規則
 
 | 欄位 | 規則 |
@@ -105,6 +139,8 @@ data/raw/macro/
 | `news[].published_at` | 含時區（美東），供後續切齊時間、避免 look-ahead |
 | `*_chunks[].text` | 每段 ≤512 token（以 FinBERT tokenizer 計） |
 | `filing_chunks` / `transcript_chunks` | 「最新一份沿用到下一份發布為止」；當日無有效文件時為空陣列 `[]` |
+| `macro` | 僅 `--macro` 模式存在。`indicators`、`news`、`dot_plot` 都只能使用 `available_date/published_at <= date` 的資料；一般個股 record 可省略此欄位 |
+| `macro.dot_plot` | 當時最新一份 SEP 點陣圖的可追溯資料。目前直接作為 ViT 第二張圖，`path` 必須等於 `chart.inputs[1].path`；若做 Volume ablation，則仍保留此 context 但不進 ViT |
 | `prices.future_closes` | 未來第 1~5 個交易日收盤價（標籤依據，**僅供產生標籤與回測，不可作為模型輸入**） |
 | `label` | 依 close_t5 vs close_t0 報酬，**只用 Train 期間**報酬分布的 1/3、2/3 分位數當門檻；門檻固定後才套用至 Validation/Test。報酬最高 1/3 → `BULLISH`；最低 1/3 → `BEARISH`；中間 1/3 → `NEUTRAL`。門檻數值依 Train 資料算出、非固定百分比，見 `module_a_data/labeling.py` |
 
@@ -150,7 +186,9 @@ data/vectors/AAPL/2021-03-15/
 | `shape` | 實際維度以最終選定的 encoder 為準，但**一旦定案不可再變**；換 encoder 需全員同意並重跑 |
 | `encoder` | HuggingFace model id，供實驗比較與論文記錄 |
 | `H_v` 第一維 | = 視覺輸入張數（目前 2），順序必須與 `chart.inputs`／`input_types` 一致；第二維為每張 ViT 的 CLS + patch tokens |
+| macro 模式 | H_v 目前為 K 線＋FOMC 點陣圖；可由 `macro.vision_inputs` 切成 K 線＋Volume 做 ablation。H_t = point-in-time 指標摘要＋FOMC／ticker 新聞；H_r 的候選庫加入總經指標與 FOMC 新聞 chunk。shape 不變，因此 C 不需新增第四模態 |
 | `retrieved_chunk_ids` | 對應 A 資料中的 `chunk_id`，供事後追溯與可解釋性分析 |
+| `context_sources` | H_t 實際使用的來源摘要；一般模式為 `ticker_news`，macro 模式可含 `macro_indicators`、`macro_news`，方便稽核 |
 | `H_r` 第一維 | = K（目前 K=3），順序為相似度由高至低 |
 
 ---
@@ -165,12 +203,15 @@ data/outputs/
 │   ├── {TICKER}/{YYYY-MM-DD}.npy       # 每日 Z_fused 向量（除錯/可解釋性分析用）
 │   ├── {TICKER}_index.npz              # ★ 彙整索引：整段時間範圍一次讀取用
 │   └── {TICKER}_index.meta.json        # 索引摘要（split manifest、checkpoint SHA256）
-├── checkpoints/                         # Fusion 模型與 RL agent 權重
+├── checkpoints/
+│   ├── fusion_{TICKER}.pt               # 單股 Fusion；多股為 fusion_AAPL_NVDA.pt
+│   └── ppo_agent_{TICKER}.zip           # 各 ticker 的 PPO agent
 ├── metrics/
-│   ├── classification_report.json      # 情緒分類準確率（對照 A 的 label）
+│   ├── classification_report_{TICKER}.json # 情緒分類準確率（對照 A 的 label）
+│   ├── ppo_train_report_{TICKER}.json   # PPO 訓練 provenance
 │   └── event_extraction_report.json    # 事件抽取 P/R/F1（B 提供）
 └── backtest/
-    └── report_{run_id}.json            # 累積報酬、Sharpe、MDD、有無 RL 對照
+    └── report_{TICKER}_{STRATEGY}_{YYYYMMDD}_{HHMMSS}.json # 報酬、Sharpe、MDD
 ```
 
 `{TICKER}_index.npz` 內容（`module_c_fusion/fusion/consolidate.py` 產出）：
