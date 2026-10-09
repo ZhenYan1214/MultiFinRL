@@ -1,0 +1,14 @@
+{
+  "description": "Frozen ViT 三分類實驗；以 Train-only 未來報酬分位數定義 DOWN／NEUTRAL／UP，Test 保持鎖定。",
+  "source_config": "configs/experiments/vit_cross_stock.json",
+  "windows": [20, 22, 24],
+  "input_mode": "single",
+  "seeds": [40, 41, 42, 43, 44],
+  "epochs": 3,
+  "head_batch": 512,
+  "head_lr": 0.0003,
+  "weight_decay": 0.001,
+  "lower_quantile": 0.3333333333333333,
+  "upper_quantile": 0.6666666666666666,
+  "selection_metric": "validation_unseen.mean_ticker_macro_f1"
+}

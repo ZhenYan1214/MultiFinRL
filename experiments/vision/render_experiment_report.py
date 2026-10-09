@@ -48,6 +48,12 @@ from experiments.vision.visualize_comparison_report import (
 
 
 def detect_report_type(report: dict) -> str:
+    if report.get("protocol") == "vit_tech_giants_three_class_v1":
+        return "vit_tech_giants"
+    if report.get("protocol") == "vit_frozen_three_class_quantile_v1":
+        return "frozen_three_class_quantile"
+    if report.get("protocol") == "vit_frozen_window_ablation_v1":
+        return "frozen_window_ablation"
     if report.get("protocol") == "cross_stock_shared_head_binary_v1":
         return "cross_stock"
     if report.get("protocol") == "frozen_backbone_validation_only_no_test":
@@ -391,6 +397,15 @@ def generate_figures(
     report_path: Path, report: dict, report_type: str,
     output_dir: Path, dpi: int,
 ) -> list[Path]:
+    if report_type == "vit_tech_giants":
+        from experiments.vision.tech_giants_report import generate_figures as tech_figures
+        return tech_figures(report, output_dir, dpi)
+    if report_type == "frozen_three_class_quantile":
+        from experiments.vision.frozen_three_class_report import generate_figures as three_class_figures
+        return three_class_figures(report, output_dir, dpi)
+    if report_type == "frozen_window_ablation":
+        from experiments.vision.frozen_window_report import generate_figures as window_figures
+        return window_figures(report, output_dir, dpi)
     if report_type == "cross_stock":
         from experiments.vision.cross_stock_report import generate_figures as cross_stock_figures
         return cross_stock_figures(report, output_dir, dpi)
@@ -623,7 +638,16 @@ def format_markdown(
 ) -> Path:
     lines: list[str] = []
     append_common_header(lines, report_path, report_type, report)
-    if report_type == "cross_stock":
+    if report_type == "vit_tech_giants":
+        from experiments.vision.tech_giants_report import append_markdown
+        append_markdown(report, lines)
+    elif report_type == "frozen_three_class_quantile":
+        from experiments.vision.frozen_three_class_report import append_markdown
+        append_markdown(report, lines)
+    elif report_type == "frozen_window_ablation":
+        from experiments.vision.frozen_window_report import append_markdown
+        append_markdown(report, lines)
+    elif report_type == "cross_stock":
         from experiments.vision.cross_stock_report import append_markdown
         append_markdown(report, lines)
     elif report_type == "backbone_comparison":

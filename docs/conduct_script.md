@@ -54,7 +54,7 @@ py -m module_b_encoder.generate_vectors --fake --n 10
 py -m module_b_encoder.generate_vectors --ticker AAPL --limit 100
 # 正式執行：讀 A 的 JSON，跑 ViT/FinBERT/RAG，產出 H_v/H_t/H_r，存到 data/vectors/AAPL/
 
-# 2026-10-02：既有 ViT 訓練實驗已完成並封存，舊 runner 已移除。
+# 既有 ViT 訓練實驗已完成並封存，runner 已移除（2026-10-02、2026-10-10）。
 # 統一結果：docs/vit_experiments_summary_2026-10-02.md
 # 原始結果：data/outputs/experiments/
 # 以下工具只由既有 report.json 重建 Markdown／圖表，不會訓練或開啟 Test。
@@ -144,9 +144,9 @@ py -m module_c_fusion.decoder.evaluate --ticker AAPL --n_generate 30
 # 在 test set 上驗證：微調前後 loss 差異、結構化標籤準確率；--llm_judge 可選（會花 API 費用）
 ```
 
-## ViT 跨股票二分類（已封存）
+## ViT 實驗（已封存）
 
-Pilot3 已完成且 Test 維持鎖定；舊訓練 runner 於 2026-10-02 依整理決策移除。設計與結果見 [封存說明](../experiments/vision/README_cross_stock.md)、[實驗計畫](experiment_plan_vit_cross_stock.md)及[ViT 統一總結](vit_experiments_summary_2026-10-02.md)。未來若更改 label、horizon 或圖形輸入，應建立新的實驗入口與輸出命名空間。
+跨股票二分類、Frozen 窗口消融、分位數三分類與科技巨頭實驗都已完成，Test 維持鎖定；訓練 runner 分別於 2026-10-02 與 2026-10-10 移除，後續 ViT 工作回到 AAPL／NVDA／MSFT。設計與結果見 [封存紀錄](../experiments/vision/README.md)及 [ViT 統一總結](vit_experiments_summary_2026-10-02.md)。未來若更改 label、horizon 或圖形輸入，應建立新的實驗入口與輸出命名空間。
 
 ## pipeline：一次串完 A→B→C（整合階段用，平常各自開發不用跑這個）
 

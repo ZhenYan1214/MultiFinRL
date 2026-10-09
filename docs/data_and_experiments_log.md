@@ -627,7 +627,7 @@ PPO 的持倉介於 0.6634%～0.6679%，平均 0.6657%、標準差只有 0.00094
 
 驗證：`python -m unittest discover -s tests -v` 共 17 項通過；新增 10 項含合成 OHLCV＋本機小型隨機 ViT 的離線端到端測試，檢查 Frozen／LoRA 更新範圍、同 seed 頭初始化、切分、續跑、報告、設定不符拒絕與 Test 開啟狀態。**尚未下載這輪 50 檔真實資料，也未啟動正式大模型訓練；目前沒有改善準確度的結論。**
 
-執行：[操作說明](../experiments/vision/README_cross_stock.md)；規劃：[實驗計畫](experiment_plan_vit_cross_stock.md)。
+執行：[封存紀錄](../experiments/vision/README.md)；規劃：[實驗計畫](archive/experiment_plan_vit_cross_stock.md)。
 
 ### 同日：真實 Smoke 的 Tee 相容性修正
 
@@ -749,3 +749,9 @@ log loss 的 sanity gate，否則隨機但預測比例平衡的分類器也可�
 完成結果整理後，已移除過往 ViT 訓練 runner、實驗模型、跨股票資料準備程式與專用測試，避免已結束的探索程式持續混在正式專案入口中。正式 `module_b_encoder` 沒有變更；原始 `report.json`、`report.md`、圖表、history 與 predictions 仍保留在 `data/outputs/experiments/`。
 
 統一結論、各實驗可比性與結果來源見 [ViT 實驗總結](vit_experiments_summary_2026-10-02.md)。保留的 `render_experiment_report.py`、`visualize_comparison_report.py` 與 `cross_stock_report.py` 可由既有 JSON 重建報告。若未來要跑新的 label／horizon／SMA／walk-forward 實驗，需另外建立新版 runner，不覆寫歷史輸出。
+
+### 2026-10-10：Frozen 窗口、三分類與科技巨頭實驗封存
+
+2026-10-05 完成的三個 Frozen ViT 實驗（窗口 × 單／雙圖消融、Train-only q33／q67 三分類、8 檔科技巨頭 single／Volume／SMA）已結束，數字與判讀見 [ViT 實驗總結](vit_experiments_summary_2026-10-02.md) §7–§9。依使用者決定，後續 ViT 工作收斂回 AAPL／NVDA／MSFT，這三個實驗只留紀錄。
+
+已移除 `run_frozen_window_ablation.py`、`run_vit_frozen_three_class.py`、`run_vit_tech_giants.py`；三份 `configs/experiments/*.json`、對應的 `*_report.py` 與 `data/outputs/experiments/` 內的報告、predictions、feature cache 保留。`experiments/vision/` 的三份 README 合併為單一[封存紀錄](../experiments/vision/README.md)，跨股票實驗計畫移到 `docs/archive/`。

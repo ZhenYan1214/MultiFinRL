@@ -1,0 +1,41 @@
+{
+  "description": "8 檔美國科技巨頭的 Frozen ViT 圖形輸入消融；以股票留出 folds 評估跨股票泛化，Test 保持鎖定。",
+  "model_id": "google/vit-base-patch16-224",
+  "model_revision": "main",
+  "tickers": [
+    {"ticker": "AAPL", "sector": "Technology"},
+    {"ticker": "MSFT", "sector": "Technology"},
+    {"ticker": "NVDA", "sector": "Technology"},
+    {"ticker": "ADBE", "sector": "Technology"},
+    {"ticker": "GOOGL", "sector": "Communication Services"},
+    {"ticker": "META", "sector": "Communication Services"},
+    {"ticker": "AMZN", "sector": "Consumer Discretionary"},
+    {"ticker": "AVGO", "sector": "Technology"}
+  ],
+  "folds": [
+    {"name": "fold_1", "holdout": ["AAPL", "MSFT"]},
+    {"name": "fold_2", "holdout": ["NVDA", "ADBE"]},
+    {"name": "fold_3", "holdout": ["GOOGL", "META"]},
+    {"name": "fold_4", "holdout": ["AMZN", "AVGO"]}
+  ],
+  "download_start": "2015-09-01",
+  "train_start": "2016-01-01",
+  "validation_start": "2022-01-01",
+  "test_start": "2024-01-01",
+  "horizon_days": 5,
+  "windows": [20, 22, 24],
+  "input_modes": {
+    "single": ["candlestick"],
+    "dual_volume": ["candlestick", "volume"],
+    "dual_sma": ["candlestick", "sma"]
+  },
+  "seeds": [40, 41, 42, 43, 44],
+  "epochs": 3,
+  "image_batch": 16,
+  "head_batch": 512,
+  "head_lr": 0.0003,
+  "weight_decay": 0.001,
+  "lower_quantile": 0.3333333333333333,
+  "upper_quantile": 0.6666666666666666,
+  "selection_metric": "validation_unseen.mean_ticker_macro_f1"
+}

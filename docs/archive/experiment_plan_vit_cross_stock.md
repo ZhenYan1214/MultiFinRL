@@ -95,5 +95,5 @@ Frozen 與 LoRA 各自從相同預訓練 backbone、相同 seed 的分類頭初�
 - 2026-10-02 結果整理完成後，訓練入口、資料準備程式、實驗模型與專用測試已移除；本文件保留方法設計，不再是可直接執行的操作手冊。
 - 二分類報告工具 `experiments/vision/cross_stock_report.py` 與通用 `render_experiment_report.py` 保留，可由既有 JSON 重建 Markdown 與圖表。
 - Pilot3：Frozen／LoRA 未見 Validation mean-ticker Macro-F1 為 0.4922／0.4908；ROC-AUC 為 0.4909／0.4844，未顯示可泛化方向辨識能力，Test 未開啟。
-- 完整判讀見 [ViT 實驗總結](vit_experiments_summary_2026-10-02.md)，原始報告見 [Pilot3 report](../data/outputs/experiments/vit_cross_stock/runs/14c913bcec83cfba/pilot3/report.md)。Smoke 輸出已刪除，不作效果證據。
+- 完整判讀見 [ViT 實驗總結](../vit_experiments_summary_2026-10-02.md)，原始報告見 [Pilot3 report](../../data/outputs/experiments/vit_cross_stock/runs/14c913bcec83cfba/pilot3/report.md)。Smoke 輸出已刪除，不作效果證據。
 - 未來若要驗證 label horizon、neutral zone、SMA 或 walk-forward，應建立新版實驗程式與新輸出命名空間，避免覆寫此批歷史結果。

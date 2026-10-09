@@ -140,10 +140,10 @@ MultiFinRL/
 │       └── backtest.py              # cumulative return, Sharpe ratio, max drawdown (single-ticker only)
 ├── experiments/                     # completed experiments are archived as reports
 │   └── vision/
-│       ├── visualize_comparison_report.py # backbone comparison charts
-│       ├── cross_stock_report.py     # cross-stock binary charts + Markdown
+│       ├── README.md                 # archived ViT experiments: design, results, report locations
 │       ├── render_experiment_report.py # report.json -> charts + readable Markdown
-│       └── README_cross_stock.md     # archived cross-stock design and result record
+│       ├── visualize_comparison_report.py # shared chart style + backbone comparison charts
+│       └── *_report.py               # per-experiment charts + Markdown (cross-stock, window, three-class, tech giants)
 ├── scripts/
 │   └── run_pipeline.py              # Phase 1: A -> B -> Fusion + classification validation
 └── data/                            # not tracked in git except data/labels/; synced locally/via cloud storage

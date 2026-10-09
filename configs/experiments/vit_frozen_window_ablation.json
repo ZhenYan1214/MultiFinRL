@@ -1,0 +1,18 @@
+{
+  "description": "Frozen ViT 的 K 棒窗口與單／雙圖消融；使用既有 50 檔跨股票資料協定，Test 保持鎖定。",
+  "source_config": "configs/experiments/vit_cross_stock.json",
+  "windows": [16, 18, 20, 22, 24],
+  "input_modes": {
+    "single": ["candlestick"],
+    "dual": ["candlestick", "volume"]
+  },
+  "seed": 40,
+  "epochs": 3,
+  "image_batch": 16,
+  "head_batch": 512,
+  "head_lr": 0.0003,
+  "weight_decay": 0.001,
+  "model_id": "google/vit-base-patch16-224",
+  "model_revision": "main",
+  "selection_metric": "validation_unseen.mean_ticker_macro_f1"
+}
