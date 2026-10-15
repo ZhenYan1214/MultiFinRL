@@ -1,7 +1,7 @@
 # ViT 視覺實驗封存紀錄
 
 > 最後整理：2026-10-10
-> 狀態：下列實驗全部結束，Test 均維持鎖定；訓練 runner 已移除，本目錄只保留報告工具。
+> 狀態：下列實驗全部結束，Test 均維持鎖定；10-05 以前的訓練 runner 已移除。2026-10-10 的兩個畫法／輸入對照 runner 暫時保留。
 > 後續方向：ViT 工作收斂回正式 pipeline 的 AAPL／NVDA／MSFT；50 檔跨股票與 8 檔科技巨頭實驗僅留紀錄，不再延伸。
 
 這是歷史實驗紀錄，不是可直接執行的操作手冊。所有實驗都獨立於正式 pipeline，只使用 OHLCV 產生圖形；正式 `module_b_encoder`、Fusion、新聞與 RAG 均未修改。完整數字、可比性說明與判讀見 [ViT 實驗總結](../../docs/vit_experiments_summary_2026-10-02.md)。
@@ -16,6 +16,14 @@
 | `frozen_window_report.py` | Frozen 窗口 × 單／雙圖消融報告 |
 | `frozen_three_class_report.py` | Train-only 分位數三分類報告 |
 | `tech_giants_report.py` | 科技巨頭 single／Volume／SMA 報告 |
+| `run_pixel_render_comparison.py` | 2026-10-10 像素畫法對照 runner（暫時保留；自行輸出 `report.json`／`report.md`） |
+| `run_k20_k60_comparison.py` | 2026-10-10 K20＋K60 對照 runner（暫時保留；重用上一支的分類頭與指標函式） |
+| `run_k20_sma_comparison.py` | 2026-10-10 K20＋SMA 對照 runner（暫時保留；需先跑過 K20＋K60，讀其特徵快取） |
+| `run_wick_style_comparison.py` | 2026-10-11 影線加粗／換色對照 runner（暫時保留；讀像素畫法實驗的特徵快取） |
+| `run_mpl_wick_comparison.py` | 2026-10-12 mplfinance 影線加粗對照 runner（暫時保留；讀像素畫法實驗的特徵快取） |
+| `run_mpl_color_comparison.py` | 2026-10-12 mplfinance 配色對照 runner（暫時保留；重用 `run_mpl_wick_comparison.py` 的流程） |
+| `run_horizon_period_grid.py` | 2026-10-12 長期間 walk-forward × 天期 × 圖組合 × 分類頭 runner（暫時保留；可續跑，`--tickers` 可擴充） |
+| `run_rolling_label_comparison.py` | 2026-10-11 全域 vs 滾動 250 日標籤對照 runner（暫時保留；讀像素畫法實驗的特徵快取與正式 Z_fused） |
 
 ## 已封存實驗一覽
 
@@ -26,6 +34,14 @@
 | Frozen 窗口 × 單／雙圖消融 | 同上 | 二分類 | 單張 K 線優於 K 線＋Volume；16～24 日窗口差距很小 | §7 |
 | Train-only 分位數三分類 | 同上 | 三分類 | AUC、balanced accuracy 輸給 Numeric Logistic；Volume 雙圖無收益 | §8 |
 | 科技巨頭 single／Volume／SMA | 8 檔科技巨頭，4 個股票留出 folds | 三分類 | K 線＋SMA 穩定優於單圖，但 AUC 只與 Numeric Logistic 相當 | §9 |
+| 像素精確畫法 vs mplfinance | AAPL、NVDA、MSFT | 三分類 | 像素畫法 0/5 seeds 勝出，黑底明顯更差；畫法不變 | §10 |
+| K20＋K60 vs K20＋Volume | AAPL、NVDA、MSFT | 三分類 | K20＋K60 0/5 seeds 勝出；雙圖維持 K 線＋Volume | §11 |
+| K20＋SMA vs K20＋Volume | AAPL、NVDA、MSFT | 三分類 | SMA 勝單圖 5/5，但對 Volume 只勝 2/5，視為打平 | §11.4 |
+| 影線加粗／換色（3 像素、同寬色棒） | AAPL、NVDA、MSFT | 三分類 | 同寬色棒單圖與 mplfinance 打平，雙圖較差；3 像素無效；畫法不變 | 決議 #105 |
+| mplfinance 影線加粗（3 倍、同寬色棒） | AAPL、NVDA、MSFT | 三分類 | 兩種都低於現有圖（單圖 0/5 seeds）；畫法不變 | 決議 #106 |
+| mplfinance 配色（紅綠對調、黑白、藍橘） | AAPL、NVDA、MSFT | 三分類 | 都低於現有圖；資訊相同的紅綠對調也差 0.015～0.026，視為雜訊底線 | 決議 #107 |
+| 長期間 walk-forward：t+1／t+3／t+5 × 單／雙／三圖 × 分類頭 | AAPL、NVDA、MSFT（另有 12 檔穩健性檢查），2016～2025、7 folds | 三分類 | 所有設定 AUC 0.50～0.52、彼此無差異、不高於 Numeric Logistic；停止在 Frozen CLS 框架內搜尋 | §12 |
+| 全域 vs 滾動 250 日標籤門檻 | AAPL、NVDA、MSFT | 三分類（兩種標籤定義） | 95% 的 Validation 標籤相同，AUC 變動在 ±0.01 內；正式標籤不變 | 決議 #103 |
 
 不同 label、股票池與切分協定的 F1 不能直接橫向排名。第一列的早期實驗沒有保留 config，設計細節見總結 §3–§5 與 `docs/data_and_experiments_log.md`。
 
@@ -92,6 +108,29 @@ K 線＋SMA 在 20／22／24 日都優於同窗口單圖（mean-ticker Macro-F1 
 
 - Config：[`vit_tech_giants.json`](../../configs/experiments/vit_tech_giants.json)
 - 報告：[tech8_q33_q67 report](../../data/outputs/experiments/vit_tech_giants/runs/a24d19902835b5f7/tech8_q33_q67/report.md)
+
+### 像素畫法與 K20＋K60 對照（2026-10-10）
+
+兩個實驗共用協定：AAPL／NVDA／MSFT、AAPL 的 `strict_temporal_v1` 日期、每檔 Train-only q33／q67 三分類、Frozen ViT-B/16 CLS（雙圖為兩個 CLS 串接）＋LayerNorm／Dropout／Linear 分類頭、固定 30 epochs 不挑 epoch、seeds 40～44，Test 未開啟。門檻沿用 +0.02 且勝 4/5 seeds。
+
+| 實驗 | 候選 vs 基準 | Macro-F1 差 | 勝出 |
+|---|---|---:|---:|
+| 像素畫法 | 黑底像素 vs mplfinance（單／雙圖） | −0.0536／−0.0609 | 0/5、0/5 |
+| 像素畫法 | 白底像素 vs mplfinance（單／雙圖） | −0.0219／−0.0278 | 0/5、0/5 |
+| K20＋K60 | K20＋K60 vs K20＋Volume | −0.0280 | 0/5 |
+| K20＋K60 | K20＋K60 vs 單張 K20 | +0.0068 | 3/5 |
+| K20＋SMA | K20＋SMA vs K20＋Volume | −0.0131 | 2/5 |
+| K20＋SMA | K20＋SMA vs 單張 K20 | +0.0217 | 5/5 |
+
+K20＋K60 實驗因 60 日窗口剔除 Train 最前面 40 天（926 Train）；同一個 K20＋Volume 設定因此由 0.3390 變為 0.3758，顯示 0.03 左右的差距在這個樣本量下不穩定。兩個實驗都沒有改動正式 pipeline。
+
+```bash
+python experiments/vision/run_pixel_render_comparison.py   # 已有特徵快取時只重訓分類頭
+python experiments/vision/run_k20_k60_comparison.py        # 首次會畫 K60 圖並抽特徵，本機 MPS 約 3～4 分鐘
+python experiments/vision/run_k20_sma_comparison.py        # 需先跑上一支；首次約 1～2 分鐘
+```
+
+- 報告：[像素畫法](../../data/outputs/experiments/vit_pixel_render/px_vs_mpl_w20/report.md)、[K20＋K60](../../data/outputs/experiments/vit_k20_k60/k20_k60/report.md)、[K20＋SMA](../../data/outputs/experiments/vit_k20_sma/k20_sma/report.md)；各自的 `samples/` 有畫法並排對照圖。
 
 ## 重建報告
 

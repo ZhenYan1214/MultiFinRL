@@ -1,6 +1,6 @@
 # MultiFinRL ViT 實驗總結
 
-> 更新日期：2026-10-06（2026-10-10 封存整理）
+> 更新日期：2026-10-12（新增 §10 畫法／影線／配色、§11 K20＋K60 與 K20＋SMA、§12 長期間 walk-forward）
 > 後續方向：ViT 工作收斂回 AAPL／NVDA／MSFT；§6–§9 的 50 檔跨股票與 8 檔科技巨頭實驗只留紀錄，各實驗設定摘要見 [封存紀錄](../experiments/vision/README.md)。
 > 範圍：僅整理 ViT／視覺輸入相關正式報告；不包含 Fusion、事件抽取、Decoder、PPO 或回測。
 > 原則：不同 label、股票池與切分協定的 F1 不直接橫向排名；Smoke 輸出已刪除，不納入成效判斷。
@@ -8,6 +8,8 @@
 ## 1. 執行摘要
 
 目前最合理的正式視覺基線仍是 `google/vit-base-patch16-224` 的 Frozen ViT-B/16，搭配雙圖輸入與小型分類頭。現有證據不支持把正式 encoder 改成 DINOv3、MaxViT-T 或 MaxViT-S，也不支持直接採用 last-block fine-tuning 或 LoRA。
+
+**2026-10-12 最新結論（§10–§12）**：回到 AAPL／NVDA／MSFT 後，先在單一 202 天 Validation 上比較畫法（像素、影線、配色）、第二張圖（Volume、SMA、K60）與滾動門檻，差距都在 0.03 以內；資訊完全相同的紅綠對調也差 0.015～0.026，證明這個協定分辨不出這些差異。改用 2016～2025、7 個 walk-forward folds（3 檔 5,091 筆；12 檔穩健性檢查 20,364 筆）後，t+1／t+3／t+5 × 單／雙／三圖 × 兩種分類頭的 ROC-AUC 全部只有 0.50～0.52，彼此沒有可分辨的差異，也不高於 Numeric Logistic。先前 0.53～0.57 的數字來自 2025 這段特別高的期間。在「Frozen ImageNet ViT CLS＋線性頭」框架內已不再搜尋輸入設計與天期；以下各段保留各輪當時的判讀，閱讀時以本段與 §12 為準。
 
 舊三分類實驗曾觀察到 LoRA r4 的平均 Validation Macro-F1 高於 Frozen，但只在 5 個 seeds 中勝出 3 次，未通過預先設定的穩定性門檻。最新且更嚴格的跨股票共用分類頭實驗使用 30 檔股票訓練、10 檔未見股票驗證；跑 3 epochs 後，Frozen 與 LoRA 的未見股票 Macro-F1 僅差 0.0014，ROC-AUC 與 balanced accuracy 都接近或低於 0.5。這表示目前模型主要是在調整 UP／DOWN 預測比例，尚未證明能從圖形中辨識可泛化的未來方向訊號。
 
@@ -19,7 +21,7 @@
 
 2026-10-05 完成的 8 檔科技巨頭、4 個股票留出 folds、5 seeds 實驗，首次在新協定中得到一致的輸入設計訊號：K 線＋SMA 在 20／22／24 日都優於相同窗口的單圖，mean-ticker Macro-F1 分別提高 0.0190、0.0160、0.0133，且 AUC 在 18/20、16/20、18/20 個 fold-seed 配對勝出。Volume 仍沒有收益。依主指標選出的 `w24_dual_sma` 為 0.3424±0.0210，但只比 `w22_dual_sma` 高 0.0011；後者 AUC 相同且 log loss 較佳，因此 22／24 日應視為打平。
 
-這是目前最值得保留的視覺輸入方向，但還不是「ViT 已學會預測漲跌」的證明。`w24_dual_sma` 的 AUC 0.5257 幾乎等於 Numeric Logistic 0.5253，log loss 1.1005 反而差於 1.0916；同一份 Validation 又同時負責 best epoch 與九組候選選擇，結果可能偏樂觀。Test 應繼續鎖定，下一步先用獨立的時間 fold 驗證 SMA 增益，而不是再擴大 backbone 或搜尋更細的窗口。
+這是目前最值得保留的視覺輸入方向，但還不是「ViT 已學會預測漲跌」的證明。`w24_dual_sma` 的 AUC 0.5257 幾乎等於 Numeric Logistic 0.5253，log loss 1.1005 反而差於 1.0916；同一份 Validation 又同時負責 best epoch 與九組候選選擇，結果可能偏樂觀。Test 應繼續鎖定，下一步先用獨立的時間 fold 驗證 SMA 增益，而不是再擴大 backbone 或搜尋更細的窗口。（2026-10-12 補註：§12 的 walk-forward 已完成此驗證，SMA 在 3 檔與 12 檔上都沒有增益。）
 
 ## 2. 實驗脈絡與可比性
 
@@ -299,7 +301,161 @@ AUC 為 18/20、16/20、18/20。四個 fold 的平均 F1 差值也都為正，�
 3. Test 繼續 LOCKED。應新增獨立時間 Validation fold，將 best epoch／候選選擇與最終確認分開。
 4. 只有當 SMA 在新時間 fold 仍同時改善 F1、balanced accuracy，且 AUC／log loss 不劣於 Numeric Logistic，才值得開啟一次性 Test。
 
-## 10. 綜合判斷
+## 10. 像素精確畫法對照（2026-10-10）
+
+### 10.1 設定
+
+回到正式 pipeline 的 AAPL／NVDA／MSFT，只改變 K 線與 Volume 圖的「畫法」：
+
+- `mpl`：正式 pipeline 現有的 mplfinance PNG（白底、畫完再 LANCZOS 縮到 224×224）。
+- `px`：直接填像素陣列，黑底、漲填 G／跌填 R、每根 K 棒固定 11 像素欄（實體 9、影線 1）、不縮圖。
+- `pxw`：與 `px` 相同的像素配置，但改回白底與 mplfinance 的綠／紅，用來區分底色與銳利度。
+
+沿用 AAPL 的 `strict_temporal_v1` 日期（三檔共同日期，每檔 966 Train／202 Validation）、每檔 Train-only q33／q67 三分類、Frozen ViT-B/16 CLS＋LayerNorm／Dropout／Linear 分類頭。分類頭固定 30 epochs 並回報最後一個 epoch，不用 Validation 挑 epoch；seeds 40～44；雙圖為 K 線 CLS 與 Volume CLS 串接。Test 未開啟。
+
+### 10.2 結果
+
+| 畫法 | 單圖 Macro-F1 | 單圖 ROC-AUC | 雙圖 Macro-F1 | 雙圖 ROC-AUC |
+|---|---:|---:|---:|---:|
+| mpl | **0.3351 ± 0.0340** | **0.5339** | **0.3390 ± 0.0251** | **0.5625** |
+| px（黑底） | 0.2814 ± 0.0239 | 0.4832 | 0.2781 ± 0.0210 | 0.5026 |
+| pxw（白底） | 0.3132 ± 0.0279 | 0.5165 | 0.3112 ± 0.0155 | 0.5154 |
+
+配對差值（候選 − mpl）：px 為 −0.0536／−0.0609，pxw 為 −0.0219／−0.0278，四組都是 0/5 seeds 勝出。Numeric Logistic 為 0.3202／0.4875。pxw 的落差集中在 NVDA（單圖 0.2985→0.2420），AAPL 與 MSFT 與 mpl 相近。
+
+### 10.3 本輪判斷
+
+像素精確畫法沒有改善 Frozen ViT 的特徵，黑底還明顯更差。可能原因是純黑底與飽和色塊離 ImageNet 影像分布更遠，而縮圖產生的漸層邊緣反而較接近自然影像質感（後者為推測，未直接驗證）。正式 `chart_generator.py` 不變。這個結論只適用 Frozen ImageNet ViT＋線性頭，不否定解凍或從頭訓練時像素畫法的價值。
+
+### 10.4 影線加粗、換色（2026-10-11）
+
+沿用 §10 的樣本與快取，在白底像素版上只改影線：`pxw_wick3`（3 像素、淺色）與 `pxw_range`（最高～最低畫成與實體同寬的淺色棒，上疊深色實體）。
+
+| 畫法 | 單圖 Macro-F1 | 單圖 ROC-AUC | 雙圖 Macro-F1 | 雙圖 ROC-AUC |
+|---|---:|---:|---:|---:|
+| mpl | 0.3351 | 0.5339 | **0.3390** | **0.5625** |
+| pxw（影線 1 像素） | 0.3132 | 0.5165 | 0.3112 | 0.5154 |
+| pxw_wick3 | 0.3095 | 0.5120 | 0.3109 | 0.5136 |
+| pxw_range | 0.3349 | **0.5434** | 0.3116 | 0.5370 |
+
+同寬色棒在單圖上比 1 像素影線高 0.0217（4/5 seeds），與 mpl 打平（−0.0002）；雙圖則沒有差別（+0.0004），仍比 mpl 低 0.0274（0/5）。3 像素影線沒有效果。增益主要是補回 pxw 在 NVDA 的落差（0.2420→0.3049）。沒有任何影線樣式勝過現有 mplfinance 圖，正式畫法不變。
+
+### 10.5 直接在 mplfinance 圖上加粗影線（2026-10-12）
+
+§10.4 是在像素版上改影線；這裡改成和正式圖完全相同的 mplfinance 畫法與縮圖流程，只修改影線的線寬與顏色。
+
+| 畫法 | 單圖 Macro-F1 | 單圖 ROC-AUC | 雙圖 Macro-F1 | 雙圖 ROC-AUC |
+|---|---:|---:|---:|---:|
+| mpl（正式） | **0.3351** | 0.5339 | **0.3390** | 0.5625 |
+| 影線 3 倍線寬 | 0.3159 | 0.5392 | 0.3299 | 0.5631 |
+| 影線與實體同寬、淺色 | 0.2956 | 0.4978 | 0.3214 | 0.5375 |
+
+3 倍線寬對 mpl 為 −0.0191（單圖 0/5 seeds）／−0.0091（雙圖 1/5），AUC 幾乎不變；同寬色棒為 −0.0395（0/5）／−0.0176（1/5）。同寬色棒在 §10.4 的像素版單圖有效，在這裡卻最差，方向不一致；影線加粗的四種做法沒有一種勝過現有圖，影線方向不再延伸。
+
+### 10.6 配色對照與雜訊底線（2026-10-12）
+
+以正式 mplfinance 流程重畫 K 線與 Volume，只換漲跌顏色。
+
+| 配色 | 單圖 Macro-F1 | 單圖 ROC-AUC | 雙圖 Macro-F1 | 雙圖 ROC-AUC |
+|---|---:|---:|---:|---:|
+| mpl（綠漲紅跌，正式） | **0.3351** | **0.5339** | **0.3390** | **0.5625** |
+| swap（紅漲綠跌） | 0.3204 | 0.5267 | 0.3134 | 0.5401 |
+| mono（黑白，漲空心） | 0.3119 | 0.5032 | 0.3159 | 0.5188 |
+| blueor（藍漲橘跌） | 0.3205 | 0.5226 | 0.3139 | 0.5369 |
+
+`swap` 與正式圖的資訊完全相同，卻低 0.0147（單圖，1/5 seeds）與 0.0256（雙圖，1/5）。這是「換一種等價畫法」在本協定下的雜訊底線，也說明五個 seeds 共用同一批特徵，勝出次數不是獨立證據。據此，§10.2 的白底像素、§10.4／§10.5 的影線變體與 §11 的 K20＋K60（差距 0.004～0.040）都只能解讀為沒有改善的證據；明顯超出底線的只有黑底像素（−0.05～−0.06）。所有變體都輸給同一個基準，也可能是該基準在這段 Validation 上恰好偏高。畫法與配色方向不再以這段 Validation 繼續比較。
+
+## 11. K20＋K60 雙圖對照（2026-10-10）
+
+### 11.1 設定
+
+測試把第二張圖由 20 日 Volume 換成 60 日 K 線。協定同 §10；K60 以正式 K 線圖相同的 mplfinance 樣式另畫到實驗輸出目錄。OHLCV 自 2021-01-04 起，Train 最前面 40 天不足 60 根 K 棒，從所有設定一併剔除（每檔 926 Train／202 Validation）；標籤門檻仍用完整 Train。
+
+### 11.2 結果
+
+| 設定 | Macro-F1 | Balanced acc | ROC-AUC | Log loss |
+|---|---:|---:|---:|---:|
+| single_k20 | 0.3410 ± 0.0194 | 0.3641 | 0.5433 | 1.1527 |
+| single_k60 | 0.3140 ± 0.0213 | 0.3657 | 0.5488 | 1.1499 |
+| dual_k20_volume | **0.3758 ± 0.0302** | **0.3953** | **0.5748** | 1.1597 |
+| dual_k20_k60 | 0.3478 ± 0.0147 | 0.3878 | 0.5541 | 1.2112 |
+| Numeric Logistic（20 日） | 0.3253 | 0.3300 | 0.4888 | 1.1513 |
+| Numeric Logistic（60 日） | 0.3633 | 0.3684 | 0.5251 | 1.2965 |
+
+K20＋K60 相對 K20＋Volume：−0.0280 ± 0.0193、0/5 seeds、AUC −0.0206。相對 single_k20：+0.0068、3/5。分股票只有 AAPL 較佳（0.4155 vs 0.3925），NVDA 與 MSFT 都較差（0.3232 vs 0.3691、0.3048 vs 0.3657）。
+
+### 11.3 本輪判斷
+
+K20＋K60 沒有通過門檻，正式雙圖維持 K 線＋Volume。兩點需要一起讀：
+
+1. **樣本擾動的幅度與效果量相當。** 同樣的 K20＋Volume，在 §10 的 966 天 Train 上是 0.3390，這裡只少 40 天就變成 0.3758。這個設定下 ±0.03～0.04 的差異可能只是樣本擾動，因此 §10 的 pxw（−0.02）與本節的 −0.028 應解讀為「沒有改善的證據」，不是「確定較差」；只有黑底 px 的 −0.05～−0.06 較明確。
+2. **60 日數值 baseline 的 Macro-F1 高於 20 日**（0.3633 vs 0.3253），表示較長歷史可能有資訊，但 Frozen CLS 沒有從 K60 圖取出來；60 日圖縮到 224×224 後每根 K 棒不到 4 像素寬。
+
+### 11.4 同協定加跑 K20＋SMA
+
+沿用 §11 完全相同的樣本、標籤、分類頭與 seeds，K20／Volume／K60 特徵讀同一份快取，只新增 SMA 圖（收盤價線＋SMA5／10／20，`chart_generator` 既有樣式）。
+
+| 設定 | Macro-F1 | Balanced acc | ROC-AUC | Log loss |
+|---|---:|---:|---:|---:|
+| single_k20 | 0.3410 ± 0.0194 | 0.3641 | 0.5433 | 1.1527 |
+| dual_k20_volume | **0.3758 ± 0.0302** | **0.3953** | **0.5748** | 1.1597 |
+| dual_k20_k60 | 0.3478 ± 0.0147 | 0.3878 | 0.5541 | 1.2112 |
+| dual_k20_sma | 0.3627 ± 0.0182 | 0.3837 | 0.5575 | 1.2108 |
+
+| 比較 | Macro-F1 差 | 勝出 seeds | ROC-AUC 差 |
+|---|---:|---:|---:|
+| K20＋SMA vs single_k20 | +0.0217 ± 0.0228 | 5/5（通過門檻） | +0.0142 |
+| K20＋SMA vs K20＋Volume | −0.0131 ± 0.0228 | 2/5 | −0.0172 |
+| K20＋SMA vs K20＋K60 | +0.0149 ± 0.0165 | 4/5 | +0.0034 |
+
+SMA 相對單圖的增益與 §9 科技巨頭實驗方向一致，但全部來自 MSFT（0.3155→0.3924）；AAPL 與 NVDA 沒有改善。Volume 則三檔都高於單圖。SMA 與 Volume 之間的 0.013 小於 §11.3 觀察到的樣本擾動（0.037），兩者應視為打平；§9「Volume 無收益」的結論在正式三檔股票上沒有重現。正式雙圖維持 K 線＋Volume。
+
+## 12. 長期間 walk-forward：天期 × 圖組合 × 分類頭（2026-10-12）
+
+### 12.1 設定
+
+為了解決 §10–§11「三檔、每檔 202 筆 Validation」解析度只有約 0.03 的問題，把期間拉長到 2016 並改用 walk-forward：
+
+- 樣本 2016-01-04～2025-10-01（每檔 2,451 天）；正式 Test 期間不建立樣本。
+- 7 個逐年 folds（驗證年 2019～2025），Train 為該年以前全部樣本並留 5 日間隔；統計單位為 fold × 股票。
+- 標籤為 t+1／t+3／t+5 報酬的三分類，門檻取各 fold、各股票 Train 的 q33／q67。
+- 輸入：single_k20、K20＋Volume、K20＋SMA、三圖（K20＋Volume＋SMA），皆為正式 mplfinance 樣式、Frozen CLS 串接。
+- 分類頭：lr1e-3×30 epochs、lr1e-4×100 epochs，固定 epochs。
+- A：AAPL／NVDA／MSFT（5 seeds，5,091 筆 Validation，21 單位）。B：加 JPM、JNJ、XOM、PG、HD、CAT、NEE、DIS、UNH 共 12 檔（3 seeds，20,364 筆，84 單位）。
+
+### 12.2 結果（ROC-AUC，分類頭 lr1e-4×100）
+
+| 天期 | 輸入 | A：3 檔 | B：12 檔 |
+|---|---|---:|---:|
+| t+1 | single_k20 | 0.5108 ± 0.0065 | 0.5074 ± 0.0031 |
+| t+1 | K20＋Volume | 0.5083 ± 0.0067 | 0.5075 ± 0.0033 |
+| t+1 | K20＋SMA | 0.5149 ± 0.0075 | 0.5089 ± 0.0033 |
+| t+1 | 三圖 | 0.5129 ± 0.0077 | 0.5090 ± 0.0034 |
+| t+1 | Numeric Logistic | 0.5216 ± 0.0067 | 0.5101 ± 0.0033 |
+| t+3 | single_k20 | 0.4987 ± 0.0061 | 0.5044 ± 0.0033 |
+| t+3 | K20＋Volume | 0.5052 ± 0.0068 | 0.5036 ± 0.0035 |
+| t+3 | K20＋SMA | 0.5068 ± 0.0081 | 0.5088 ± 0.0038 |
+| t+3 | 三圖 | 0.5099 ± 0.0083 | 0.5088 ± 0.0040 |
+| t+3 | Numeric Logistic | 0.5065 ± 0.0070 | 0.5045 ± 0.0036 |
+| t+5 | single_k20 | 0.5167 ± 0.0086 | 0.5070 ± 0.0043 |
+| t+5 | K20＋Volume | 0.5156 ± 0.0094 | 0.5057 ± 0.0045 |
+| t+5 | K20＋SMA | 0.5060 ± 0.0106 | 0.5080 ± 0.0047 |
+| t+5 | 三圖 | 0.5073 ± 0.0101 | 0.5093 ± 0.0044 |
+| t+5 | Numeric Logistic | 0.5104 ± 0.0081 | 0.5023 ± 0.0040 |
+
+± 為 fold × 股票單位的標準誤。lr1e-3×30 的 AUC 幾乎相同（A：0.4987～0.5170；B：0.5034～0.5078），只有 Macro-F1 與 log loss 略差。同天期內各輸入的配對 AUC 差在 A 都在 ±0.011 內、B 都在 ±0.005 內，沒有任何一組超過約 1.5 個標準誤。
+
+A 的各年 AUC（t+5，lr1e-4×100）：single_k20 為 0.491／0.519／0.535／0.506／0.505／0.512／0.549（2019～2025），K20＋SMA 在 2025 為 0.581、其餘年份 0.475～0.511。2025 fold 幾乎就是 §10–§11 使用的 Validation 期間。
+
+### 12.3 本輪判斷
+
+1. Frozen ViT 圖形特徵對 t+1／t+3／t+5 的方向訊號都只有 AUC 0.50～0.52；12 檔時約比 0.5 高 2 個標準誤，統計上可能略高於隨機，但沒有實用幅度。
+2. 天期、單／雙／三圖、Volume 或 SMA、分類頭設定之間都沒有可分辨的差異；§11 在單一 Validation 上看到的「第二張圖 +0.02～0.035」沒有重現。
+3. Numeric Logistic 不低於任何 ViT 設定。
+4. §10–§11 的 0.53～0.57 來自 2025 這一段特別高的期間，是單一期間的樂觀值，不是一般水準。
+5. 在「Frozen ImageNet ViT CLS＋線性頭」框架內不再搜尋輸入設計與天期。
+
+## 13. 綜合判斷
 
 ### 已得到支持的判斷
 
@@ -312,6 +468,10 @@ AUC 為 18/20、16/20、18/20。四個 fold 的平均 F1 差值也都為正，�
 7. Train-only q33／q67 三分類能避免用 Validation 定義門檻，但 Frozen ViT 的五 seed AUC 與 balanced accuracy 仍輸給 Numeric Logistic，沒有解決表示能力不足。
 8. 三分類雙圖在三個窗口的 mean-ticker Macro-F1 都低於單圖；Volume CLS concat 只帶來微小校準改善，沒有穩定分類收益。
 9. 科技巨頭實驗沒有支持唯一最佳窗口：20 日有最佳 ViT log loss、22 日有最佳或並列最佳 AUC、24 日只有 F1／balanced accuracy 略高。
+10. 在 AAPL／NVDA／MSFT 上，像素精確畫法（黑底或白底）都沒有勝過現有 mplfinance 圖；黑底明顯更差（§10）。
+11. 第二張圖改用 60 日 K 線沒有勝過現行 Volume，也沒有穩定勝過單張 20 日 K 線（§11）。
+12. 在 AAPL／NVDA／MSFT 的單一 Validation 上，Volume 與 SMA 當第二張圖都優於單張 K 線（+0.035、+0.022）（§11.4）；但在 2016 起的 walk-forward 大樣本上沒有重現，單／雙／三圖沒有差異（§12）。
+13. 2016 起、7 個 folds、最多 12 檔與 20,364 筆 Validation 的驗證顯示，Frozen ViT 對 t+1／t+3／t+5 的 AUC 都只有 0.50～0.52，且不高於 Numeric Logistic；§10–§11 的 0.53～0.57 是 2025 單一期間的樂觀值（§12）。
 
 ### 尚未得到支持的主張
 
@@ -319,19 +479,22 @@ AUC 為 18/20、16/20、18/20。四個 fold 的平均 F1 差值也都為正，�
 - 不能主張增加股票數量後，ViT 已學會一般化的技術圖形型態。
 - 不能主張更大或更新的自然影像 backbone 會改善金融圖表預測。
 - 不能用目前約 0.49 的 Macro-F1 單獨宣稱有效，因為隨機但預測比例平衡的分類器也可能得到接近 0.5 的 Macro-F1。
+- 不能把 AAPL／NVDA／MSFT 三檔、每檔約 200 筆 Validation 上 0.03 左右的差距當成穩定差異；Train 只少 40 天就能讓同一設定變動 0.037（§11.3）。
+- 不能把「5 個 seeds 中 0 或 1 個勝出」當成顯著差異：資訊完全相同的紅綠對調也只勝 1/5（§10.6）。
 - 不能把科技巨頭 Validation 的小幅領先當成 Test 成效；同一 Validation 同時參與 epoch 與候選選擇，仍需獨立時間 fold 驗證。
 
-## 11. 建議的下一步
+## 14. 建議的下一步
 
-1. **暫停增加 epochs／模型大小**：目前瓶頸不是明顯欠擬合，而是 label 與輸入對未來 5 日方向缺乏可分訊號。
-2. **停止搜尋 20／22／24 日窗口**：科技巨頭結果仍顯示各指標由不同窗口勝出；後續固定 22 日即可，不再用同一 Validation 微調窗口。
-3. **若繼續 label ablation，改測 horizon／波動度標準化**：q33／q67 三分類已完成；下一個有區別性的問題是 10／20 日 horizon，或先以當時可得的歷史波動率標準化 forward return，再用 Train-only 門檻定義 neutral zone。
-4. **加入評估門檻**：主指標仍可保留 mean-ticker Macro-F1，但候選模型必須同時滿足 unseen ROC-AUC、balanced accuracy、log loss 不劣於簡單 baseline。
-5. **用獨立時間 fold 複驗 SMA**：固定 22 日，直接比較 single 與 dual SMA；不要再加入 Volume 或搜尋更多窗口。選模期間與確認期間必須分開。
-6. **保持 Test 鎖定**：先確認 SMA 在新時間 fold 仍同時改善 F1／balanced accuracy，且 AUC／log loss 至少不劣於 Numeric Logistic，再一次性開啟 Test。
-7. **模型選擇維持 Frozen ViT-B/16**：在出現跨 seed、跨股票、跨時間的穩定改善前，不更換正式視覺 encoder。
+以下為 2026-10-12 依 §12 更新後的建議；舊版建議中的「固定窗口」「複驗 SMA」「測 horizon」都已由 §11–§12 完成。
 
-## 12. 報告來源
+1. **停止在 Frozen CLS＋線性頭框架內調整輸入與標籤**：畫法、影線、配色、第二／三張圖、窗口、t+1／t+3／t+5、滾動門檻與分類頭設定都已測過，walk-forward 大樣本下 AUC 都在 0.50～0.52。
+2. **優先確認正式 Fusion 是否訓練不足**：Fusion 預設 3 epochs 後 Train loss 仍為 1.15～1.17，高於三分類亂猜的 1.099，且 Validation loss 仍在下降（見 `docs/data_and_experiments_log.md` 2026-10-12）。這是目前唯一可能帶來大幅差異、且與視覺輸入無關的線索。
+3. **若仍要提升視覺分支，改變框架而非輸入**：例如視覺 encoder 的金融圖表領域預訓練、解凍並配合更大的資料量，或改用 patch token 而非 CLS；任何候選都先在 walk-forward 框架下評估。
+4. **評估一律使用 walk-forward**：單一 202 天 Validation 的解析度約 0.03，只適合排除大幅退步，不適合挑選設定。主指標用 ROC-AUC 與 balanced accuracy，並與 Numeric Logistic 比較。
+5. **保持 Test 鎖定**：正式設定沒有變更，沒有開啟 Test 的理由。
+6. **模型選擇維持 Frozen ViT-B/16、K 線＋Volume 雙圖**：沒有任何候選在 walk-forward 下勝出，維持現狀成本最低。
+
+## 15. 報告來源
 
 - [雙圖與單圖報告](../data/outputs/experiments/dual_image_vit/AAPL/dual_image_report.json)
 - [輔助圖比較](../data/outputs/experiments/auxiliary_vision/AAPL/report.md)
@@ -349,8 +512,16 @@ AUC 為 18/20、16/20、18/20。四個 fold 的平均 F1 差值也都為正，�
 - [Frozen Train-only quantile three-class](../data/outputs/experiments/vit_frozen_three_class/runs/14c913bcec83cfba/quantile_q33_q67/report.md)
 - [Frozen Train-only quantile three-class（K 線＋Volume）](../data/outputs/experiments/vit_frozen_three_class/runs/14c913bcec83cfba/quantile_q33_q67_dual/report.md)
 - [Tech giants：single／Volume／SMA × window](../data/outputs/experiments/vit_tech_giants/runs/a24d19902835b5f7/tech8_q33_q67/report.md)
+- [像素畫法對照](../data/outputs/experiments/vit_pixel_render/px_vs_mpl_w20/report.md)
+- [影線加粗／換色對照](../data/outputs/experiments/vit_wick_style/wick_w20/report.md)
+- [mplfinance 影線加粗對照](../data/outputs/experiments/vit_mpl_wick/mpl_wick_w20/report.md)
+- [mplfinance 配色對照](../data/outputs/experiments/vit_mpl_color/mpl_color_w20/report.md)
+- [K20＋K60 對照](../data/outputs/experiments/vit_k20_k60/k20_k60/report.md)
+- [K20＋SMA 對照](../data/outputs/experiments/vit_k20_sma/k20_sma/report.md)
+- [長期間 walk-forward（3 檔）](../data/outputs/experiments/vit_horizon_grid/grid_2016/run/report.md)
+- [長期間 walk-forward（12 檔）](../data/outputs/experiments/vit_horizon_grid/grid_2016_12tickers/run/report.md)
 
-## 13. 保存狀態
+## 16. 保存狀態
 
 - 所有 Smoke run 輸出已刪除，不作效果證據。
 - 報告、圖表、history 與 predictions 保留。
@@ -363,4 +534,5 @@ AUC 為 18/20、16/20、18/20。四個 fold 的平均 F1 差值也都為正，�
 - 2026-10-02 依專案整理決策，已移除完成任務使用的 ViT 訓練 runner、實驗模型、資料準備程式與專用測試；正式 `module_b_encoder` 未變更。
 - 2026-10-10 再移除 §7–§9 使用的三個 runner（窗口消融、三分類、科技巨頭）；對應的 `configs/experiments/*.json` 與輸出保留。
 - 保留 `render_experiment_report.py`、`visualize_comparison_report.py` 與各實驗的 `*_report.py`，可由既有 `report.json` 重建 Markdown 與圖表。
+- §10、§11 的 runner（`run_pixel_render_comparison.py`、`run_k20_k60_comparison.py`、`run_k20_sma_comparison.py`）暫時保留未封存，後兩支依序相依（SMA 讀 K60 實驗的特徵快取）；輸出各約 62 MB／70 MB（含 Frozen CLS 快取、對照圖與 K60 圖檔），報告由 runner 自行產生，不經 `render_experiment_report.py`。
 - 本文件與 `data/outputs/experiments/` 內的原始 JSON／Markdown／圖表是歷史結果依據。若未來要重跑 label horizon、SMA 或 walk-forward 等新問題，應建立新的實驗實作與新輸出命名空間，而不是改寫這批封存結果。

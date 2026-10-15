@@ -755,3 +755,61 @@ log loss 的 sanity gate，否則隨機但預測比例平衡的分類器也可�
 2026-10-05 完成的三個 Frozen ViT 實驗（窗口 × 單／雙圖消融、Train-only q33／q67 三分類、8 檔科技巨頭 single／Volume／SMA）已結束，數字與判讀見 [ViT 實驗總結](vit_experiments_summary_2026-10-02.md) §7–§9。依使用者決定，後續 ViT 工作收斂回 AAPL／NVDA／MSFT，這三個實驗只留紀錄。
 
 已移除 `run_frozen_window_ablation.py`、`run_vit_frozen_three_class.py`、`run_vit_tech_giants.py`；三份 `configs/experiments/*.json`、對應的 `*_report.py` 與 `data/outputs/experiments/` 內的報告、predictions、feature cache 保留。`experiments/vision/` 的三份 README 合併為單一[封存紀錄](../experiments/vision/README.md)，跨股票實驗計畫移到 `docs/archive/`。
+
+### 2026-10-10：像素畫法、K20＋K60 與 K20＋SMA 對照（AAPL／NVDA／MSFT）
+
+三個 Frozen ViT 輸入對照實驗，皆未改動正式 pipeline，Test 未開啟；完整數字見 [ViT 實驗總結](vit_experiments_summary_2026-10-02.md) §10–§11、決議 #100～#102。
+
+| 實驗 | 設定 | mean-ticker Validation Macro-F1 | 結論 |
+|---|---|---|---|
+| 像素畫法 | mplfinance／黑底像素／白底像素，單圖 | 0.3351／0.2814／0.3132 | 像素畫法 0/5 seeds 勝出，畫法不變 |
+| 像素畫法 | 同上，K 線＋Volume 雙圖 | 0.3390／0.2781／0.3112 | 同上 |
+| K20＋K60 | single_k20／single_k60／K20＋Volume／K20＋K60 | 0.3410／0.3140／0.3758／0.3478 | K20＋K60 對 K20＋Volume 0/5 seeds 勝出，雙圖不變 |
+| K20＋SMA | 同上樣本加入 K20＋SMA | 0.3627 | 勝單圖 5/5（+0.0217），對 K20＋Volume 2/5（−0.0131），視為打平，雙圖不變 |
+
+K20＋K60 實驗因 60 日窗口剔除 Train 最前面 40 天，同一個 K20＋Volume 設定由 0.3390 變為 0.3758；每檔約 200 筆 Validation 下，0.03 左右的差距不應視為穩定差異。Runner `run_pixel_render_comparison.py`、`run_k20_k60_comparison.py` 與 `run_k20_sma_comparison.py` 暫時保留在 `experiments/vision/`。
+
+### 2026-10-11：全域 vs 滾動 250 日標籤門檻對照（AAPL／NVDA／MSFT）
+
+只改標籤定義，輸入沿用既有 Frozen ViT CLS 快取、20 日數值特徵與正式 Z_fused；Test 未開啟。滾動門檻為「第 t 天只用 t−5 以前已實現的最近 250 筆 5 日報酬」，N 事前指定。完整說明見決議 #103。
+
+| 輸入 | ROC-AUC（global → rolling） | Balanced acc（global → rolling） |
+|---|---|---|
+| ViT 單張 K20 | 0.5339 → 0.5400 | 0.3681 → 0.3594 |
+| ViT K20＋Volume | 0.5625 → 0.5685 | 0.3748 → 0.3680 |
+| Numeric Logistic（20 日） | 0.4875 → 0.4832 | 0.3235 → 0.3427 |
+| Z_fused＋LR（AAPL／NVDA） | 0.5068 → 0.5162 | 0.3383 → 0.3278 |
+
+兩種標籤在 Validation 有 95% 相同，所有差異都在 ±0.01 左右，小於已知樣本擾動；正式標籤定義不變。滾動門檻的主要作用是修正類別比例，受益最大的 NVDA Test 因維持鎖定而未驗證。
+
+同日加跑 N=120（決議 #104）：與全域標籤相同的比例降到 85%～93%，Validation 類別比例更平均，但下門檻在部分期間轉為正值。ROC-AUC（global → rolling120）為 ViT 單圖 0.5339→0.5271、K20＋Volume 0.5625→0.5497、Numeric Logistic 0.4875→0.4798、Z_fused＋LR 0.5068→0.5450；個股方向相反（K20＋Volume：AAPL 0.5718→0.6349、MSFT 0.5902→0.4953）。沒有一致改善，不採用；N 已非事前指定，不再用這段 Validation 挑 N。
+
+### 2026-10-11：K 線影線加粗、換色對照（AAPL／NVDA／MSFT）
+
+沿用像素畫法實驗的樣本與 Frozen CLS 快取，只新增兩種影線樣式；Test 未開啟。詳見決議 #105、[ViT 實驗總結](vit_experiments_summary_2026-10-02.md) §10.4。
+
+| 畫法 | 單圖 Macro-F1 | 雙圖 Macro-F1 |
+|---|---:|---:|
+| mplfinance（正式） | 0.3351 | 0.3390 |
+| 白底像素，影線 1 像素 | 0.3132 | 0.3112 |
+| 影線 3 像素、淺色 | 0.3095 | 0.3109 |
+| 最高～最低同寬淺色棒 | 0.3349 | 0.3116 |
+
+同寬色棒在單圖上與 mplfinance 打平，雙圖仍較差；3 像素影線無效。正式畫圖方式不變。
+
+2026-10-12 補跑直接在正式 mplfinance 圖上加粗影線（決議 #106）：影線 3 倍線寬的單／雙圖 Macro-F1 為 0.3159／0.3299，影線與實體同寬的淺色版為 0.2956／0.3214，都低於正式圖的 0.3351／0.3390（單圖皆 0/5 seeds 勝出）。影線加粗方向不再延伸。
+
+### 2026-10-12：配色對照與分類頭訓練診斷
+
+**配色**（決議 #107）：紅綠對調／黑白／藍橘的單圖 Macro-F1 為 0.3204／0.3119／0.3205，雙圖為 0.3134／0.3159／0.3139，都低於正式圖的 0.3351／0.3390。資訊相同的紅綠對調也差 0.015～0.026，作為本協定的雜訊底線；先前畫法、影線、K60 的小差距都在此範圍內。
+
+**分類頭訓練診斷**（臨時腳本，未保留 runner；K20＋Volume、3 seeds × 3 檔）：線性頭 lr=1e-3 訓練 30／100／300 epochs 的 Train Macro-F1 為 0.50／0.66／0.77，Validation 為 0.333／0.352／0.367，Validation ROC-AUC 為 0.563／0.551／0.544；lr=1e-4、100 epochs 為 0.376／0.571；MLP(256) 300 epochs 為 0.361／0.535。分類頭不是訓練不足，而是可背下 Train 但無法泛化，AUC 上限約 0.57。相對地，正式 Fusion 訓練 3 epochs 後 Train loss 仍為 1.15～1.17（高於三分類亂猜的 1.099）且 Validation loss 仍在下降，有訓練不足的跡象，待以更多 epochs 重訓確認。
+
+### 2026-10-12：長期間 walk-forward 網格（2016～2025）
+
+`run_horizon_period_grid.py`：7 個逐年 folds、t+1／t+3／t+5、單圖／K20＋Volume／K20＋SMA／三圖、兩種分類頭設定；A 為 AAPL／NVDA／MSFT（5,091 筆 Validation），B 為 12 檔跨產業（20,364 筆）。正式 Test 期間未建立樣本。詳見決議 #108、[ViT 實驗總結](vit_experiments_summary_2026-10-02.md) §12。
+
+- 所有 ViT 設定的 ROC-AUC：A 為 0.4987～0.5170，B 為 0.5034～0.5093；同天期內各輸入的配對差在 A ±0.011、B ±0.005 以內。
+- Numeric Logistic（t+1／t+3／t+5）：A 為 0.5216／0.5065／0.5104，B 為 0.5101／0.5045／0.5023。
+- A 的 2025 fold 明顯高於其他年份（t+5 為 0.549～0.582），先前單一 Validation 的數字因此偏樂觀。
+- 本機 MPS 執行時間：A 約 38 分鐘、B 約 1 小時 46 分鐘。

@@ -148,6 +148,13 @@ py -m module_c_fusion.decoder.evaluate --ticker AAPL --n_generate 30
 
 跨股票二分類、Frozen 窗口消融、分位數三分類與科技巨頭實驗都已完成，Test 維持鎖定；訓練 runner 分別於 2026-10-02 與 2026-10-10 移除，後續 ViT 工作回到 AAPL／NVDA／MSFT。設計與結果見 [封存紀錄](../experiments/vision/README.md)及 [ViT 統一總結](vit_experiments_summary_2026-10-02.md)。未來若更改 label、horizon 或圖形輸入，應建立新的實驗入口與輸出命名空間。
 
+2026-10-10～12 在 AAPL／NVDA／MSFT 上完成的畫法、影線、配色、K60／SMA、滾動門檻與 2016 起 walk-forward 對照，runner 暫時保留在 `experiments/vision/run_*.py`，都不會開啟 Test；各支的相依關係與指令見[封存紀錄](../experiments/vision/README.md)，結論見總結 §10–§12。最大的一支可續跑：
+
+```bash
+python experiments/vision/run_horizon_period_grid.py 2>&1 | tee /tmp/vit_horizon_grid.log   # 3 檔約 40 分鐘（MPS）
+tail -f /tmp/vit_horizon_grid.log
+```
+
 ## pipeline：一次串完 A→B→C（整合階段用，平常各自開發不用跑這個）
 
 ```bash
