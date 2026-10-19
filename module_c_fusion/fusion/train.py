@@ -5,7 +5,7 @@
 - 真實資料一律沿用 A 建立的 strict temporal manifest：只用 Train 更新參數，
   Validation 選最佳 epoch，Test 不參與訓練或選模。兩個邊界的 gap 日也不參與。
 - 產出：Z_fused 到 data/outputs/z_fused/{TICKER}/{date}.npy，真實訓練 checkpoint
-  到 data/outputs/checkpoints/fusion.pt；--fake 獨立寫到 fusion_fake.pt。
+  到 data/outputs/checkpoints/fusion_{TICKER}.pt；--fake 獨立寫到 fusion_fake.pt。
 
 用法：
     python -m module_c_fusion.fusion.train --fake --n 32     # 第一階段：假向量測通
@@ -32,10 +32,8 @@
   照著「共用主幹、分開輸出層」的架構做，不是只共用主幹卻仍然只有一個輸出層。
   這個 `clf_head` 本身只是訓練時提供梯度訊號用的鷹架，不會被存進 checkpoint（只存
   `model.state_dict()`），所以每支股票各自一個不會影響到之後怎麼載入這個 checkpoint。
-  單一 ticker（`--ticker` 或只給一個 `--tickers`）時，行為與加入這個功能之前完全一樣，
-  checkpoint 仍存到 `fusion.pt`；給多個 tickers 時，checkpoint 改存到
-  `fusion_{TICKER1}_{TICKER2}_....pt`，不會覆蓋掉單一 ticker 訓練出來的 `fusion.pt`，
-  兩者可以並存比較，不需要手動備份。
+  單一 ticker 與多 ticker 都把股票代號寫進 checkpoint：`fusion_AAPL.pt`、
+  `fusion_AAPL_NVDA.pt`，不同標的不會互相覆蓋。
 """
 import argparse
 import copy
@@ -488,6 +486,8 @@ def main():
     ap.add_argument("--apply_checkpoint", default=None,
                     help="套用既有 checkpoint 產生 Z_fused，完全不訓練——測試共用融合層對"
                          "沒訓練過的股票的泛化能力用，搭配 --ticker 指定要套用在哪支股票")
+    ap.add_argument("--run_id", default=None,
+                    help="同一次 pipeline 共用的 YYYYMMDD_HHMMSS；寫入報告供一致性檢查")
     args = ap.parse_args()
 
     if args.epochs < 1:
@@ -505,10 +505,8 @@ def main():
     requested_tickers = args.tickers if args.tickers else [args.ticker]
     if args.fake:
         ckpt = paths.OUTPUTS / "checkpoints" / "fusion_fake.pt"
-    elif len(requested_tickers) > 1:
-        ckpt = paths.OUTPUTS / "checkpoints" / f"fusion_{'_'.join(requested_tickers)}.pt"
     else:
-        ckpt = paths.OUTPUTS / "checkpoints" / "fusion.pt"
+        ckpt = paths.fusion_checkpoint_path(requested_tickers)
 
     if args.apply_checkpoint:
         # ---- 泛化測試：套用既有權重，不訓練，只對指定股票跑前向運算產生 Z_fused ----
@@ -527,7 +525,8 @@ def main():
         from module_c_fusion.fusion.consolidate import build_index, save_index
         index_data = build_index(ticker)
         if index_data:
-            save_index(ticker, index_data, checkpoint_path=args.apply_checkpoint)
+            save_index(ticker, index_data, checkpoint_path=args.apply_checkpoint,
+                       run_id=args.run_id)
 
         date_range = [export_days[0][0], export_days[-1][0]] if export_days else None
         log_run("apply_checkpoint", ticker, len(export_days), 0, args.batch, args.lr, [],
@@ -604,6 +603,7 @@ def main():
                split_manifest=", ".join(str(paths.temporal_split_path(t)) for t in tickers))
 
         write_json({
+            "run_id": args.run_id,
             "protocol": "strict_temporal_v1",
             "tickers": tickers,
             "split_manifests": {
@@ -658,6 +658,7 @@ def main():
                best_epoch=best_epoch,
                split_manifest=str(paths.temporal_split_path(ticker)))
         write_json({
+            "run_id": args.run_id,
             "protocol": manifest["protocol"],
             "ticker": ticker,
             "split_manifest": str(paths.temporal_split_path(ticker)),
@@ -679,7 +680,8 @@ def main():
         for exported_ticker in exported_tickers:
             index_data = build_index(exported_ticker)
             if index_data:
-                save_index(exported_ticker, index_data, checkpoint_path=ckpt)
+                save_index(exported_ticker, index_data, checkpoint_path=ckpt,
+                           run_id=args.run_id)
 
 
 if __name__ == "__main__":

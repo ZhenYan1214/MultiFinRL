@@ -3,7 +3,7 @@
 - 對照 A 產生的 label（BULLISH/BEARISH/NEUTRAL）計算準確率。
 - 沿用 A 建立的唯一時間切分 manifest；classifier 不可自行重切日期。
 - train fit、validation 選 C、test 最後只評估一次。
-- 報告輸出到 data/outputs/metrics/classification_report.json。
+- 報告輸出到 data/outputs/metrics/classification_report_{TICKER}.json。
 
 用法：
     python -m module_c_fusion.validation.classifier --ticker AAPL
@@ -69,6 +69,8 @@ def main():
                     help="診斷用：依訓練集類別出現頻率加權，預設關閉（結果見 docs/decisions.md #28）")
     ap.add_argument("--c_values", nargs="+", type=float, default=[0.01, 0.1, 1.0, 10.0],
                     help="只用 validation macro F1 選擇的 Logistic Regression C 候選")
+    ap.add_argument("--run_id", default=None,
+                    help="同一次 pipeline 共用的 YYYYMMDD_HHMMSS；寫入報告供一致性檢查")
     args = ap.parse_args()
 
     rows = load_z_and_labels(args.ticker)
@@ -105,7 +107,10 @@ def main():
     clf.fit(Xfit, yfit)
     test_result = metrics(yte, clf.predict(Xte))
 
+    index_meta_path = paths.OUTPUTS / "z_fused" / f"{args.ticker}_index.meta.json"
+    index_meta = read_json(index_meta_path) if index_meta_path.exists() else {}
     report = {
+        "run_id": args.run_id,
         "protocol": manifest["protocol"],
         "ticker": args.ticker,
         "weighted": args.weighted,
@@ -118,10 +123,12 @@ def main():
         "test_period": [test[0][0], test[-1][0]] if test else [],
         "gap_trading_days": manifest["gap_trading_days"],
         "split_manifest": str(paths.temporal_split_path(args.ticker)),
+        "z_fused_index_meta": str(index_meta_path),
+        "fusion_checkpoint": index_meta.get("fusion_checkpoint"),
         "final_fit": "train_plus_validation",
         **test_result,
     }
-    out = paths.OUTPUTS / "metrics" / "classification_report.json"
+    out = paths.classification_report_path(args.ticker)
     write_json(report, out)
     print(f"[classifier] selected C={selected_c} on validation macro F1")
     print(f"[classifier] test accuracy={report['accuracy']:.4f}, "

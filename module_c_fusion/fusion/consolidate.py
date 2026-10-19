@@ -78,13 +78,19 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def save_index(ticker: str, data: dict, checkpoint_path: str | Path | None = None) -> None:
+def save_index(
+    ticker: str,
+    data: dict,
+    checkpoint_path: str | Path | None = None,
+    run_id: str | None = None,
+) -> None:
     out_dir = paths.OUTPUTS / "z_fused"
     out_dir.mkdir(parents=True, exist_ok=True)
     npz_path = out_dir / f"{ticker}_index.npz"
     np.savez(npz_path, **data)
 
     meta = {
+        "run_id": run_id,
         "ticker": ticker,
         "n_days": int(len(data["dates"])),
         "date_range": [str(data["dates"][0]), str(data["dates"][-1])],

@@ -18,6 +18,9 @@
 7. Compare investment performance with and without RL.
 8. Cross-modal interpretability: Integrated Gradients on the trained PPO policy's action distribution (`explainability/integrated_gradients.py`, proposal 3.6 (4)), evaluated on the manifest's Test period with captum + zero-vector baseline; attributions use the actual holding trajectory the agent would see (not a detached hypothetical). Historical results before the strict split remain legacy (`docs/decisions.md` #49, #56, #85).
 9. Generative decoder (`decoder/`, proposal 3.4/3.5): QLoRA-finetuned LLaMA-2 that generates `<TREND>`/`<RISK_LEVEL>` + narrative text conditioned on Z_fused as a soft prompt. Only the `L_belief` loss is implemented (`L_align`/`L_ground` are not — see `model.py`'s header for why). First full train+eval run: 100% structural format correctness, loss delta 1.97 vs. an untuned backbone (fine-tuning has a real, measurable effect), 90% RISK_LEVEL accuracy, but only 47% TREND accuracy — consistent with `classifier.py`'s own weak market-direction signal from Z_fused, not a decoder-specific shortfall. Narrative quality itself (LLM-as-judge, `evaluate.py --llm_judge`) has not yet been run. Full history including three real bugs found and fixed during training (GPU not actually being used, unmasked padding tokens causing empty-string generation, LoRA dropout left on during inference): `docs/decisions.md` #57–#64.
+10. Produce a provenance-checked Phase 1 report (`reporting/pipeline_report.py`) with temporal-split, training, classifier-selection, Test, confusion-matrix, and optional event-extraction figures. `scripts/run_pipeline.py` calls it automatically and writes `data/outputs/reports/{YYYYMMDD_HHMMSS}/`; ticker is stored inside the report rather than in the run ID.
+
+The current automated pipeline stops after Fusion training, classification validation, and report generation. Existing PPO, Integrated Gradients, and backtest modules remain available for manual historical checks but are marked **[第二階段 - Pending]** until the multi-asset protocol is finalized.
 
 ## Phase 1 (while waiting on real vectors from B)
 
@@ -29,6 +32,7 @@ Wire up the architecture against synthetic vectors first: generate random H_v / 
 python -m module_c_fusion.fusion.train --fake --n 32                   # phase 1: synthetic vectors (needs torch)
 python -m module_c_fusion.fusion.train --ticker AAPL --weighted        # phase 2: real training, exports Z_fused
 python -m module_c_fusion.validation.classifier --ticker AAPL --weighted   # reuses the shared strict split manifest
+python -m module_c_fusion.reporting.pipeline_report --ticker AAPL --run_id 20261004_153000
 python -m module_c_fusion.rl.train_ppo --fake                          # PPO smoke test
 python -m module_c_fusion.backtest.backtest --ticker AAPL --strategy rule_based   # backtest
 ```
@@ -51,7 +55,7 @@ data/outputs/z_fused/{TICKER}_index.meta.json  # split manifest + Fusion checkpo
 All downstream consumers reuse `data/processed/temporal_splits/{TICKER}.json`. Any new task must reuse that manifest rather than calculate another 70/15/15 boundary. If the index wasn't generated automatically, rebuild it with the exact checkpoint that produced those vectors:
 
 ```bash
-python -m module_c_fusion.fusion.consolidate --ticker AAPL --checkpoint data/outputs/checkpoints/fusion.pt
+python -m module_c_fusion.fusion.consolidate --ticker AAPL --checkpoint data/outputs/checkpoints/fusion_AAPL.pt
 ```
 
 ## Notes

@@ -7,6 +7,14 @@ curriculum learning（計畫書 3.6 節 anticipated challenge (2)：「先在低
 再逐步導入高波動／崩盤等複雜情境，以提升模型在極端行情下的穩健性」）預設關閉，用 --curriculum
 開啟，方便直接跟不開的版本做 A/B 對照（decisions.md #52）。
 
+範圍說明：
+- 現行 `--ticker` 每次只訓練「該 ticker＋現金」的一顆單資產 agent，ticker-specific
+  checkpoint 是為了隔離 baseline 產物，不代表已完成多資產配置。
+- 計畫書第 15～16 頁的最終目標是一顆 PPO 同時輸出 N 個資產的權重向量 a_t ∈ R^N；
+  state 應包含多資產 belief state 與完整前期持倉 h_{t-1}，reward 也應以整體投資組合計算。
+- 未來 multi-asset runner 應使用共同交易日期與共同 temporal protocol，輸出可採
+  `ppo_agent_AAPL_NVDA_MSFT.zip` 類型的資產集合命名。本次先記錄規格，不改訓練行為。
+
 用法：
     python -m module_c_fusion.rl.train_ppo --fake                       # 假 Z_fused 測通
     python -m module_c_fusion.rl.train_ppo --ticker AAPL                # 真實 Z_fused，一次性訓練
@@ -24,9 +32,11 @@ from module_c_fusion.fusion.consolidate import load_index
 
 
 def load_real(ticker: str, split_name: str = "train"):
-    """讀 Z_fused 序列與對應次日報酬（用 A 的 future_closes[0] 對 close_t0）。
+    """讀單一 ticker 的 Z_fused 序列與對應次日報酬。
 
     優先讀彙整索引；索引不存在時 fallback 成逐日掃描。
+    這是單資產 baseline loader；正式 multi-asset 版不能只把多次呼叫結果混在一起，必須先
+    依共同交易日對齊各 ticker，再建構同一個 state/action/reward 序列。
     """
     manifest = load_temporal_manifest(ticker)
     idx = load_index(ticker)
@@ -168,7 +178,7 @@ def main():
         model = PPO("MlpPolicy", env, verbose=1, seed=cfg["seed"], ent_coef=args.ent_coef)
         model.learn(total_timesteps=args.timesteps)
 
-    out = paths.OUTPUTS / "checkpoints" / "ppo_agent.zip"
+    out = paths.ppo_checkpoint_path(args.ticker, fake=args.fake)
     out.parent.mkdir(parents=True, exist_ok=True)
     model.save(out)
     report = {
@@ -183,7 +193,7 @@ def main():
         "ent_coef": args.ent_coef,
         "checkpoint": str(out),
     }
-    report_path = paths.OUTPUTS / "metrics" / "ppo_train_report.json"
+    report_path = paths.ppo_train_report_path(args.ticker, fake=args.fake)
     write_json(report, report_path)
     print(f"[train_ppo] agent -> {out}")
     print(f"[train_ppo] report -> {report_path}")

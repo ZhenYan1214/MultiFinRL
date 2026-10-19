@@ -31,6 +31,20 @@ py -m module_a_data.build_dataset --ticker AAPL --limit 100
 # 這一步一定要放在其他 A 指令「之後」，因為它是彙整、不是抓取
 ```
 
+### ETF／指數總經模式
+
+先在 `.env` 設定 `FRED_API_KEY`，再用同一支 pipeline。以下會跳過公司財報／法說會，
+以 point-in-time 指標與 FOMC 新聞取代公司文件；ViT 使用 K 線＋FOMC SEP 點陣圖：
+
+```bash
+python scripts/run_pipeline.py --ticker SPY --macro
+```
+
+總經合併依 `available_date <= 交易日`，只 forward-fill、不 backfill。第一次下載及重建向量、
+Fusion 會耗時；terminal 會顯示目前階段。若只想先驗證少量資料，可加 `--limit 50`。
+若要比較 Volume 視覺輸入，把 `config.yaml` 的 `macro.vision_inputs` 改成
+`[candlestick, volume]` 後重建 dataset 與 vectors。
+
 ## B：Encoder + RAG + 事件抽取
 
 ```bash
@@ -40,42 +54,16 @@ py -m module_b_encoder.generate_vectors --fake --n 10
 py -m module_b_encoder.generate_vectors --ticker AAPL --limit 100
 # 正式執行：讀 A 的 JSON，跑 ViT/FinBERT/RAG，產出 H_v/H_t/H_r，存到 data/vectors/AAPL/
 
-py experiments/vision/experiment_vit_adaptation.py --strategies frozen last1 last2 last4 --epochs 10 --patience 3 --evaluate-test
-# ViT-only 調整實驗：雙圖 CLS 接三分類頭，嚴格時間切分 + 5 日 gap；validation 選策略後才看 test
-# 正式 test 已於 2026-09-24 開啟並記錄，除非改成新的 walk-forward/multi-stock protocol，勿反覆用同一 test 調參
+# 2026-10-02：既有 ViT 訓練實驗已完成並封存，舊 runner 已移除。
+# 統一結果：docs/vit_experiments_summary_2026-10-02.md
+# 原始結果：data/outputs/experiments/
+# 以下工具只由既有 report.json 重建 Markdown／圖表，不會訓練或開啟 Test。
+python experiments/vision/render_experiment_report.py \
+  data/outputs/experiments/maxvit_s_comparison/AAPL_NVDA_MSFT/run/report.json
 
-py experiments/vision/experiment_vit_adaptation.py --evaluate-existing
-# 不重訓，從既有 checkpoints 重算 validation 勝者與 frozen baseline 的同一份 test 指標
-
-py experiments/vision/experiment_vit_adaptation.py --train-tickers AAPL NVDA --held-out-ticker MSFT --strategies frozen last4 --epochs 10 --patience 3 --evaluate-test
-# 多股票 ViT：AAPL/NVDA 各自分類頭、共用 backbone；MSFT 只訓練新 probe head，backbone 不看 MSFT 梯度
-# 這份 MSFT test 已於 2026-09-24 開啟；後續調參須換 walk-forward fold 或新的 held-out ticker
-
-mkdir -p data/outputs/experiments/vit_adaptation
-set -o pipefail
-python -u experiments/vision/experiment_vit_adaptation.py \
-  --train-tickers AAPL NVDA MSFT --held-out-ticker JPM \
-  --strategies frozen lora_r4 lora_r8 --vit-lr 1e-4 \
-  --epochs 10 --patience 3 --batch 8 --evaluate-test \
-  2>&1 | tee data/outputs/experiments/vit_adaptation/lora_AAPL_NVDA_MSFT_holdout_JPM.log
-# LoRA 正式實驗（2026-09-24 已完成）：只在 ViT 最後四個 blocks 的 query/value 掛 adapter。
-# 執行中的 terminal 會逐 epoch 顯示 loss / validation macro F1；另一個 terminal 可用：
-# tail -f data/outputs/experiments/vit_adaptation/lora_AAPL_NVDA_MSFT_holdout_JPM.log
-# 完成後報告位於 data/outputs/experiments/vit_adaptation/AAPL_NVDA_MSFT_holdout_JPM/run/report.json
-# JPM future test 已開啟並記錄；不要再依這份 test 調 LoRA rank/LR 後重跑，後續請換 walk-forward fold 或新股票。
-
-set -o pipefail
-python -u experiments/vision/run_vit_multiseed.py \
-  --seeds 40 41 42 43 44 \
-  --epochs 10 --patience 3 --batch 8 \
-  2>&1 | tee data/outputs/experiments/vit_adaptation/vit_lora_multiseed.log
-# LoRA r4 穩定性驗證（2026-09-29 已完成）：每個 seed 比較 Frozen vs r4，只使用 validation，未開 JPM test。
-# 本次 MPS 訓練約 2 小時 18 分；原 terminal 會即時顯示 seed/strategy/epoch/loss/val_macro_f1。
-# 另一個 terminal 可監看：
-# tail -f data/outputs/experiments/vit_adaptation/vit_lora_multiseed.log
-# 中途 Ctrl+C 後可重跑同一指令；已有完整 report 的 seed 會自動跳過。
-# 完成後彙整：data/outputs/experiments/vit_adaptation/AAPL_NVDA_MSFT_holdout_JPM/multiseed_summary/report.json
-# seeds 40～44 已完成且 report 齊全，除非做重現性稽核，否則不用重跑。
+# 補產全部歷史 vision 報告並建立索引：
+python experiments/vision/render_experiment_report.py \
+  --all data/outputs/experiments
 
 py -m module_b_encoder.event_extraction --ticker AAPL
 # 從新聞/財報文字抽財經事件（獨立於 Z_fused 的分析，不影響 B/C 的向量或訓練），
@@ -83,12 +71,13 @@ py -m module_b_encoder.event_extraction --ticker AAPL
 # --method llm 可切換成 LLM 版（需 API 金鑰，見 docs/spec_b_event_extraction_llm.md）
 ```
 
-## C：Fusion + 驗證 + RL + 回測
+## C：Fusion + 驗證（第一階段 pipeline）
 
 ```bash
 py -m module_c_fusion.fusion.train --fake --n 32 --epochs 1
 # 第一次先測：用假向量測 Cross-Modal Transformer 架構通不通
-# fake checkpoint 只會寫到 data/outputs/checkpoints/fusion_fake.pt，不會覆蓋正式 fusion.pt
+# fake checkpoint 只會寫到 data/outputs/checkpoints/fusion_fake.pt，
+# 正式單股 checkpoint 為 fusion_{TICKER}.pt，彼此不會覆蓋
 
 py -m module_a_data.build_dataset --ticker AAPL
 # 先重建 daily JSON 與共用時間切分 manifest；分位數門檻只使用 Train 報酬
@@ -106,19 +95,28 @@ py -m module_c_fusion.fusion.train --ticker AAPL --weighted
 
 py -m module_c_fusion.validation.classifier --ticker AAPL --weighted
 # 沿用同一 manifest；Validation 選 C，Test 最後評估一次
-# 準確率與 macro F1 存到 data/outputs/metrics/classification_report.json
+# 準確率與 macro F1 存到 data/outputs/metrics/classification_report_AAPL.json
 
 py -m module_c_fusion.validation.event_validation_head --ticker AAPL
 # 用 Z_fused 做事件類型多標籤驗證（7 類），也沿用 Train/Validation/Test manifest
 # 需要 data/labels/event_ground_truth/AAPL.json
+```
+
+### [第二階段 - Pending] RL + 回測
+
+以下模組與歷史實驗仍保留，但目前不由 `scripts/run_pipeline.py` 自動執行；待多資產
+state／action／reward 與回測協定確認後再接回正式 pipeline。需要檢查既有單資產 baseline
+時仍可手動執行：
+
+```bash
 
 py -m module_c_fusion.rl.train_ppo --ticker AAPL
-# 訓練 PPO 投資組合配置 agent，存到 data/outputs/checkpoints/ppo_agent.zip
+# 訓練 PPO 投資組合配置 agent，存到 data/outputs/checkpoints/ppo_agent_AAPL.zip
 # --curriculum 開啟 curriculum learning（依滾動波動度分階段訓練，decisions.md #52~#55）
 
 py -m module_c_fusion.explainability.integrated_gradients --ticker AAPL
 # 只在 Test 期間對訓練好的 PPO policy 做跨模態歸因（captum Integrated Gradients），
-# 需要先有 Z_fused 跟 ppo_agent.zip，輸出到 data/outputs/explainability/
+# 需要先有 Z_fused 跟 ppo_agent_AAPL.zip，輸出到 data/outputs/explainability/
 
 py -m module_c_fusion.backtest.backtest --ticker AAPL --strategy buy_and_hold
 # 回測策略一：全程滿倉（baseline 對照組）
@@ -146,6 +144,10 @@ py -m module_c_fusion.decoder.evaluate --ticker AAPL --n_generate 30
 # 在 test set 上驗證：微調前後 loss 差異、結構化標籤準確率；--llm_judge 可選（會花 API 費用）
 ```
 
+## ViT 跨股票二分類（已封存）
+
+Pilot3 已完成且 Test 維持鎖定；舊訓練 runner 於 2026-10-02 依整理決策移除。設計與結果見 [封存說明](../experiments/vision/README_cross_stock.md)、[實驗計畫](experiment_plan_vit_cross_stock.md)及[ViT 統一總結](vit_experiments_summary_2026-10-02.md)。未來若更改 label、horizon 或圖形輸入，應建立新的實驗入口與輸出命名空間。
+
 ## pipeline：一次串完 A→B→C（整合階段用，平常各自開發不用跑這個）
 
 ```bash
@@ -153,6 +155,9 @@ py scripts/run_pipeline.py --fake
 # 只驗證 B 產出的格式 C 讀不讀得進去，不是真的分析
 
 py scripts/run_pipeline.py --ticker AAPL
-# 真跑一次完整流程：抓資料 → 畫圖 → 彙整 → 產向量 → 訓練 → 驗證 → 回測
+# 真跑第一階段：抓資料 → 畫圖 → 彙整 → 產向量 → Fusion 訓練 → 分類驗證
+# 完成後自動輸出 data/outputs/reports/{YYYYMMDD_HHMMSS}/report.md、report.json 與 figures/
+# run_id 資料夾不含 ticker；ticker、macro/equity 模式與來源 provenance 都寫在報告內
+# [第二階段 - Pending] 不會自動執行 RL 或 Backtest
 # 用 --skip_transcripts 可以跳過法說會抓取那步（foolcalls 套件不穩定時用）
 ```
