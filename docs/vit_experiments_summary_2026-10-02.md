@@ -1,6 +1,6 @@
 # MultiFinRL ViT 實驗總結
 
-> 更新日期：2026-10-12（新增 §10 畫法／影線／配色、§11 K20＋K60 與 K20＋SMA、§12 長期間 walk-forward）
+> 更新日期：2026-10-18（新增 §12.7 CNN 基線、§12.8 文獻 CNN 方法）；2026-10-12 新增 §10 畫法／影線／配色、§11 K20＋K60 與 K20＋SMA、§12 長期間 walk-forward
 > 後續方向：ViT 工作收斂回 AAPL／NVDA／MSFT；§6–§9 的 50 檔跨股票與 8 檔科技巨頭實驗只留紀錄，各實驗設定摘要見 [封存紀錄](../experiments/vision/README.md)。
 > 範圍：僅整理 ViT／視覺輸入相關正式報告；不包含 Fusion、事件抽取、Decoder、PPO 或回測。
 > 原則：不同 label、股票池與切分協定的 F1 不直接橫向排名；Smoke 輸出已刪除，不納入成效判斷。
@@ -455,6 +455,109 @@ A 的各年 AUC（t+5，lr1e-4×100）：single_k20 為 0.491／0.519／0.535／
 4. §10–§11 的 0.53～0.57 來自 2025 這一段特別高的期間，是單一期間的樂觀值，不是一般水準。
 5. 在「Frozen ImageNet ViT CLS＋線性頭」框架內不再搜尋輸入設計與天期。
 
+### 12.4 K 線與成交量畫在同一張圖（2026-10-17）
+
+參考 [Chen（2025, IJACSA 16(4)）](https://thesai.org/Downloads/Volume16No4/Paper_2-Comparing_Vision_Instruct_LLMs_Vision_Based_Deep_Learning.pdf) 的輸入格式，以 mplfinance 內建成交量面板把 K 線與成交量畫在同一張圖（`single_kvol`，成交量柱沿用綠漲紅跌），在 §12 A 的相同協定下比較；同一份 run 重算的 single_k20 與 K20＋Volume 與 §12.2 完全一致。
+
+| 天期 | single_k20 | K20＋Volume（兩張） | K 線＋成交量（同一張） | Numeric Logistic |
+|---|---:|---:|---:|---:|
+| t+1 | 0.5108 | 0.5083 | 0.5140 | 0.5216 |
+| t+3 | 0.4987 | 0.5052 | 0.5090 | 0.5065 |
+| t+5 | 0.5167 | 0.5156 | 0.5059 | 0.5104 |
+
+數值為 ROC-AUC（lr1e-4×100）。合併圖對兩張圖的配對差為 +0.006、+0.004、−0.010，方向不一致且都小於約 1.2 個標準誤，沒有差異。該論文 ViT 的 accuracy 0.77～0.79 主要來自約 75～80% 為「漲」的標籤（其 ViT F1 僅 0.46～0.49），不是輸入格式造成。
+
+### 12.5 成交量單色、外框與二分類（2026-10-17）
+
+在合併圖上分開測兩種樣式：`kvol_mono`（成交量單一藍色）與 `kvol_frame`（價格與成交量面板加外框，不含刻度與文字），並另以兩種二分類標籤重跑：`binary`（第 h 天收盤是否高於今日）與 `binary_anyup`（h 天內任一天收盤高於今日）。
+
+| 標籤 | 天期 | 漲的比例 | 全猜多數類 accuracy | single_k20 AUC | K20＋Volume AUC | kvol AUC | kvol_mono AUC | kvol_frame AUC |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| 三分類 | t+1 | — | 0.361 | 0.511 | 0.508 | 0.514 | 0.512 | 0.515 |
+| 三分類 | t+3 | — | 0.351 | 0.499 | 0.505 | 0.509 | 0.506 | 0.511 |
+| 三分類 | t+5 | — | 0.349 | 0.517 | 0.516 | 0.506 | 0.505 | 0.515 |
+| binary | t+1 | 0.541 | 0.541 | 0.498 | 0.493 | 0.512 | 0.511 | 0.515 |
+| binary | t+3 | 0.581 | 0.581 | 0.490 | 0.489 | 0.489 | 0.498 | 0.501 |
+| binary | t+5 | 0.594 | 0.594 | 0.499 | 0.497 | 0.497 | 0.499 | 0.502 |
+| binary_anyup | t+3 | 0.746 | 0.746 | 0.493 | 0.494 | 0.502 | 0.501 | 0.510 |
+| binary_anyup | t+5 | 0.818 | 0.818 | 0.491 | 0.495 | 0.500 | 0.504 | 0.512 |
+
+三分類的 single_k20 與 K20＋Volume 取自 §12.2／§12.4 同協定結果。所有 ViT 設定的二分類 accuracy 為 0.49～0.59，都低於全猜多數類；binary_anyup 的全猜多數類 accuracy（0.746／0.818）與 Chen（2025）ViT 的 0.77～0.79 同一量級，確認其高 accuracy 來自標籤比例。單色對合併圖沒有差異（−0.003～+0.009）。外框對合併圖在 8 組比較中都為正（+0.001～+0.013，最大約 2 個標準誤），是本系列第一個方向一致的變因，但各比較共用同一批特徵、本系列已比較大量設定，且絕對 AUC 只有 0.51～0.515，不足以採用；若要驗證，需在未使用過的資料上預先指定單一比較。
+
+### 12.6 去掉圖四周留白（2026-10-17）
+
+正式 K 線圖四周約有 16／15／10／9 像素空白（左／右／上／下），合併圖左右約 14 像素。貼邊版把橫軸設為剛好包住首尾 K 棒、價格縱軸設為窗口最低～最高價，留白降到 0～2 像素。
+
+| 天期 | K 線圖 | K 線圖貼邊 | 合併圖 | 合併圖貼邊 |
+|---|---:|---:|---:|---:|
+| t+1 | 0.5108 | 0.5089 | 0.5140 | 0.5046 |
+| t+3 | 0.4987 | 0.5021 | 0.5090 | 0.5054 |
+| t+5 | 0.5167 | 0.5102 | 0.5059 | 0.5128 |
+
+數值為三分類 ROC-AUC。六個差值為 −0.009～+0.007，方向不一致，留白不是瓶頸，正式畫法不變。
+
+### 12.7 CNN 基線：從頭訓練與 ImageNet 預訓練（2026-10-18）
+
+目的是區分「K 線圖本身沒有方向訊號」與「凍結的 ImageNet ViT 看不懂 K 線圖」。CNN 直接在同一批 K20 圖上學習，沿用 §12 的 7 個 folds、t+5 三分類標籤與 21 個 fold × 股票單位，因此可以和 Frozen ViT 逐單位配對。每個 fold × seed 重新訓練，3 個 seeds，三檔 Train 合併，不做資料增強，固定 epochs，不以 Validation 挑設定。
+
+第一版小 CNN 用 BatchNorm，eval 模式下連 Train 都塌成單一類別，Validation 平均 88% 的預測落在同一類，因此不引用（見決議 #112）。以下為修正後的 6 個變體，皆為單張 K 線圖：
+
+| 版本 | ROC-AUC | Macro-F1 | 對 ViT 單圖的 AUC 差（勝出單位） | Train acc（eval） |
+|---|---:|---:|---|---:|
+| 小 CNN＋GroupNorm，白底 | 0.5364 ± 0.0088 | 0.283 | +0.020 ± 0.009（15/21） | 約 0.36 |
+| 小 CNN＋GroupNorm，黑底 | 0.5384 ± 0.0086 | 0.280 | +0.022 ± 0.010（16/21） | 0.371 |
+| 小 CNN＋BatchNorm（重算統計值），白底 | 0.4996 ± 0.0047 | 0.325 | −0.017 ± 0.010（10/21） | 0.755 |
+| 小 CNN＋BatchNorm（重算統計值），黑底 | 0.5007 ± 0.0052 | 0.324 | −0.016 ± 0.010（8/21） | 0.718 |
+| Chen（2025）CNN，約 2,390 萬參數 | 0.5012 ± 0.0048 | 0.280 | −0.016 ± 0.008（8/21） | 0.787 |
+| MobileNetV2（ImageNet 預訓練，全部微調） | 0.5127 ± 0.0076 | 0.337 | −0.004 ± 0.012（11/21） | 0.992 |
+| 參考：Frozen ViT 單圖 | 0.5167 ± 0.0086 | 0.337 | — | — |
+| 參考：Numeric Logistic | 0.5104 ± 0.0081 | 0.336 | — | — |
+
+- **能把 Train 學起來的 CNN，Validation AUC 全部約 0.50～0.51。** 論文 CNN 與 MobileNetV2 幾乎把 Train 背到 100%，與 ViT 分類頭能背下 Train 卻無法泛化的情形相同。所以問題不在 encoder 看不看得懂 K 線圖。
+- **論文 CNN 訓練不穩定。** 21 個模型中有 7 個沒學起來，其中 5 個只輸出單一類別；log loss 3.66，代表預測過度自信。
+- **兩個 GroupNorm 版本約 0.537，但不能當成 CNN 勝過 ViT 的證據。**
+  - Train loss 停在 ln3 附近，代表模型幾乎沒訓練。
+  - Validation 68% 的預測落在同一類，Macro-F1 只有 0.28。
+  - 它們是 6 個變體中最好的一組，有多重比較的偏誤；兩版又屬於同一種模型，不構成兩個獨立證據。
+  - 推測它抓到的是很簡單的低階特徵，例如最後一根 K 棒在 20 日區間中的位置，尚未驗證。
+- **黑底沒有差異。**
+- **論文 CNN 的高 accuracy 在三分類下無法重現。** 與 §12.4 的判斷一致：高 accuracy 來自其二元標籤的類別比例。
+
+正式視覺 encoder 不變。
+
+**二分類：照論文 CNN 與輸入格式（2026-10-18）。** 使用論文 CNN、K 線＋成交量合併圖，標籤為第 5 天收盤是否高於今日，與 ViT 二分類逐單位配對（見決議 #113）。
+
+| 模型 | ROC-AUC | Accuracy | 「漲」類 F1 |
+|---|---:|---:|---:|
+| 論文 CNN（合併圖） | 0.5076 ± 0.0104 | 0.522 | 0.544 |
+| 論文 CNN（純 K 線） | 0.5028 ± 0.0098 | 0.531 | 0.623 |
+| Frozen ViT（合併圖） | 0.4965 ± 0.0107 | 0.495 | — |
+| Numeric Logistic | 0.5028 ± 0.0110 | 0.509 | — |
+| 全猜漲 | 0.500 | 0.594 | 0.743 |
+| 論文表 III 的 CNN（參考） | — | 0.80～0.85 | 0.87～0.90 |
+
+- 論文 CNN 對 ViT 的配對 AUC 差 +0.011 ± 0.014（13/21），在雜訊內。
+- 論文 CNN 的 accuracy 低於全猜漲，「漲」類 F1 遠低於論文。
+- 論文沒有寫出標籤定義。它的 SVM 全猜漲，precision 為 0.73～0.77，代表測試集「漲」占這個比例。這只有「5 天內任一天收盤高於今日」對得上（以論文股票與期間算為 0.73～0.79），第 5 天收盤的定義只有 0.45～0.58。
+- 這仍是推論。使用者判斷「任一天上漲」標籤沒有意義，不跑。
+
+### 12.8 文獻 CNN 方法（2026-10-18）
+
+三篇金融圖像 CNN 論文的方法，由 OHLCV 直接照原文產生輸入，再改用本專案的三分類標籤與同一套 walk-forward 評估（見決議 #114）。每個 fold 訓練 5 次並平均機率；early stopping 只用 Train 最後 20% 期間。
+
+| 方法 | 輸入 | ROC-AUC | Macro-F1 | 對 ViT 單圖（AUC 差，勝出單位） |
+|---|---|---:|---:|---|
+| JKX（[Jiang, Kelly & Xiu 2023](https://doi.org/10.1111/jofi.13268)） | 64×60 黑底 OHLC 像素圖＋均線＋成交量 | 0.5130 ± 0.0078 | 0.334 | −0.004 ± 0.010（11/21） |
+| CNN-TA（[Sezer & Ozbayoglu 2018](https://doi.org/10.1016/j.asoc.2018.04.024)） | 15 指標 × 15 期間矩陣 | 0.5311 ± 0.0109 | 0.338 | +0.014 ± 0.011（14/21） |
+| 多解析度 GAF（[Barra et al. 2020](https://doi.org/10.1109/JAS.2020.1003132)） | 20／40／60 日收盤 GASF | 0.5032 ± 0.0086 | 0.313 | −0.014 ± 0.012（10/21） |
+| 參考：Frozen ViT 單圖 | mplfinance K 線圖 | 0.5167 ± 0.0086 | 0.337 | — |
+| 參考：Numeric Logistic | 20 日報酬＋成交量 | 0.5104 ± 0.0081 | 0.336 | — |
+
+- **大多數模型在第 1～2 個 epoch 就停了。** 模型一開始學 Train，在 Train 末段（另一段時間）的 loss 就變差。這跟 §12.7 一樣：學得到，但帶不到別的時期。
+- **CNN-TA 最高，但不能採用。** 它只比 ViT 高約 1.3 個標準誤，主要來自 2025 年（0.605），2022 年低於 0.5；Macro-F1 沒有提升；而且是三者中挑最好的。
+- **JKX 的效果需要大量股票。** 原文用全美股數千檔訓練，只用最大 500 檔時效果明顯減弱。這裡只有三檔超大型股，資料量差兩到三個數量級。
+- 若要延續這個方向，下一步是擴大訓練股票池，再於 AAPL／NVDA／MSFT 上評估。這會超出目前三檔的範圍。
+
 ## 13. 綜合判斷
 
 ### 已得到支持的判斷
@@ -472,6 +575,7 @@ A 的各年 AUC（t+5，lr1e-4×100）：single_k20 為 0.491／0.519／0.535／
 11. 第二張圖改用 60 日 K 線沒有勝過現行 Volume，也沒有穩定勝過單張 20 日 K 線（§11）。
 12. 在 AAPL／NVDA／MSFT 的單一 Validation 上，Volume 與 SMA 當第二張圖都優於單張 K 線（+0.035、+0.022）（§11.4）；但在 2016 起的 walk-forward 大樣本上沒有重現，單／雙／三圖沒有差異（§12）。
 13. 2016 起、7 個 folds、最多 12 檔與 20,364 筆 Validation 的驗證顯示，Frozen ViT 對 t+1／t+3／t+5 的 AUC 都只有 0.50～0.52，且不高於 Numeric Logistic；§10–§11 的 0.53～0.57 是 2025 單一期間的樂觀值（§12）。
+14. 從頭訓練的 CNN（含 Chen 2025 架構）與 ImageNet 預訓練 MobileNetV2 都沒有勝過 Frozen ViT。能背下 Train 的 CNN，Validation AUC 都約 0.50～0.51；換 encoder 或從頭學圖形特徵都沒有帶來可泛化的方向訊號（§12.7）；照論文 CNN 改做第 5 天收盤二分類也一樣，accuracy 低於全猜漲。三種文獻方法（JKX、CNN-TA、GAF）改用本專案標籤後也沒有可靠勝出（§12.8）。
 
 ### 尚未得到支持的主張
 
@@ -489,7 +593,7 @@ A 的各年 AUC（t+5，lr1e-4×100）：single_k20 為 0.491／0.519／0.535／
 
 1. **停止在 Frozen CLS＋線性頭框架內調整輸入與標籤**：畫法、影線、配色、第二／三張圖、窗口、t+1／t+3／t+5、滾動門檻與分類頭設定都已測過，walk-forward 大樣本下 AUC 都在 0.50～0.52。
 2. **優先確認正式 Fusion 是否訓練不足**：Fusion 預設 3 epochs 後 Train loss 仍為 1.15～1.17，高於三分類亂猜的 1.099，且 Validation loss 仍在下降（見 `docs/data_and_experiments_log.md` 2026-10-12）。這是目前唯一可能帶來大幅差異、且與視覺輸入無關的線索。
-3. **若仍要提升視覺分支，改變框架而非輸入**：例如視覺 encoder 的金融圖表領域預訓練、解凍並配合更大的資料量，或改用 patch token 而非 CLS；任何候選都先在 walk-forward 框架下評估。
+3. **若仍要提升視覺分支，改變框架而非輸入**：例如視覺 encoder 的金融圖表領域預訓練、解凍並配合更大的資料量，或改用 patch token 而非 CLS；任何候選都先在 walk-forward 框架下評估。從頭訓練 CNN 與微調 MobileNetV2 已測過，都沒有勝出（§12.7）。
 4. **評估一律使用 walk-forward**：單一 202 天 Validation 的解析度約 0.03，只適合排除大幅退步，不適合挑選設定。主指標用 ROC-AUC 與 balanced accuracy，並與 Numeric Logistic 比較。
 5. **保持 Test 鎖定**：正式設定沒有變更，沒有開啟 Test 的理由。
 6. **模型選擇維持 Frozen ViT-B/16、K 線＋Volume 雙圖**：沒有任何候選在 walk-forward 下勝出，維持現狀成本最低。
@@ -520,6 +624,22 @@ A 的各年 AUC（t+5，lr1e-4×100）：single_k20 為 0.491／0.519／0.535／
 - [K20＋SMA 對照](../data/outputs/experiments/vit_k20_sma/k20_sma/report.md)
 - [長期間 walk-forward（3 檔）](../data/outputs/experiments/vit_horizon_grid/grid_2016/run/report.md)
 - [長期間 walk-forward（12 檔）](../data/outputs/experiments/vit_horizon_grid/grid_2016_12tickers/run/report.md)
+- [K 線＋成交量同一張圖（walk-forward）](../data/outputs/experiments/vit_horizon_grid/grid_2016_kvol/run/report.md)
+- [成交量單色／外框（walk-forward）](../data/outputs/experiments/vit_horizon_grid/grid_2016_kvol_style/run/report.md)
+- [二分類（walk-forward）](../data/outputs/experiments/vit_horizon_grid/grid_2016_binary/run/report.md)
+- [二分類：任一天上漲（walk-forward）](../data/outputs/experiments/vit_horizon_grid/grid_2016_binary_anyup/run/report.md)
+- [去掉留白（walk-forward）](../data/outputs/experiments/vit_horizon_grid/grid_2016_tight/run/report.md)
+- [文獻 CNN 方法（JKX、CNN-TA、GAF）](../data/outputs/experiments/cnn_literature/lit_2016_t5/report.md)
+- [CNN 二分類：論文 CNN，第 5 天收盤](../data/outputs/experiments/cnn_baseline/cnn_paper_binary/report.md)
+- [CNN 二分類：論文 CNN，純 K 線](../data/outputs/experiments/cnn_baseline/cnn_paper_binary_k20/report.md)
+- [CNN 基線：GroupNorm 白底](../data/outputs/experiments/cnn_baseline/cnn_2016_t5_gn/report.md)、[GroupNorm 黑底](../data/outputs/experiments/cnn_baseline/cnn_gn_inv/report.md)、[BatchNorm 重算統計值](../data/outputs/experiments/cnn_baseline/cnn_bn_recal/report.md)、[BatchNorm 重算統計值黑底](../data/outputs/experiments/cnn_baseline/cnn_bn_recal_inv/report.md)、[Chen（2025）CNN](../data/outputs/experiments/cnn_baseline/cnn_paper/report.md)、[MobileNetV2](../data/outputs/experiments/cnn_baseline/cnn_mnv2/report.md)、[第一版 BatchNorm（無效，僅留紀錄）](../data/outputs/experiments/cnn_baseline/cnn_2016_t5/report.md)
+
+### 參考論文
+
+- Chen, Q. (2025). Comparing Vision-Instruct LLMs, Vision-Based Deep Learning, and Numeric Models for Stock Movement Prediction. *International Journal of Advanced Computer Science and Applications*, 16(4). [PDF](https://thesai.org/Downloads/Volume16No4/Paper_2-Comparing_Vision_Instruct_LLMs_Vision_Based_Deep_Learning.pdf)：§12.4、§12.5、§12.7 的輸入格式與 CNN 架構來源
+- Jiang, J., Kelly, B., & Xiu, D. (2023). (Re-)Imag(in)ing Price Trends. *The Journal of Finance*, 78(6), 3193–3249. [DOI](https://doi.org/10.1111/jofi.13268)：§12.8 的 JKX 方法
+- Sezer, O. B., & Ozbayoglu, A. M. (2018). Algorithmic financial trading with deep convolutional neural networks: Time series to image conversion approach. *Applied Soft Computing*, 70, 525–538. [DOI](https://doi.org/10.1016/j.asoc.2018.04.024)：§12.8 的 CNN-TA 方法
+- Barra, S., Carta, S. M., Corriga, A., Podda, A. S., & Reforgiato Recupero, D. (2020). Deep learning and time series-to-image encoding for financial forecasting. *IEEE/CAA Journal of Automatica Sinica*, 7(3), 683–692. [DOI](https://doi.org/10.1109/JAS.2020.1003132)：§12.8 的多解析度 GAF 方法
 
 ## 16. 保存狀態
 

@@ -151,7 +151,7 @@ py -m module_c_fusion.decoder.evaluate --ticker AAPL --n_generate 30
 2026-10-10～12 在 AAPL／NVDA／MSFT 上完成的畫法、影線、配色、K60／SMA、滾動門檻與 2016 起 walk-forward 對照，runner 暫時保留在 `experiments/vision/run_*.py`，都不會開啟 Test；各支的相依關係與指令見[封存紀錄](../experiments/vision/README.md)，結論見總結 §10–§12。最大的一支可續跑：
 
 ```bash
-python experiments/vision/run_horizon_period_grid.py 2>&1 | tee /tmp/vit_horizon_grid.log   # 3 檔約 40 分鐘（MPS）
+python experiments/vision/run_horizon_period_grid.py 2>&1 | tee /tmp/vit_horizon_grid.log   # 預設只跑 t+5；t+1／t+3 用 --horizons 1 3 5
 tail -f /tmp/vit_horizon_grid.log
 ```
 

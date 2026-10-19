@@ -24,6 +24,8 @@
 | `run_mpl_color_comparison.py` | 2026-10-12 mplfinance 配色對照 runner（暫時保留；重用 `run_mpl_wick_comparison.py` 的流程） |
 | `run_horizon_period_grid.py` | 2026-10-12 長期間 walk-forward × 天期 × 圖組合 × 分類頭 runner（暫時保留；可續跑，`--tickers` 可擴充） |
 | `run_rolling_label_comparison.py` | 2026-10-11 全域 vs 滾動 250 日標籤對照 runner（暫時保留；讀像素畫法實驗的特徵快取與正式 Z_fused） |
+| `run_cnn_baseline.py` | 2026-10-18 CNN 基線 runner（暫時保留；只讀 grid_2016 的圖與 ViT 結果；`--model small／paper／mobilenetv2`、`--norm`、`--bn-recal`、`--invert`、`--label-mode`；可續跑） |
+| `run_cnn_literature.py` | 2026-10-18 文獻 CNN 方法 runner（暫時保留；JKX、CNN-TA、GAF，由 OHLCV 直接產生輸入，讀 grid_2016 的 OHLCV 與 ViT 結果；可續跑） |
 
 ## 已封存實驗一覽
 
@@ -41,6 +43,12 @@
 | mplfinance 影線加粗（3 倍、同寬色棒） | AAPL、NVDA、MSFT | 三分類 | 兩種都低於現有圖（單圖 0/5 seeds）；畫法不變 | 決議 #106 |
 | mplfinance 配色（紅綠對調、黑白、藍橘） | AAPL、NVDA、MSFT | 三分類 | 都低於現有圖；資訊相同的紅綠對調也差 0.015～0.026，視為雜訊底線 | 決議 #107 |
 | 長期間 walk-forward：t+1／t+3／t+5 × 單／雙／三圖 × 分類頭 | AAPL、NVDA、MSFT（另有 12 檔穩健性檢查），2016～2025、7 folds | 三分類 | 所有設定 AUC 0.50～0.52、彼此無差異、不高於 Numeric Logistic；停止在 Frozen CLS 框架內搜尋 | §12 |
+| K 線與成交量同一張圖（walk-forward） | AAPL、NVDA、MSFT，2016～2025、7 folds | 三分類 | 與分開兩張圖無差異（AUC 差 −0.010～+0.006）；正式輸入不變 | §12.4 |
+| 成交量單色／外框、二分類（walk-forward） | AAPL、NVDA、MSFT，2016～2025、7 folds | 三分類、二分類、任一天上漲 | 單色無差異；外框 8/8 同向但僅 +0.001～+0.013 AUC；二分類 AUC 0.49～0.51，accuracy 全低於全猜多數類 | §12.5 |
+| 去掉圖四周留白（walk-forward） | AAPL、NVDA、MSFT，2016～2025、7 folds | 三分類 | K 線圖與合併圖貼邊的 AUC 差 −0.009～+0.007，方向不一致；畫法不變 | §12.6 |
+| CNN 基線：從頭訓練（小 CNN、Chen 2025 CNN）與 MobileNetV2 微調（walk-forward） | AAPL、NVDA、MSFT，2016～2025、7 folds | 三分類 | 能背下 Train 的 CNN，Validation AUC 都約 0.50～0.51；只有幾乎未訓練的 GroupNorm 版約 0.537，但 Macro-F1 0.28 且有多重比較偏誤；正式 encoder 不變 | §12.7 |
+| CNN 二分類：照 Chen 2025 CNN 與合併圖，第 5 天收盤是否高於今日（walk-forward） | AAPL、NVDA、MSFT，2016～2025、7 folds | 二分類 | AUC 0.508，accuracy 0.522 低於全猜漲 0.594，「漲」類 F1 0.544；論文高分無法重現 | §12.7、決議 #113 |
+| 文獻 CNN 方法：JKX、CNN-TA、多解析度 GAF（walk-forward） | AAPL、NVDA、MSFT，2016～2025、7 folds | 三分類 | AUC 0.503～0.531；CNN-TA 最高，但只比 ViT 高約 1.3 個標準誤；多數模型第 1～2 epoch 就早停 | §12.8 |
 | 全域 vs 滾動 250 日標籤門檻 | AAPL、NVDA、MSFT | 三分類（兩種標籤定義） | 95% 的 Validation 標籤相同，AUC 變動在 ±0.01 內；正式標籤不變 | 決議 #103 |
 
 不同 label、股票池與切分協定的 F1 不能直接橫向排名。第一列的早期實驗沒有保留 config，設計細節見總結 §3–§5 與 `docs/data_and_experiments_log.md`。

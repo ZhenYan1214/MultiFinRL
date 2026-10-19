@@ -813,3 +813,60 @@ K20＋K60 實驗因 60 日窗口剔除 Train 最前面 40 天，同一個 K20＋
 - Numeric Logistic（t+1／t+3／t+5）：A 為 0.5216／0.5065／0.5104，B 為 0.5101／0.5045／0.5023。
 - A 的 2025 fold 明顯高於其他年份（t+5 為 0.549～0.582），先前單一 Validation 的數字因此偏樂觀。
 - 本機 MPS 執行時間：A 約 38 分鐘、B 約 1 小時 46 分鐘。
+
+### 2026-10-17：K 線與成交量畫在同一張圖（walk-forward）
+
+參考 Chen（2025, IJACSA 16(4)）把成交量畫在 K 線圖下方，在 2016～2025 walk-forward（AAPL／NVDA／MSFT、5 seeds）下與單張 K 線、K 線＋Volume 兩張圖比較。ROC-AUC（t+1／t+3／t+5）：合併圖 0.5140／0.5090／0.5059，兩張圖 0.5083／0.5052／0.5156，差距方向不一致且在標準誤內。詳見決議 #109、[ViT 實驗總結](vit_experiments_summary_2026-10-02.md) §12.4。
+
+首次執行時 huggingface_hub 的連線 client 已關閉，transformers 未退回本機快取而載入失敗；runner 改為先以 `local_files_only=True` 讀快取，失敗才下載。
+
+### 2026-10-17：成交量單色、外框與二分類（walk-forward）
+
+在合併圖上分開測成交量單色與加外框，並以兩種二分類標籤重跑（AAPL／NVDA／MSFT、2016～2025、7 folds、5 seeds）。詳見決議 #110、[ViT 實驗總結](vit_experiments_summary_2026-10-02.md) §12.5。
+
+- 三分類 ROC-AUC（t+1／t+3／t+5）：合併圖 0.514／0.509／0.506，單色 0.512／0.506／0.505，外框 0.515／0.511／0.515。
+- 二分類（第 h 天是否高於今日）：所有輸入 AUC 0.489～0.515；accuracy 0.49～0.51，全低於全猜多數類的 0.541／0.581／0.594。
+- 二分類（h 天內任一天高於今日）：漲的比例 0.746（t+3）／0.818（t+5），全猜多數類 accuracy 即為此值；所有輸入 AUC 0.491～0.512。
+- 外框對合併圖在 8 組比較都為正（+0.001～+0.013），但幅度小、比較彼此相關，不採用。
+
+### 2026-10-17：去掉圖四周留白（walk-forward）
+
+正式 K 線圖四周約 16／15／10／9 像素空白（左／右／上／下），貼邊後降到 0～2 像素。三分類 ROC-AUC（t+1／t+3／t+5）：K 線圖 0.5108／0.4987／0.5167 → 貼邊 0.5089／0.5021／0.5102；合併圖 0.5140／0.5090／0.5059 → 貼邊 0.5046／0.5054／0.5128。差值方向不一致，畫法不變。詳見決議 #111、[ViT 實驗總結](vit_experiments_summary_2026-10-02.md) §12.6。
+
+### 2026-10-18：CNN 基線（walk-forward）
+
+`run_cnn_baseline.py` 只讀 grid_2016 的 K20 圖，沿用同一批 folds、t+5 三分類標籤與 21 個單位，可與 Frozen ViT 逐單位配對（3 seeds，三檔 Train 合併訓練）。詳見決議 #112、[ViT 實驗總結](vit_experiments_summary_2026-10-02.md) §12.7。
+
+- 第一版小 CNN＋BatchNorm（`cnn_2016_t5`）無效。eval 模式下連 Train 都塌成單一類，Validation 88% 的預測同一類。結果只留紀錄。
+- 單圖 ROC-AUC：
+  - GroupNorm 白底 0.536、黑底 0.538。兩者 Train loss 都停在約 ln3，Macro-F1 0.28。
+  - BatchNorm 重算統計值：白底 0.500、黑底 0.501。
+  - Chen（2025）CNN 0.501。
+  - MobileNetV2 微調 0.513。
+  - 參考：Frozen ViT 0.517、Numeric Logistic 0.510。
+- 論文 CNN 與 MobileNetV2 的 Train 幾乎背到 100%，但 Validation 沒有改善。
+- MobileNetV2 連續訓練時，MPS 記憶體沒有釋放，每個模型從 105 秒變成 6,005 秒。已改為每個模型後釋放記憶體、每個 fold 換新程序續跑，之後每個模型約 280～500 秒。
+- 本機 MPS 耗時：小 CNN 每個變體約 25～36 分鐘；論文 CNN 約 1.3 小時；MobileNetV2 修正後的 11 個模型約 1.1 小時（不含修正前的 10 個）。
+
+### 2026-10-18：論文 CNN 二分類（第 5 天收盤）
+
+照 Chen（2025）的 CNN 與 K 線＋成交量合併圖，標籤為第 5 天收盤是否高於今日，與 ViT 二分類逐單位配對（AAPL／NVDA／MSFT、7 folds、3 seeds）。詳見決議 #113、[ViT 實驗總結](vit_experiments_summary_2026-10-02.md) §12.7。
+
+- 論文 CNN：ROC-AUC 0.508、accuracy 0.522、「漲」類 F1 0.544。
+- 參考：ViT 合併圖 0.497、Numeric Logistic 0.503；全猜漲 accuracy 0.594、F1 0.743。
+- 21 個模型中 15 個把 Train 背到約 100%，3 個只輸出單一類。
+- 原本也排了「5 天內任一天收盤高於今日」標籤（推測為論文定義），使用者判斷沒有意義後停止。已跑的 16 個模型輸出已刪除。
+- 本機 MPS 約 1.5 小時；每個 fold 用新程序執行，沒有再出現記憶體累積。
+- 同日加跑純 K 線圖（不含成交量）：ROC-AUC 0.503、accuracy 0.531、「漲」類 F1 0.623；有無成交量都一樣接近隨機（約 1.4 小時）。
+
+### 2026-10-18：文獻 CNN 方法（三分類 walk-forward）
+
+`run_cnn_literature.py` 由 OHLCV 直接照三篇論文產生輸入，改用本專案三分類標籤，與 Frozen ViT 逐單位配對（AAPL／NVDA／MSFT、7 folds；每 fold 5 seeds，取平均機率）。詳見決議 #114、[ViT 實驗總結](vit_experiments_summary_2026-10-02.md) §12.8。
+
+- ROC-AUC：JKX（Jiang, Kelly & Xiu 2023）0.513、CNN-TA（Sezer & Ozbayoglu 2018）0.531、多解析度 GAF（Barra et al. 2020）0.503。
+- 參考：ViT 單圖 0.517、Numeric Logistic 0.510。
+- CNN-TA 對 ViT +0.014 ± 0.011（14/21），在雜訊內。
+- Early stopping 的最佳 epoch 平均只有 1.2～3.5，最佳時 Train accuracy 0.36～0.43。
+- JKX 模型的二類版參數 708,866，與原文一致。
+- 本機 MPS 約 15 分鐘（JKX 約 10 分鐘，其餘各約 1 分鐘）。
+
