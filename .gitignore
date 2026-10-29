@@ -3,6 +3,7 @@
 data/raw/
 data/processed/
 data/vectors/
+data/vectors_*/
 data/outputs/
 !data/**/.gitkeep
 

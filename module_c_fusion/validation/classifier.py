@@ -23,17 +23,18 @@ LABEL_TO_ID = {"BEARISH": 0, "NEUTRAL": 1, "BULLISH": 2}
 ID_TO_LABEL = {v: k for k, v in LABEL_TO_ID.items()}
 
 
-def load_z_and_labels(ticker: str):
+def load_z_and_labels(ticker: str, tag: str | None = None):
     """讀取所有 (date, Z_fused, label)，依日期排序。
 
     優先讀彙整索引（data/outputs/z_fused/{ticker}_index.npz）；
     索引還沒建立時 fallback 成逐日掃描（速度較慢，但結果一致）。
+    tag 不為 None 時讀 fusion/train.py --tag 的實驗組 Z_fused。
     """
-    idx = load_index(ticker)
+    idx = load_index(ticker, tag=tag)
     if idx is not None:
         return list(zip(idx["dates"].tolist(), list(idx["z"]), idx["label"].tolist()))
 
-    z_dir = paths.OUTPUTS / "z_fused" / ticker
+    z_dir = paths.z_fused_dir(tag) / ticker
     rows = []
     for f in sorted(z_dir.glob("*.npy")):
         date = f.stem
@@ -71,9 +72,11 @@ def main():
                     help="只用 validation macro F1 選擇的 Logistic Regression C 候選")
     ap.add_argument("--run_id", default=None,
                     help="同一次 pipeline 共用的 YYYYMMDD_HHMMSS；寫入報告供一致性檢查")
+    ap.add_argument("--tag", default=None,
+                    help="讀 fusion/train.py --tag 的實驗組 Z_fused，報告另存 classification_report_{TICKER}_{tag}.json")
     args = ap.parse_args()
 
-    rows = load_z_and_labels(args.ticker)
+    rows = load_z_and_labels(args.ticker, tag=args.tag)
     if len(rows) < 10:
         raise SystemExit(f"Z_fused 不足（{len(rows)} 筆），先跑 module_c_fusion.fusion.train")
 
@@ -107,7 +110,7 @@ def main():
     clf.fit(Xfit, yfit)
     test_result = metrics(yte, clf.predict(Xte))
 
-    index_meta_path = paths.OUTPUTS / "z_fused" / f"{args.ticker}_index.meta.json"
+    index_meta_path = paths.z_fused_dir(args.tag) / f"{args.ticker}_index.meta.json"
     index_meta = read_json(index_meta_path) if index_meta_path.exists() else {}
     report = {
         "run_id": args.run_id,
@@ -128,7 +131,7 @@ def main():
         "final_fit": "train_plus_validation",
         **test_result,
     }
-    out = paths.classification_report_path(args.ticker)
+    out = paths.classification_report_path(args.ticker, args.tag)
     write_json(report, out)
     print(f"[classifier] selected C={selected_c} on validation macro F1")
     print(f"[classifier] test accuracy={report['accuracy']:.4f}, "

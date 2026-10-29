@@ -30,9 +30,15 @@ def daily_json(ticker: str, date: str) -> Path:
     return DATASET / ticker / f"{date}.json"
 
 
-def vector_dir(ticker: str, date: str) -> Path:
+def vectors_root(tag: str | None = None) -> Path:
+    """向量根目錄；tag（例如 recency）是另一套檢索設定的實驗 H_r，存在 data/vectors_{tag}/，
+    該目錄只放 H_r.npy 與 index.json，H_v／H_t 仍讀正式的 data/vectors/。"""
+    return DATA / f"vectors_{tag}" if tag else VECTORS
+
+
+def vector_dir(ticker: str, date: str, tag: str | None = None) -> Path:
     """B 的每日向量目錄路徑。"""
-    return VECTORS / ticker / date
+    return vectors_root(tag) / ticker / date
 
 
 def temporal_split_path(ticker: str) -> Path:
@@ -59,10 +65,27 @@ def y_belief_path(ticker: str) -> Path:
     return LABELS / "y_belief" / f"{ticker}.json"
 
 
-def fusion_checkpoint_path(tickers: str | list[str]) -> Path:
-    """Fusion checkpoint；單股與多股都把 ticker 寫進檔名，避免互相覆蓋。"""
-    names = [tickers] if isinstance(tickers, str) else tickers
+def grounding_labels_path(ticker: str, vectors_tag: str | None = None) -> Path:
+    """L_ground 的 LLM 相關性分數：{date: {chunk_ids, scores, reasons, ...}}。是答案卷，
+    進版本控制，見 module_c_fusion/grounding/generate_alpha_star.py。
+    vectors_tag（例如 recency）對應另一套檢索的 H_r，答案卷另存 {ticker}_{tag}.json。
+    """
+    return LABELS / "grounding" / (f"{ticker}_{vectors_tag}.json" if vectors_tag else f"{ticker}.json")
+
+
+def fusion_checkpoint_path(tickers: str | list[str], tag: str | None = None) -> Path:
+    """Fusion checkpoint；單股與多股都把 ticker 寫進檔名，避免互相覆蓋。
+    tag（例如 grounding 實驗組名）會接在檔名最後，實驗組不會蓋掉正式 checkpoint。
+    """
+    names = [tickers] if isinstance(tickers, str) else list(tickers)
+    if tag:
+        names.append(tag)
     return OUTPUTS / "checkpoints" / f"fusion_{'_'.join(names)}.pt"
+
+
+def z_fused_dir(tag: str | None = None) -> Path:
+    """Z_fused 輸出根目錄；有 tag 時寫到 z_fused_{tag}/，不覆蓋正式 Z_fused。"""
+    return OUTPUTS / (f"z_fused_{tag}" if tag else "z_fused")
 
 
 def ppo_checkpoint_path(ticker: str, *, fake: bool = False) -> Path:
@@ -71,8 +94,9 @@ def ppo_checkpoint_path(ticker: str, *, fake: bool = False) -> Path:
     return OUTPUTS / "checkpoints" / f"ppo_agent_{suffix}.zip"
 
 
-def classification_report_path(ticker: str) -> Path:
-    return OUTPUTS / "metrics" / f"classification_report_{ticker}.json"
+def classification_report_path(ticker: str, tag: str | None = None) -> Path:
+    suffix = f"{ticker}_{tag}" if tag else ticker
+    return OUTPUTS / "metrics" / f"classification_report_{suffix}.json"
 
 
 def ppo_train_report_path(ticker: str, *, fake: bool = False) -> Path:
