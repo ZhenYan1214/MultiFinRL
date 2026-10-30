@@ -225,6 +225,12 @@ def main():
         num_training_steps=total_steps,
     )
 
+    # from_pretrained 載入的 backbone 內層預設是 eval 模式，而 gradient checkpointing 跟
+    # LoRA dropout 都只在 training 模式才生效。沒有這行的話第一個 epoch 兩者都不會啟用，
+    # 要等 eval_loss() 結束切回 train() 才會開始（實測 MPS 上每步 138 秒 -> 12 秒，
+    # MPS 快取 27.5GB -> 9.2GB）
+    decoder.train()
+
     for epoch in range(start_epoch, args.epochs):
         epoch_num = epoch + 1
         running_train_loss, n_train_steps = 0.0, 0
