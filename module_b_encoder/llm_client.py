@@ -14,6 +14,7 @@
 """
 import json
 import os
+import threading
 
 try:
     from dotenv import load_dotenv
@@ -26,21 +27,49 @@ from module_b_encoder.event_ground_truth_prompt import SYSTEM_PROMPT, build_user
 EVENT_TYPES = {"EARNINGS", "MA", "PRODUCT_LAUNCH", "LAWSUIT",
                "GUIDANCE", "DIVIDEND", "MANAGEMENT_CHANGE"}
 
+# 累計 Claude 用掉的 token，跑完可以估實際花費（多執行緒同時呼叫，要上鎖）
+USAGE = {"input_tokens": 0, "output_tokens": 0}
+_usage_lock = threading.Lock()
+
 DEFAULT_MODEL = {
-    "claude": "claude-haiku-4-5-20251001",
+    "claude": "claude-haiku-5-5",
     "openai": "gpt-4o-mini",
     "deepseek": "deepseek-chat",
 }
 
+# 事件標記用的輸出格式：Claude 走 structured outputs，保證回傳的 JSON 一定解析得了、
+# 類別一定在七類裡面（openai/deepseek 仍靠 prompt 要求 + parse_events 過濾）
+EVENTS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "date": {"type": "string"},
+        "events": {"type": "array", "items": {"type": "string", "enum": sorted(EVENT_TYPES)}},
+    },
+    "required": ["date", "events"],
+    "additionalProperties": False,
+}
 
-def call_claude(system: str, user: str, model: str) -> str:
+_claude_client = None
+
+
+def call_claude(system: str, user: str, model: str, schema: dict | None = None) -> str:
+    """Haiku 5.5 預設會先思考（adaptive thinking），回應的第一個區塊可能是 thinking 不是 text，
+    所以要挑出 text 區塊；max_tokens 也要留給思考用，200 會被截斷。"""
+    global _claude_client
     import anthropic
-    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
-    resp = client.messages.create(
-        model=model, max_tokens=200, system=system,
-        messages=[{"role": "user", "content": user}],
+    if _claude_client is None:  # client 可以跨執行緒共用，建一次就好
+        _claude_client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"], max_retries=5)
+    kwargs = {"output_config": {"format": {"type": "json_schema", "schema": schema}}} if schema else {}
+    resp = _claude_client.messages.create(
+        model=model, max_tokens=16000, system=system,
+        messages=[{"role": "user", "content": user}], **kwargs,
     )
-    return resp.content[0].text
+    if resp.stop_reason in ("refusal", "max_tokens"):
+        raise RuntimeError(f"Claude 回應異常結束: stop_reason={resp.stop_reason}")
+    with _usage_lock:
+        USAGE["input_tokens"] += resp.usage.input_tokens
+        USAGE["output_tokens"] += resp.usage.output_tokens
+    return "".join(b.text for b in resp.content if b.type == "text")
 
 
 def call_openai(system: str, user: str, model: str) -> str:
@@ -91,5 +120,8 @@ def label_events(ticker: str, date: str, news: list[dict],
     為了省成本會先篩過），這支函式只負責組 prompt、呼叫、解析，不做篩選。
     """
     user_prompt = build_user_prompt(ticker, date, news, filing_chunks, transcript_chunks)
-    raw = CALLERS[provider](SYSTEM_PROMPT, user_prompt, model)
+    if provider == "claude":
+        raw = call_claude(SYSTEM_PROMPT, user_prompt, model, schema=EVENTS_SCHEMA)
+    else:
+        raw = CALLERS[provider](SYSTEM_PROMPT, user_prompt, model)
     return parse_events(raw)
