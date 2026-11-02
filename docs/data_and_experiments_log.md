@@ -749,3 +749,44 @@ log loss 的 sanity gate，否則隨機但預測比例平衡的分類器也可�
 完成結果整理後，已移除過往 ViT 訓練 runner、實驗模型、跨股票資料準備程式與專用測試，避免已結束的探索程式持續混在正式專案入口中。正式 `module_b_encoder` 沒有變更；原始 `report.json`、`report.md`、圖表、history 與 predictions 仍保留在 `data/outputs/experiments/`。
 
 統一結論、各實驗可比性與結果來源見 [ViT 實驗總結](vit_experiments_summary_2026-10-02.md)。保留的 `render_experiment_report.py`、`visualize_comparison_report.py` 與 `cross_stock_report.py` 可由既有 JSON 重建報告。若未來要跑新的 label／horizon／SMA／walk-forward 實驗，需另外建立新版 runner，不覆寫歷史輸出。
+
+## 2026-11-02：Text encoder（H_t）改版實驗與採用
+
+對應 `docs/decisions.md` #99。只動 Track B 的 H_t，H_v、H_r、fusion 都沒有改。
+
+**動機**：舊版 `encode_news()` 把當天所有新聞串成一段、截到 512 token。在 AAPL 1,381 天上實測：每天新聞平均 11.2 則、8,840 token；1,379 天（99.9%）被截斷，平均只有 **7.7%** 的文字進到模型。進到窗口的新聞平均 1.35 則，其中 76% 是前一晚盤後的第一則；65% 的天數連一則完整新聞都沒有讀完。
+
+**新做法**（`encoders.text_method: chunk_relevance_max`）：
+1. 每則新聞切成 ≤510 token 的段落，各自用 FinBERT 編碼取 masked mean。
+2. 只留內文提到公司名稱或 ticker ≥3 次的段落（當天一段都沒有時用全部段落）。
+3. 逐維取 max，得到一個 768 維向量，放在 H_t 第 0 列。
+
+H_t 的 shape 仍是 `[512, 768]`。
+
+**評估方式**：只看 H_t 本身的線性 probe，不經過 fusion，因為 fusion 會混進 H_v、H_r 的效果。
+- 事件 probe：149 天事件 ground truth（2026-10 重標前的版本）、5-fold、10 個 seed 平均。
+- 同日市場反應：1,381 天的異常成交量、當日漲跌幅大小、開盤跳空大小，用 Ridge 做 7 個半年窗的 walk-forward，算 Spearman 相關。這組不需要標記，用來交叉確認事件 probe 的結果。
+
+| 指標 | 舊版 | 新版 | 差異 |
+|---|---|---|---|
+| 事件 micro F1 | 0.386 | **0.531** | +0.146，配對 bootstrap 95% CI [+0.066, +0.226] |
+| 異常成交量 Spearman | 0.118 | 0.264 | 7/7 窗勝出 |
+| 漲跌幅大小 Spearman | 0.039 | 0.151 | 6/7 窗勝出 |
+| 跳空大小 Spearman | 0.081 | 0.187 | 5/7 窗勝出 |
+| 5 日漲跌情緒 probe（walk-forward macro F1，隨機約 0.324） | 0.323 | 0.297 | 新舊都跟隨機差不多 |
+
+**過程中排除的做法**：
+- 只用標題、平均分配 token 預算：沒有贏過舊版。
+- 段落直接平均：訊號被稀釋，事件 F1 掉到 0.290。
+- 改用 bge-base、FinLang：都比 FinBERT 差。
+- 拿掉 days_ago 前綴：沒有差別，因為這批資料的 days_ago 全部是 0。
+- finbert-tone：分數略高（0.545），但不顯著，而且換 encoder 會連帶影響 H_r，所以沒有採用。
+
+**限制**：
+- 數字來自 2026-10 重標前的 149 天 ground truth 和 5-fold CV，不是 `shared/temporal_split.py` 的時間切分，不能直接跟其他報告比較。之後應該用新的 1,381 天 ground truth 重新評估。
+- 新做法是從約 90 種組合中選出來的，點估計可能偏高。
+- 新做法讓 H_t 帶到更多「當天發生了什麼事」的資訊，但不保證提升 5 日漲跌分類。
+- C 的 `fusion/model.py` 目前對 H_t 的 512 列取平均，等於用 `H_t[0]/512`，資訊不變，但建議改成直接取第 0 列。
+- 還沒用新做法跑完整 pipeline（需要先用新版 `build_dataset` 重建 dataset）。
+
+舊做法保留為 `text_method: concat_truncate`，可以切回去對照。
