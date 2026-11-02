@@ -782,11 +782,14 @@ H_t 的 shape 仍是 `[512, 768]`。
 - 拿掉 days_ago 前綴：沒有差別，因為這批資料的 days_ago 全部是 0。
 - finbert-tone：分數略高（0.545），但不顯著，而且換 encoder 會連帶影響 H_r，所以沒有採用。
 
+**新 ground truth 確認（N1）**：上表用的是 2026-10 重標前的 149 天 ground truth 和 5-fold CV。之後改用 Haiku 5.5 全量重標的 1,381 天 ground truth，並改成時間切分（walk-forward 7 個半年窗，測試 875 天）重新評估：事件 micro F1 從 0.280 提升到 **0.469**（+0.189，block bootstrap 95% CI [+0.132, +0.245]）；排除雜訊較多的 PRODUCT_LAUNCH、MANAGEMENT_CHANGE 後是 +0.255。新做法雖然是從約 90 種組合中挑出來的，但換了標記者和切分方式後結論不變。標題過濾（E7 max）、finbert-tone 和新做法彼此打平（差距 ≤ 0.014，CI 跨 0）。
+
 **限制**：
-- 數字來自 2026-10 重標前的 149 天 ground truth 和 5-fold CV，不是 `shared/temporal_split.py` 的時間切分，不能直接跟其他報告比較。之後應該用新的 1,381 天 ground truth 重新評估。
-- 新做法是從約 90 種組合中選出來的，點估計可能偏高。
+- 149 天和 1,381 天兩組 ground truth、5-fold 和時間切分算出的分數，彼此不能直接比較。
 - 新做法讓 H_t 帶到更多「當天發生了什麼事」的資訊，但不保證提升 5 日漲跌分類。
 - C 的 `fusion/model.py` 目前對 H_t 的 512 列取平均，等於用 `H_t[0]/512`，資訊不變，但建議改成直接取第 0 列。
 - 還沒用新做法跑完整 pipeline（需要先用新版 `build_dataset` 重建 dataset）。
 
 舊做法保留為 `text_method: concat_truncate`，可以切回去對照。
+
+全部實驗數據（E0–E7、X1–X3 共約 90 種組合、ground truth 新舊比較、N1 各類別分數）見 [Text Encoder 實驗總結](text_encoder_experiments_summary_2026-11-02.md)，原始結果檔在 `data/outputs/experiments/text_encoder/`。
