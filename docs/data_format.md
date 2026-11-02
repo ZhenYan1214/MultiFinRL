@@ -167,7 +167,7 @@ data/vectors/AAPL/2021-03-15/
   "date": "2021-03-15",
   "vectors": {
     "H_v": { "file": "H_v.npy", "shape": [2, 197, 768], "dtype": "float32", "encoder": "google/vit-base-patch16-224", "input_types": ["candlestick", "volume"] },
-    "H_t": { "file": "H_t.npy", "shape": [512, 768], "dtype": "float32", "encoder": "ProsusAI/finbert" },
+    "H_t": { "file": "H_t.npy", "shape": [512, 768], "dtype": "float32", "encoder": "ProsusAI/finbert", "method": "chunk_relevance_max" },
     "H_r": { "file": "H_r.npy", "shape": [3, 512, 768], "dtype": "float32", "encoder": "ProsusAI/finbert", "top_k": 3 }
   },
   "retrieved_chunk_ids": [
@@ -187,6 +187,7 @@ data/vectors/AAPL/2021-03-15/
 | `encoder` | HuggingFace model id，供實驗比較與論文記錄 |
 | `H_v` 第一維 | = 視覺輸入張數（目前 2），順序必須與 `chart.inputs`／`input_types` 一致；第二維為每張 ViT 的 CLS + patch tokens |
 | macro 模式 | H_v 目前為 K 線＋FOMC 點陣圖；可由 `macro.vision_inputs` 切成 K 線＋Volume 做 ablation。H_t = point-in-time 指標摘要＋FOMC／ticker 新聞；H_r 的候選庫加入總經指標與 FOMC 新聞 chunk。shape 不變，因此 C 不需新增第四模態 |
+| `H_t` 內容 / `method` | shape 固定 `[512, 768]`。`method=chunk_relevance_max`（2026-11 起預設，decisions.md #99）：**只有第 0 列有值**，是當日新聞段落級編碼後、只留內文提到公司 ≥3 次的段落再逐維 max 的 768 維向量，其餘 511 列為 0（下游取 `H_t[0]` 即可；若照舊對 512 列取平均，結果是 `H_t[0]/512`，方向相同、只差固定倍數）。`method=concat_truncate`（舊版）：token-level 特徵，全部新聞串接截 512 token。缺 `method` 欄位的舊向量視為 `concat_truncate` |
 | `retrieved_chunk_ids` | 對應 A 資料中的 `chunk_id`，供事後追溯與可解釋性分析 |
 | `context_sources` | H_t 實際使用的來源摘要；一般模式為 `ticker_news`，macro 模式可含 `macro_indicators`、`macro_news`，方便稽核 |
 | `H_r` 第一維 | = K（目前 K=3），順序為相似度由高至低 |

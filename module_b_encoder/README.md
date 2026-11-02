@@ -10,7 +10,7 @@
    pretrained ViT (`encoders/vision_encoder.py`). **H_v** preserves both token grids as
    `[2, 197, 768]`; the second image can later be replaced by a technical-indicator chart without
    changing the encoder interface.
-2. Encode news text into a feature vector **H_t** with FinBERT or LLaMA (`encoders/text_encoder.py`). Macro mode prepends the point-in-time indicator snapshot and recent FOMC news.
+2. Encode news text into a feature vector **H_t** with FinBERT (`encoders/text_encoder.py`). Default method (`encoders.text_method: chunk_relevance_max`, `docs/decisions.md` #99): every article is split into ≤510-token chunks and encoded separately, only chunks mentioning the company ≥3 times are kept, and they are max-pooled into one 768-d vector stored in row 0 of H_t (other rows are zero). The old method (`concat_truncate`) concatenated all news and truncated at 512 tokens. Macro mode prepends the point-in-time indicator snapshot and recent FOMC news.
 3. Build a FAISS vector index over filing/transcript chunks, or over traceable macro indicator/FOMC-news chunks in macro mode (`rag/vector_db.py`).
 4. Combine H_v and H_t into a query and retrieve the top-K (K=3) most relevant chunks to produce **H_r** (`rag/retriever.py`).
 5. Compare different ViT and text-encoder options and record which combination performs best.

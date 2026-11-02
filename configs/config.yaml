@@ -48,6 +48,10 @@ rag:
 encoders:
   vision: google/vit-base-patch16-224   # H_v: [2, 197, 768]（圖別, token, hidden）
   text: ProsusAI/finbert                # H_t: [512, 768]；H_r: [3, 512, 768]
+  # H_t 產生方式（decisions.md #99）：chunk_relevance_max = 段落級編碼 + 公司相關性過濾 + 逐維 max，
+  # 結果放 H_t 第 0 列；concat_truncate = 舊版（全部新聞串接截 512 token）
+  text_method: chunk_relevance_max
+  text_min_mentions: 3      # 段落內文提到公司名稱/ticker 至少幾次才保留
 
 # fusion / RL（C 模組讀取）
 fusion:

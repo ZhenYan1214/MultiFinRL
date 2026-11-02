@@ -28,7 +28,8 @@ except ImportError:
 def save_vectors(ticker: str, date: str, h_v, h_t, h_r, chunk_ids: list[str],
                  vision_id: str, text_id: str, top_k: int, source_json: str,
                  vision_input_types: list[str] | None = None,
-                 context_sources: list[str] | None = None) -> None:
+                 context_sources: list[str] | None = None,
+                 text_method: str = "concat_truncate") -> None:
     """三個 .npy + index.json 落地（validate 後）。"""
     out_dir = paths.vector_dir(ticker, date)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -43,7 +44,8 @@ def save_vectors(ticker: str, date: str, h_v, h_t, h_r, chunk_ids: list[str],
                 "file": "H_v.npy", "shape": list(h_v.shape), "dtype": "float32",
                 "encoder": vision_id, "input_types": vision_input_types or [],
             },
-            "H_t": {"file": "H_t.npy", "shape": list(h_t.shape), "dtype": "float32", "encoder": text_id},
+            "H_t": {"file": "H_t.npy", "shape": list(h_t.shape), "dtype": "float32", "encoder": text_id,
+                    "method": text_method},
             "H_r": {"file": "H_r.npy", "shape": list(h_r.shape), "dtype": "float32", "encoder": text_id, "top_k": top_k},
         },
         "retrieved_chunk_ids": chunk_ids,
@@ -112,6 +114,11 @@ def run_real(cfg, ticker: str, limit: int | None, balance_sources: bool = False)
 
     k = cfg["rag"]["top_k"]
     alpha = cfg["rag"].get("query_alpha", 0.5)
+    text_method = cfg["encoders"].get("text_method", "concat_truncate")
+    min_mentions = cfg["encoders"].get("text_min_mentions", 3)
+    if text_method not in ("chunk_relevance_max", "concat_truncate"):
+        raise ValueError(f"未知的 encoders.text_method: {text_method}")
+    print(f"[generate_vectors] H_t method={text_method}" + (f", min_mentions={min_mentions}" if text_method == "chunk_relevance_max" else ""))
     db = ChunkVectorDB()
     quota = {"filing": 1, "transcript": 1} if balance_sources and not macro_mode else None
 
@@ -142,13 +149,16 @@ def run_real(cfg, ticker: str, limit: int | None, balance_sources: bool = False)
             )
         h_v = vision.encode([paths.ROOT / item["path"] for item in chart_inputs])
         text_items, context_sources = _text_context(record)
-        h_t = text.encode_news(text_items)
+        if text_method == "chunk_relevance_max":
+            h_t = text.encode_news_chunk_max(text_items, ticker, min_mentions)
+        else:
+            h_t = text.encode_news(text_items)
         h_r, chunk_ids = retrieve(h_v, h_t, db, text, k, alpha, quota=quota)
 
         save_vectors(ticker, date, h_v, h_t, h_r, chunk_ids,
                      vision.model_id, text.model_id, k,
                      str(f.relative_to(paths.ROOT)).replace("\\", "/"), input_types,
-                     context_sources)
+                     context_sources, text_method)
         print(f"[generate_vectors] {ticker} {date} done（{i}/{len(files)}）", end="\r", flush=True)
 
     print()
