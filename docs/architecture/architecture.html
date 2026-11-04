@@ -1,0 +1,1085 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MultiFinRL 系統架構</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap">
+<script>
+  window.MathJax = {
+    tex: { inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']] },
+    svg: { fontCache: 'global', mtextInheritFont: true },
+    startup: { typeset: true }
+  };
+</script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-svg.min.js"></script>
+<style>
+/* 版面：左主欄＝圖像路徑（OHLCV→K 線→ViT→融合→Z_fused→Decoder），中欄＝文字路徑（新聞／財報／法說→RAG-2→Decoder）與 Loss，右欄＝LLM 答案卷；下方是 Loss、RAG、新舊對照、待討論、分階段 */
+:root {
+  --bg: #eef1f0; --panel: #ffffff; --panel-2: #f6f8f7; --ink: #15202a; --muted: #5a6772;
+  --line: #c6cfd2; --grid: #dde3e3; --edge: #8b979f; --hi: #1f4fa8; --grad: #cf3a2c;
+  --a: #a5601a; --b: #0c776b; --c: #3a4cc0; --d: #b3306a; --l: #5b7a1a; --r: #2a789c; --p: #7a8691; --new: #7a3fc4;
+  --ok: #2b8547; --wip: #c2830b; --no: #8c96a0;
+  --ok-bg: #e3f2e7; --wip-bg: #fbf0d6; --no-bg: #eceff1; --new-bg: #efe6fa;
+  --font-display: "IBM Plex Sans Condensed", "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+  --font-body: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1317; --panel: #151c21; --panel-2: #1a2228; --ink: #e3e9ed; --muted: #92a0ab;
+    --line: #34414b; --grid: #1d262c; --edge: #66737d; --hi: #7fa6ff; --grad: #ff7d6e;
+    --a: #e3a452; --b: #3fc3b0; --c: #96a3ff; --d: #f27dab; --l: #a8c85a; --r: #6cbde0; --p: #9aa6b0; --new: #c49bff;
+    --ok: #5ec47e; --wip: #f1b63f; --no: #7f8c97;
+    --ok-bg: #173022; --wip-bg: #33280f; --no-bg: #20282e; --new-bg: #2a1f3a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1317; --panel: #151c21; --panel-2: #1a2228; --ink: #e3e9ed; --muted: #92a0ab;
+  --line: #34414b; --grid: #1d262c; --edge: #66737d; --hi: #7fa6ff; --grad: #ff7d6e;
+  --a: #e3a452; --b: #3fc3b0; --c: #96a3ff; --d: #f27dab; --l: #a8c85a; --r: #6cbde0; --p: #9aa6b0; --new: #c49bff;
+  --ok: #5ec47e; --wip: #f1b63f; --no: #7f8c97;
+  --ok-bg: #173022; --wip-bg: #33280f; --no-bg: #20282e; --new-bg: #2a1f3a;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-body); font-size: 15px; line-height: 1.65;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 28px 64px;
+}
+.wrap { max-width: 1480px; margin: 0 auto; display: flex; flex-direction: column; gap: 52px; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; line-height: 1.25; }
+h1 { font-size: clamp(28px, 4vw, 40px); font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 24px; font-weight: 700; }
+h3 { font-size: 17px; font-weight: 600; }
+p { margin: 0; }
+a { color: var(--hi); }
+code, .mono { font-family: var(--font-mono); font-size: 0.86em; }
+code { background: var(--panel-2); border: 1px solid var(--grid); border-radius: 4px; padding: 0 4px; overflow-wrap: anywhere; }
+.eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.muted { color: var(--muted); }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--hi); outline-offset: 2px; }
+
+header.top { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 24px; align-items: end; }
+header.top .lead { max-width: 76ch; color: var(--muted); margin-top: 10px; }
+.stamp { font-family: var(--font-mono); font-size: 12px; color: var(--muted); text-align: right; line-height: 1.7; }
+@media (max-width: 760px) { header.top { grid-template-columns: 1fr; } .stamp { text-align: left; } }
+
+.changes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.chg { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.chg .k { font-family: var(--font-mono); font-size: 11.5px; letter-spacing: .06em; }
+.chg .k.add { color: var(--new); } .chg .k.mv { color: var(--hi); } .chg .k.rm { color: var(--grad); } .chg .k.keep { color: var(--muted); }
+.chg p { font-size: 14px; }
+@media (max-width: 900px) { .changes { grid-template-columns: 1fr; } }
+
+.sec-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 24px; margin-bottom: 16px; }
+.sec-head p { color: var(--muted); max-width: 76ch; }
+
+.toolbar { display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: center; margin-bottom: 12px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--panel); flex-wrap: wrap; }
+.seg button { border: 0; background: transparent; padding: 6px 12px; cursor: pointer; font-size: 13px; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+.tool-label { font-size: 12px; color: var(--muted); margin-right: 6px; }
+.chip-btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--panel); border-radius: 999px; padding: 4px 11px; font-size: 13px; cursor: pointer; }
+.chip-btn[aria-pressed="false"] { opacity: 0.45; text-decoration: line-through; }
+.dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex: none; }
+.dot.done { background: var(--ok); }
+.dot.partial { background: linear-gradient(90deg, var(--wip) 50%, transparent 50%); border: 1.5px solid var(--wip); }
+.dot.todo { border: 1.5px solid var(--no); }
+.toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
+.toggle input { accent-color: var(--hi); }
+
+.diagram-box { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow-x: auto; overscroll-behavior-x: contain; }
+.diagram-box svg { display: block; width: 100%; min-width: 1080px; height: auto; }
+.scroll-hint { font-size: 12px; color: var(--muted); margin-top: 6px; display: none; }
+@media (max-width: 1100px) { .scroll-hint { display: block; } }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 12px; font-size: 13px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend .sw { width: 14px; height: 4px; border-radius: 2px; display: inline-block; }
+.legend .ln { width: 26px; height: 0; border-top: 2px solid var(--edge); display: inline-block; }
+.legend .ln.d { border-top-style: dashed; }
+.legend .ln.q { border-top-style: dotted; }
+.legend .ln.g { border-top: 2px dashed var(--grad); }
+.legend .ln.lp { border-top: 2px dashed var(--d); }
+.legend .nw { font-family: var(--font-mono); font-size: 11px; color: var(--new); background: var(--new-bg); padding: 0 6px; border-radius: 4px; }
+
+svg text { font-family: var(--font-body); }
+.n-title { font-size: 14px; font-weight: 700; fill: var(--ink); }
+.n-file { font-family: var(--font-mono); font-size: 11px; fill: var(--muted); }
+.n-out { font-family: var(--font-mono); font-size: 11px; font-weight: 500; }
+.n-sub { font-size: 11.5px; fill: var(--muted); }
+.n-new { font-family: var(--font-mono); font-size: 10px; font-weight: 600; fill: var(--new); }
+.node { cursor: pointer; transition: opacity .18s; }
+.node rect.box { fill: var(--panel); stroke: var(--line); stroke-width: 1.2; transition: stroke .15s, stroke-width .15s; }
+.node.main rect.box { stroke: var(--d); stroke-width: 2; }
+.node.s-partial rect.box { stroke: var(--wip); stroke-dasharray: 6 4; }
+.node.s-todo rect.box { stroke: var(--no); stroke-dasharray: 2 4; stroke-width: 1.6; fill: var(--panel-2); }
+.node.nw rect.box { fill: var(--new-bg); }
+.node:hover rect.box, .node:focus-visible rect.box { stroke: var(--hi); stroke-width: 2; }
+.node:focus { outline: none; }
+.node.sel rect.box { stroke: var(--hi); stroke-width: 2.8; stroke-dasharray: none; }
+.node.gradT rect.box { stroke: var(--grad); stroke-width: 2.6; stroke-dasharray: 7 3; }
+.dim { opacity: 0.15; }
+.faded { opacity: 0.22; }
+.edge { fill: none; stroke: var(--edge); stroke-width: 1.4; transition: opacity .18s, stroke .15s; }
+.edge.key { stroke-width: 2.2; }
+.edge.dash { stroke-dasharray: 6 4; }
+.edge.query { stroke-dasharray: 2 3; }
+.edge.todo { stroke: var(--no); stroke-dasharray: 2 4; }
+.edge.grad { stroke: var(--grad); stroke-dasharray: 7 4; stroke-width: 1.8; }
+.edge.loop { stroke: var(--d); stroke-dasharray: 6 4; stroke-width: 1.8; }
+.edge.hot { stroke: var(--hi); stroke-width: 2.4; }
+.edge.grad.hot { stroke: var(--grad); stroke-width: 2.6; }
+.edge.loop.hot { stroke: var(--d); stroke-width: 2.6; }
+.flowing .edge.hot { stroke-dasharray: 7 5; animation: flow 0.9s linear infinite; }
+@keyframes flow { to { stroke-dashoffset: -12; } }
+@media (prefers-reduced-motion: reduce) { .flowing .edge.hot { animation: none; } }
+.elabel { pointer-events: none; display: none; }
+.elabel.show { display: block; }
+.elabel rect { fill: var(--panel); stroke: var(--line); stroke-width: 1; }
+.elabel.hotl rect { stroke: var(--hi); }
+.elabel text { font-family: var(--font-mono); font-size: 11px; fill: var(--ink); }
+.band-label { font-family: var(--font-mono); font-size: 11.5px; letter-spacing: 0.08em; font-weight: 500; }
+.frame-label { font-family: var(--font-display); font-size: 15px; font-weight: 700; fill: var(--ink); }
+.frame-sub { font-size: 12px; fill: var(--muted); }
+
+.drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(470px, 94vw); background: var(--panel); border-left: 1px solid var(--line); box-shadow: -18px 0 40px rgba(0,0,0,.14); z-index: 40; transform: translateX(105%); transition: transform .22s ease; display: flex; flex-direction: column; padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); padding-right: env(safe-area-inset-right, 0px); }
+.drawer.open { transform: none; }
+@media (prefers-reduced-motion: reduce) { .drawer { transition: none; } }
+.drawer-head { padding: 18px 20px 14px; border-bottom: 1px solid var(--grid); display: flex; flex-direction: column; gap: 8px; }
+.drawer-head .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.drawer-body { padding: 16px 20px 28px; overflow-y: auto; display: flex; flex-direction: column; gap: 18px; }
+.drawer h3 { font-size: 20px; }
+.close { border: 1px solid var(--line); background: var(--panel-2); border-radius: 6px; padding: 2px 10px; cursor: pointer; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; padding: 1px 9px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel-2); white-space: nowrap; }
+.chip.done { background: var(--ok-bg); border-color: transparent; color: var(--ok); font-weight: 500; }
+.chip.partial { background: var(--wip-bg); border-color: transparent; color: var(--wip); font-weight: 500; }
+.chip.todo { background: var(--no-bg); border-color: transparent; color: var(--muted); font-weight: 500; }
+.chip.nw { background: var(--new-bg); border-color: transparent; color: var(--new); font-weight: 500; }
+.chip.ref { font-family: var(--font-mono); }
+.dsec h4 { margin: 0 0 6px; font-size: 12px; font-family: var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+.dsec ul, .dsec ol { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
+.dsec ul.io { list-style: none; padding-left: 0; }
+.dsec ul.io li { font-family: var(--font-mono); font-size: 12.5px; background: var(--panel-2); border: 1px solid var(--grid); border-radius: 6px; padding: 5px 8px; overflow-wrap: anywhere; }
+.dsec ul.todo-list { list-style: none; padding-left: 0; }
+.dsec ul.todo-list li::before { content: "○ "; color: var(--no); }
+.dsec ul.grad-list { list-style: none; padding-left: 0; }
+.dsec ul.grad-list li::before { content: "∇ "; color: var(--grad); font-weight: 700; }
+.nowgoal { display: grid; gap: 8px; }
+.nowgoal > div { border: 1px solid var(--grid); border-radius: 8px; padding: 8px 10px; font-size: 14px; background: var(--panel-2); }
+.nowgoal .tag { font-family: var(--font-mono); font-size: 11px; letter-spacing: .06em; color: var(--muted); display: block; }
+.nowgoal .goal { border-color: var(--new); }
+.linkish { background: none; border: 0; padding: 0; color: var(--hi); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; font-size: 13.5px; }
+.nb { display: flex; flex-wrap: wrap; gap: 6px 12px; }
+
+.fgroups { display: flex; flex-direction: column; gap: 30px; }
+.fgroup > h3 { margin-bottom: 12px; display: flex; align-items: center; gap: 10px; }
+.fgroup > h3 .bar { width: 4px; height: 18px; border-radius: 2px; display: inline-block; }
+.fgroup > p.gnote { color: var(--muted); font-size: 14px; margin: -4px 0 12px; max-width: 80ch; }
+.fcards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+@media (max-width: 980px) { .fcards { grid-template-columns: 1fr; } }
+.fcard { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; min-width: 0; scroll-margin-top: 20px; }
+.fcard.main { border-color: var(--d); }
+.fcard.flash { box-shadow: 0 0 0 3px var(--hi); transition: box-shadow .3s; }
+.fcard.wide { grid-column: 1 / -1; }
+.fcard-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.fcard .src { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); }
+.math { overflow-x: auto; overflow-y: hidden; padding: 2px 0; font-size: 15px; }
+.math mjx-container[display="true"] { margin: 6px 0 !important; }
+.pair { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.pair > div { background: var(--panel-2); border: 1px solid var(--grid); border-radius: 8px; padding: 8px 12px; font-size: 14px; min-width: 0; }
+.pair .tag { font-family: var(--font-mono); font-size: 11px; color: var(--muted); letter-spacing: .06em; display: block; }
+@media (max-width: 760px) { .pair { grid-template-columns: 1fr; } }
+.fcard ul, .fcard ol { margin: 0; padding-left: 18px; font-size: 14px; display: flex; flex-direction: column; gap: 3px; }
+.fcard p { font-size: 14px; }
+
+.tbl-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+table { border-collapse: collapse; width: 100%; min-width: 860px; font-size: 13.5px; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+th { font-family: var(--font-mono); font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 500; background: var(--panel-2); }
+tbody tr[data-node] { cursor: pointer; }
+tbody tr[data-node]:hover td { background: var(--panel-2); }
+td .mono { display: block; overflow-wrap: anywhere; }
+.small-wrap { overflow-x: auto; }
+.small-wrap table { min-width: 560px; }
+.numtbl { font-size: 12.5px; }
+.numtbl th, .numtbl td { padding: 5px 8px; font-variant-numeric: tabular-nums; }
+.numtbl td.n { text-align: right; font-family: var(--font-mono); }
+.tag-chg { font-family: var(--font-mono); font-size: 11px; padding: 0 6px; border-radius: 4px; white-space: nowrap; }
+.tag-chg.add { background: var(--new-bg); color: var(--new); }
+.tag-chg.mv { background: var(--panel-2); color: var(--hi); border: 1px solid var(--grid); }
+.tag-chg.rm { background: var(--panel-2); color: var(--grad); border: 1px solid var(--grid); }
+.tag-chg.keep { background: var(--panel-2); color: var(--muted); border: 1px solid var(--grid); }
+
+.open-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.open-list article { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.open-list .q { font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+.open-list p, .open-list li { font-size: 14px; }
+.open-list ul { margin: 0; padding-left: 18px; }
+@media (max-width: 900px) { .open-list { grid-template-columns: 1fr; } }
+
+.phase-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+@media (max-width: 1000px) { .phase-grid { grid-template-columns: 1fr; } }
+.phase { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.phase-tag { align-self: flex-start; font-family: var(--font-mono); font-size: 12px; padding: 1px 10px; border-radius: 999px; font-weight: 500; }
+.phase-tag.now { background: var(--ok-bg); color: var(--ok); }
+.phase-tag.gpu { background: var(--wip-bg); color: var(--wip); }
+.phase-tag.cond { background: var(--new-bg); color: var(--new); }
+.phase ol { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 10px; font-size: 14.5px; }
+.phase li::marker { font-family: var(--font-mono); color: var(--muted); }
+.phase .chk { font-size: 13.5px; color: var(--muted); margin-top: 3px; }
+footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); padding-top: 16px; }
+
+/* 右下角「待討論」按鈕與底部彈出面板 */
+.fab { position: fixed; right: calc(16px + env(safe-area-inset-right, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); z-index: 35; display: inline-flex; align-items: center; gap: 8px; padding: 9px 14px 9px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--ink); color: var(--bg); font-size: 14px; font-weight: 500; cursor: pointer; box-shadow: 0 6px 20px rgba(0,0,0,.18); }
+.fab:hover { filter: brightness(1.12); }
+.fab-n { font-family: var(--font-mono); font-size: 12px; background: var(--bg); color: var(--ink); border-radius: 999px; padding: 0 7px; line-height: 18px; }
+.sheet-backdrop { position: fixed; inset: 0; background: rgba(10,15,20,.32); z-index: 44; opacity: 0; pointer-events: none; transition: opacity .2s; }
+.sheet-backdrop.open { opacity: 1; pointer-events: auto; }
+.sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 45; max-height: min(78vh, 900px); overflow-y: auto; overscroll-behavior: contain; background: var(--bg); border-top: 1px solid var(--line); border-radius: 16px 16px 0 0; box-shadow: 0 -18px 40px rgba(0,0,0,.18); padding: 8px max(16px, env(safe-area-inset-right, 0px)) calc(24px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); transform: translateY(105%); transition: transform .25s ease; display: flex; flex-direction: column; gap: 14px; }
+.sheet.open { transform: none; }
+.sheet > * { width: 100%; max-width: 1480px; margin-left: auto; margin-right: auto; }
+.sheet-grip { width: 44px; height: 5px; border-radius: 3px; background: var(--line); }
+.sheet-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; position: sticky; top: -8px; background: var(--bg); padding-top: 8px; padding-bottom: 6px; z-index: 1; }
+.sheet-note { font-size: 14px; }
+@media (prefers-reduced-motion: reduce) { .sheet, .sheet-backdrop { transition: none; } }
+
+/* 待討論：一欄、選擇題＋備註 */
+.q-list { display: flex; flex-direction: column; gap: 14px; max-width: 880px !important; }
+.q-item { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.q-item.answered { border-color: var(--ok); box-shadow: inset 4px 0 0 var(--ok); }
+.q-item .q { font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+.q-item p, .q-item li { font-size: 14px; }
+.q-item ul { margin: 0; padding-left: 18px; }
+.done-item { background: var(--panel-2); }
+.opts-q { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.opts-q legend { font-size: 12px; color: var(--muted); padding: 0; margin-bottom: 6px; }
+.opt { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 10px; align-items: start; padding: 10px 12px; border: 1px solid var(--grid); border-radius: 8px; background: var(--panel-2); cursor: pointer; font-size: 14px; line-height: 1.55; }
+.opt:hover { border-color: var(--hi); }
+.opt input { margin: 3px 0 0; accent-color: var(--hi); width: 16px; height: 16px; }
+.opt:has(input:checked) { border-color: var(--hi); box-shadow: inset 0 0 0 1px var(--hi); background: var(--panel); }
+.opt:has(input:disabled) { cursor: default; opacity: .75; }
+.tag-rec { font-family: var(--font-mono); font-size: 11px; color: var(--ok); background: var(--ok-bg); border-radius: 999px; padding: 0 7px; margin-left: 8px; white-space: nowrap; }
+.note-label { font-size: 12px; color: var(--muted); margin-bottom: -4px; }
+.q-item textarea { width: 100%; font: inherit; font-size: 14px; line-height: 1.55; color: var(--ink); background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; resize: vertical; min-height: 66px; }
+.q-item textarea:focus { outline: 2px solid var(--hi); outline-offset: 1px; background: var(--panel); }
+.q-item textarea:disabled { opacity: .75; }
+.q-status { font-size: 12px; color: var(--muted); min-height: 1.2em; }
+.q-banner { font-size: 13px; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; max-width: 880px !important; }
+.fab-done { font-size: 12px; opacity: .85; }
+.fab-done:empty { display: none; }
+.opts-static { margin: 8px 0 4px; }
+.opts-static .opts-legend { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.opts-static ul { margin: 0; padding-left: 20px; display: grid; gap: 6px; font-size: 14px; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <div class="eyebrow">國科會計畫 115WFAA310699 · 系統架構</div>
+      <h1>MultiFinRL 系統架構</h1>
+      <p class="lead">K 線圖改成跟「K 線文字敘述」對齊；RAG-1 檢索型態定義送進融合層，L_ground 比較 K 線敘述的文字編碼與這些定義；新聞、財報、法說會不再進融合層，改由 RAG-2 篩選後放進 Decoder 的 context，只生成一次。三個 Loss 的公式照計畫書不動；跟計畫書不同的地方列在 00 段，一律以本頁為準。點方塊看細節；點 Loss 方塊會用紅框標出梯度更新的範圍。</p>
+    </div>
+    <div class="stamp">
+      版本 v2 · 更新 2026-11-05<br>
+      決策紀錄：docs/decisions.md #108–#121<br>
+      待討論項目在右下角
+    </div>
+  </header>
+
+  <section aria-label="本架構與企劃書的差異">
+    <div class="sec-head">
+      <div><div class="eyebrow">00 · 本架構 vs. 企劃書</div><h2>跟企劃書不同的地方</h2></div>
+      <p>對照計畫書 CM03 第 3 節（docs/reference/115WFAA310699_CM03_zh.md）。<b>兩者有出入時，一律以本架構圖為準。</b>點有對應方塊的列，可以跳到架構圖上的位置。</p>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>項目</th><th>差異</th><th>企劃書</th><th>本架構（以此為準）</th></tr></thead>
+        <tbody>
+          <tr data-node="b_vit"><td>視覺輸入</td><td><span class="tag-chg mv">改</span></td><td>3.1：K 線圖、技術指標、財務報表影像；視覺編碼器用財經圖表語料預訓練的 CLIP／ViT</td><td>K 線圖＋成交量圖兩張，進凍結的 ImageNet ViT（google/vit-base-patch16-224）；技術指標圖尚未納入；ViT 微調只保留在規劃</td></tr>
+          <tr data-node="a_caption"><td>文字輸入 H_t</td><td><span class="tag-chg mv">改</span></td><td>3.2：金融文字查詢（新聞、分析師報告、公司申報文件）經 FinBERT 編碼</td><td>Claude Haiku 讀 K 線圖和成交量圖，寫成「K 線文字敘述」：9 類 K 線型態＋4 類成交量標籤，說明分〔K線〕〔成交量〕〔一起說明〕三段，用英文寫，經凍結的 FinBERT 編碼成 H_t；每天產生一次存檔重用</td></tr>
+          <tr data-node="doc_index"><td>新聞、財報、法說會</td><td><span class="tag-chg mv">改</span></td><td>文字編碼器的輸入，也是 RAG 語料，經 H_t／H_r 進融合層</td><td>不進融合層；只進 RAG-2，篩選後以短版原文放進 Decoder 的 context</td></tr>
+          <tr data-node="rag1"><td>RAG（融合層這一路）</td><td><span class="tag-chg mv">改</span></td><td>3.3：一個 RAG；query q = pool([h_v; h_t])；語料是 SEC 申報、分析師報告、新聞、總經公報；檢索 top-K 文件 → H_r</td><td>RAG-1：語料是 9 類 K 線型態的定義（教科書／技術分析資料庫）；query 只用 K 線圖的池化向量；檢索結果 → H_r 進融合層</td></tr>
+          <tr data-node="rag2"><td>RAG（Decoder 這一路）</td><td><span class="tag-chg add">新增</span></td><td>沒有這一路；3.3 寫 [H_t; H_v; H_r] 直接當解碼器輸入</td><td>RAG-2：依可得日期過濾當天新聞、8-K、背景 10-K／10-Q（固定挑 MD&amp;A、風險因素開頭）、法說會，縮到 15–20 段短版文字放進 Decoder context；不做相似度排序、不算 Loss、不能看到未來</td></tr>
+          <tr data-node="c_fusion"><td>融合層</td><td><span class="tag-chg mv">改</span></td><td>3.4：Z_fused = F([H_t; H_v; H_r])，輸出整段 token 序列；各模態各自一組投影 P_v、P_t</td><td>輸入同樣是 [H_t; H_v; H_r]，但內容改成 K 線敘述、雙圖、RAG-1 定義；投影 P_v、P_t、P_r 跟 L_align、L_ground 共用；輸出取 CLS 成 768 維的 Z_fused</td></tr>
+          <tr data-node="projector"><td>解碼器的條件</td><td><span class="tag-chg mv">改</span></td><td>3.4：以融合表徵 Z_fused 為條件；解碼器可用 LLaVA 或領域調適的 LLaMA-2</td><td>Z_fused 投影成 4 個 prefix token，加上 RAG-2 候選文字；LLaMA-2 7B（4-bit 凍結）＋LoRA；只生成一次</td></tr>
+          <tr data-node="l_align"><td>L_align</td><td><span class="tag-chg mv">換對象</span></td><td>3.5 (1)：H_v 與配對的文字嵌入 H_t，目的是對齊「技術線圖型態與金融新聞」</td><td>公式不變；H_t 是 K 線敘述，對齊的是 K 線圖與它的文字敘述；組 batch 時避開同型態的日子</td></tr>
+          <tr data-node="l_ground"><td>L_ground</td><td><span class="tag-chg mv">換對象</span></td><td>3.5 (2)：模型 cross-attention 對 RAG 檢索文件的權重 α̂ vs. oracle 相關性分數 α*（未說明 α* 怎麼取得）</td><td>公式不變；α̂ 取融合層裡 H_t 對 RAG-1 各段定義 H_r 的注意力；α* 用 H_t 與 H_r 的相似度換算（用哪份向量待定，見 Q13）</td></tr>
+          <tr data-node="l_belief"><td>L_belief</td><td><span class="tag-chg keep">相同</span></td><td>3.5 (3)：y_belief 為結構化 token＋敘述</td><td>公式與 y_belief 格式相同；Decoder 的 context 多了 RAG-2 候選文字</td></tr>
+          <tr data-node="l_total"><td>複合 Loss</td><td><span class="tag-chg keep">相同</span></td><td>3.5 (4)：L = λ1 L_align + λ2 L_ground + λ3 L_belief，λ3 優先加重</td><td>相同</td></tr>
+          <tr data-node="decoder"><td>運算環境</td><td><span class="tag-chg mv">改</span></td><td>3.5：單台高效能工作站（例如 RTX 5090）上做 QLoRA</td><td>目前沒有 GPU：L_align、L_ground 與附屬診斷先在 Mac 上做；加 RAG-2 的長 context Decoder 訓練是主線，等有 GPU；不加 RAG-2 的 512 版本是選配，可先在 Mac 跑</td></tr>
+          <tr data-node="c_clf"><td>附屬診斷</td><td><span class="tag-chg keep">相同</span></td><td>第 19 頁：表徵效能驗證（診斷性分類測試）</td><td>保留分類驗證、事件驗證頭、第一階段報告</td></tr>
+          <tr data-node="rl_env"><td>第二階段 RL</td><td><span class="tag-chg keep">相同</span></td><td>3.6：PPO／SAC，state 來自 Z_fused</td><td>PPO，state＝池化 Z_fused＋前期持倉；細節不在這次調整範圍</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ 架構圖 ============ -->
+  <section id="map" aria-label="架構圖">
+    <div class="sec-head">
+      <div><div class="eyebrow">01 · 架構與資料流</div><h2>架構圖</h2></div>
+      <p>左欄是圖像路徑與 Decoder，中欄是文字路徑、Loss 與附屬診斷，右欄是 LLM 答案卷。紫底＋「新」是現行程式碼還沒有的元件；外框實線＝已完成、黃色虛線＝進行中、灰色點線＝未開始。</p>
+    </div>
+    <div class="toolbar">
+      <div><span class="tool-label">年度</span>
+        <span class="seg" role="group" aria-label="年度篩選">
+          <button type="button" data-year="all" aria-pressed="true">全部</button>
+          <button type="button" data-year="1" aria-pressed="false">第一年</button>
+          <button type="button" data-year="2" aria-pressed="false">第二年</button>
+        </span>
+      </div>
+      <div><span class="tool-label">工作階段</span>
+        <span class="seg" role="group" aria-label="工作階段篩選">
+          <button type="button" data-phase="all" aria-pressed="true">全部</button>
+          <button type="button" data-phase="now" aria-pressed="false">現在可做</button>
+          <button type="button" data-phase="gpu" aria-pressed="false">需要運算資源</button>
+        </span>
+      </div>
+      <div><span class="tool-label">進度</span>
+        <button type="button" class="chip-btn" data-status="done" aria-pressed="true"><span class="dot done"></span>已完成</button>
+        <button type="button" class="chip-btn" data-status="partial" aria-pressed="true"><span class="dot partial"></span>進行中</button>
+        <button type="button" class="chip-btn" data-status="todo" aria-pressed="true"><span class="dot todo"></span>未開始</button>
+      </div>
+      <label class="toggle"><input type="checkbox" id="onlyNew"> 只看新增</label>
+      <label class="toggle"><input type="checkbox" id="showLabels"> 顯示所有資料標籤</label>
+      <label class="toggle"><input type="checkbox" id="animFlow" checked> 資料流動畫</label>
+    </div>
+    <div class="diagram-box flowing" id="diagramBox">
+      <svg id="diagram" viewBox="0 0 1500 1900" role="img" aria-label="MultiFinRL v2 由上到下的架構圖"></svg>
+    </div>
+    <div class="scroll-hint">圖可以左右捲動。</div>
+    <div class="legend">
+      <span><i class="sw" style="background:var(--a)"></i>A 資料</span>
+      <span><i class="sw" style="background:var(--b)"></i>B 編碼與檢索</span>
+      <span><i class="sw" style="background:var(--c)"></i>C 融合</span>
+      <span><i class="sw" style="background:var(--d)"></i>Decoder 與 Loss</span>
+      <span><i class="sw" style="background:var(--l)"></i>LLM 產生</span>
+      <span><i class="sw" style="background:var(--p)"></i>附屬診斷</span>
+      <span><i class="sw" style="background:var(--r)"></i>第二階段 RL</span>
+      <span><b class="nw">新</b>程式碼尚未實作</span>
+      <span><i class="ln"></i>資料流</span>
+      <span><i class="ln d"></i>附屬</span>
+      <span><i class="ln q"></i>檢索 query／規劃中的微調</span>
+      <span><i class="ln g"></i>梯度回傳</span>
+      <span><i class="ln lp"></i>依結果回頭調整</span>
+    </div>
+  </section>
+
+  <!-- ============ 三個 Loss ============ -->
+  <section id="losses" aria-label="三個 Loss">
+    <div class="sec-head">
+      <div><div class="eyebrow">02 · 三個 Loss</div><h2>比什麼、在哪裡算、更新誰</h2></div>
+      <p>公式全部照計畫書 3.5 節原文，一個符號都不改；v2 只改變每個符號實際對應到什麼資料、在哪一步算。</p>
+    </div>
+    <div class="fcards">
+      <article class="fcard main wide" id="f-overview">
+        <div class="fcard-head"><h3>總覽</h3><span class="chip todo">聯合訓練未開始</span></div>
+        <div class="small-wrap">
+          <table class="numtbl">
+            <thead><tr><th>Loss</th><th>比較的一側</th><th>比較的另一側</th><th>在哪裡算</th><th>梯度會更新</th><th>需要 GPU？</th></tr></thead>
+            <tbody>
+              <tr><td><b>L_align</b></td><td>H_v：ViT 輸出（K 線圖）</td><td>H_t：FinBERT 輸出（同一天的 K 線敘述）</td><td>ViT、FinBERT 之後（融合層之前）</td><td>共用投影 P_v、P_t（也是融合層的輸入投影）</td><td>不需要</td></tr>
+              <tr><td><b>L_ground</b></td><td>α̂：融合層裡 H_t 對 RAG-1 各段定義 H_r 的注意力</td><td>α*：H_t 與各段 H_r 的相似度換算（用哪份向量見 Q13）</td><td>融合層內</td><td>融合層本身、共用投影 P_t、P_r</td><td>不需要</td></tr>
+              <tr><td><b>L_belief</b></td><td>Decoder 生成的文字</td><td>LLM 產的 y_belief</td><td>Decoder 輸出</td><td>Decoder LoRA、projector、融合層</td><td>需要</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="muted" style="font-size:12px;font-family:var(--font-mono)">計畫書 3.5 (4)</div>
+        <div class="math">\[ L = \lambda_1 L_{align} + \lambda_2 L_{ground} + \lambda_3 L_{belief} \]</div>
+        <p class="muted">λ3 優先加重，λ1、λ2 作為對齊多模態與檢索訊號的結構性限制（計畫書原文）。L_align 在融合層之前、L_ground 在融合層內，都不經過 Decoder，現在沒有 GPU 也能先訓練驗證。</p>
+        <p><b>投影層共用（11/03 決定）：</b>ViT、FinBERT 本體凍結，真正會被訓練的是投影 P_v、P_t、P_r。L_align、L_ground 跟融合層用<b>同一組</b>投影，這兩個 Loss 才會改變融合層拿到的輸入，進而影響 Z_fused、Decoder 和 RL；如果各用一組，訓練完只會改到旁邊那組，Z_fused 完全不受影響。</p>
+      </article>
+
+      <article class="fcard main" id="f-align">
+        <div class="fcard-head"><h3>L_align：K 線圖 vs. K 線文字敘述</h3><span class="chip todo">未開始</span></div>
+        <div class="src">計畫書 3.5 (1)（原式）</div>
+        <div class="math">\[ L_{align} = -\log \frac{\exp\left(\langle H_v H_t \rangle / \tau\right)}{\sum_{t'} \exp\left(\langle H_v H_{t'} \rangle / \tau\right)} \]</div>
+        <ul>
+          <li><b>H_v</b>：當天 K 線圖經 ViT（凍結）與共用投影 P_v 的視覺編碼，直接從 ViT 接過來，不經過融合層。</li>
+          <li><b>H_t</b>：同一天 K 線文字敘述（Claude Haiku 讀圖寫的）經 FinBERT 與共用投影 P_t 的文字編碼。（現行程式的 H_t 仍是新聞，要改成 K 線敘述。）</li>
+          <li><b>H_{t′}</b>：其他天的 K 線敘述；<b>τ</b> 是溫度參數。</li>
+          <li><b>同型態的不同天（11/04 決定）</b>：組 batch 時同一批不放同型態的日子（可以同時看 K 線型態和成交量標籤），K 線敘述也寫進量能、位置等細節，讓不同天的敘述不會一模一樣。公式不動。</li>
+          <li>讓視覺端學會「這張圖是頭肩底」，也是 ViT domain gap 的對策之一。</li>
+        </ul>
+      </article>
+
+      <article class="fcard main" id="f-belief">
+        <div class="fcard-head"><h3>L_belief：Decoder 文字 vs. LLM 產的文字</h3><span class="chip done">計算不變</span></div>
+        <div class="src">計畫書 3.5 (3)（原式）· decoder/model.py ZFusedDecoder.forward</div>
+        <div class="math">\[ L_{belief} = -\sum_{t=1}^{T_y} \log p_\theta\left(y_{belief,t} \mid y_{belief&lt;t}, Z_{fused}\right) \]</div>
+        <ul>
+          <li><b>y_belief</b>：<code>&lt;TREND&gt; [..] &lt;RISK_LEVEL&gt; [..] 敘述</code>，DeepSeek 產生，格式不動；<b>T_y</b> 是它的長度。</li>
+          <li><b>Z_fused</b> 以 4 個 prefix 進 Decoder。v2 的 context 依序是 <code>[ 4 個 prefix ; RAG-2 候選短版文字 ; y_belief ]</code>。</li>
+          <li>只有 y_belief 的 token 計分；prefix 與候選文字的 label 都設成 −100。</li>
+          <li>y_belief 本來就是 LLM 讀當天新聞／財報／法說會寫的，context 加了候選文字後 loss 會明顯下降，這是預期內的。</li>
+        </ul>
+      </article>
+
+      <article class="fcard main wide" id="f-ground">
+        <div class="fcard-head"><h3>L_ground：K 線敘述的文字編碼 vs. RAG-1 型態定義</h3><span class="chip partial">α̂、α* 已選定，先試</span></div>
+        <div class="src">計畫書 3.5 (2)（原式）· α̂ 取自融合層 · 現有 grounding/alpha.py 的 KL 可沿用</div>
+        <div class="math">\[ L_{ground} = \sum_{i=1}^{K} \alpha_i^* \log \frac{\alpha_i^*}{\hat{\alpha}_i} \]</div>
+        <div class="pair">
+          <div><span class="tag">K</span>RAG-1 檢索到的 K 段型態定義（H_r），例如「頭肩底」「W 底」「持續下跌」。</div>
+          <div><span class="tag">α̂（模型的注意力權重）</span><b>取融合層裡 H_t token 對 H_r token 的注意力（11/04 決定）。</b>把 H_t token 對每段定義的注意力加總，再在 K 段之間正規化。</div>
+          <div><span class="tag">α*（oracle 相關性分數）</span><b>相似度換算，先試（11/04 決定）。</b>H_t 跟每段 H_r 的 cosine 相似度，經 softmax 換成 K 段之間的分布。要用投影前的凍結向量還是投影後的向量，見 Q13。</div>
+        </div>
+        <p>意思是：K 線敘述說今天是「頭肩底」，文字端就應該把注意力放在「頭肩底」那段定義上。L_ground 只看 H_t 和 H_r 這兩組 token 之間的注意力，不經過 Decoder，現在沒有 GPU 也能算。</p>
+        <h3 style="margin-top:6px">α* 的三個候選做法</h3>
+        <div class="pair">
+          <div><span class="tag">(a) 型態類別直接對應</span>K 線敘述的型態類別跟定義相同，就算相關。不用另外打分，但只有「對／不對」兩種。</div>
+          <div><span class="tag">(b) 相似度換算・採用</span>用 H_t 跟每段 H_r 的相似度當 α*。α̂ 改取融合層的注意力後，兩邊不再是同一個式子；但 α* 若用會被訓練的投影後向量，答案卷會跟著訓練變動（Q13）。</div>
+          <div><span class="tag">(c) Haiku 打 0–3 分（原案，備用）</span>流程可沿用現有的 generate_alpha_star.py，改 prompt 即可；(b) 效果不好時改用。</div>
+        </div>
+        <p class="muted">FinBERT 凍結、RAG-1 的檢索結果固定；α̂ 取自融合層，所以 L_ground 會直接訓練融合層本身，也透過共用投影 P_t、P_r 影響輸入。RAG-1 的 query 用 K 線圖的池化向量，不用 K 線敘述，避免跟 α* 循環。</p>
+        <p><b>一個例子（數字是示意）：</b>今天的 K 線敘述是「頭肩底成形」，RAG-1 取回 3 段定義。</p>
+        <div class="small-wrap">
+          <table class="numtbl">
+            <thead><tr><th></th><th>定義 1：頭肩底</th><th>定義 2：W 底</th><th>定義 3：持續下跌</th></tr></thead>
+            <tbody>
+              <tr><td>H_t 與 H_r 的 cosine</td><td class="n">0.82</td><td class="n">0.62</td><td class="n">0.52</td></tr>
+              <tr><td>α*</td><td class="n">0.84</td><td class="n">0.11</td><td class="n">0.04</td></tr>
+              <tr><td>α̂（融合層裡 H_t 對三段定義的注意力）</td><td class="n">0.33</td><td class="n">0.50</td><td class="n">0.17</td></tr>
+              <tr><td>α* · log(α*/α̂)</td><td class="n">+0.79</td><td class="n">−0.17</td><td class="n">−0.06</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>α* 是 cosine 除以溫度 0.1 後做 softmax。三格加起來 L_ground ≈ 0.56。融合層把較多注意力放在 W 底，跟今天的頭肩底不符，所以被罰；訓練後注意力會移到「頭肩底」那段。</p>
+      </article>
+    </div>
+  </section>
+
+  <!-- ============ 兩個 RAG ============ -->
+  <section id="rags" aria-label="兩個 RAG">
+    <div class="sec-head">
+      <div><div class="eyebrow">03 · 兩個 RAG</div><h2>RAG-1 進融合層、RAG-2 進 Decoder</h2></div>
+      <p>兩個 RAG 的語料、篩選方式、輸出位置都不同，不要混在同一個向量庫。</p>
+    </div>
+    <div class="fcards">
+      <article class="fcard" id="f-rag1">
+        <div class="fcard-head"><h3>RAG-1：K 線型態知識</h3><span class="chip nw">新元件・必做</span></div>
+        <div class="src">L_ground 依賴它，所以一定要做 · 定義從教科書／技術分析資料庫整理</div>
+        <div class="pair">
+          <div><span class="tag">語料</span>9 類型態各一段定義，例如「頭肩底：左肩、頭、右肩，頸線突破後偏多」。以英文撰寫（FinBERT 是英文模型），每段分「型態」「成交量」「量價判讀」三部分，對應 K 線敘述的三段。引用教科書或網路上的技術分析資料庫；找不到再用 LLM 產生＋人工校對。備用來源：StockCharts ChartSchool 型態文章（內容詳細、有各階段量能，無授權聲明，只參考改寫並註明出處）、Hugging Face propfirmkey/trading-finance-glossary-nlp（CC BY 4.0，標註出處可直接用，但每條只有一句）。</div>
+          <div><span class="tag">query</span>當天 K 線圖的池化向量（ViT H_v 池化）。推論時不必等 Haiku，也不會跟 α* 循環。</div>
+          <div><span class="tag">輸出</span>K 段定義編碼成 H_r，進融合層，跟 H_t、H_v 一起做 self-attention。</div>
+        </div>
+        <div class="math">\[ H_r = \big[\mathrm{FinBERT}(k_{j_1});\dots;\mathrm{FinBERT}(k_{j_K})\big],\quad \{k_{j}\} = \operatorname{top-}K_{k\in\mathcal{KB}}\ \cos(q, e_k) \]</div>
+        <ul>
+          <li>L_ground 比較融合層裡 H_t 對這 K 段定義的注意力 α̂，與相似度換算的 α*。</li>
+          <li>同一組 H_r 也進融合層，跟 H_t、H_v 一起做 self-attention。</li>
+        </ul>
+      </article>
+
+      <article class="fcard" id="f-rag2">
+        <div class="fcard-head"><h3>RAG-2：當天候選篩選</h3><span class="chip nw">新元件・不算 Loss</span></div>
+        <div class="src">生成前篩選 · 只生成一次 · 不能看到未來</div>
+        <div class="pair">
+          <div><span class="tag">候選</span>分析日 t 可得的新聞（盤後歸隔日）、最新一份 10-K／10-Q、t 以前的 8-K、最近一場法說會。</div>
+          <div><span class="tag">怎麼縮</span>不做相似度排序、不用 K 線敘述當 query：新聞與當天 8-K 全收，背景 10-K／10-Q 固定挑 MD&amp;A、風險因素開頭等重要章節；每段壓成短版（標題＋第一句，或段落前約 40 token），總共 15–20 段。</div>
+          <div><span class="tag">輸出</span>短版文字加上來源與日期標頭，放進 Decoder context，由 Decoder 的注意力自己挑要參考哪幾段。</div>
+        </div>
+        <div class="math">\[ \mathcal{C}_t = \{\,d : \text{available}(d) \le t,\ \ \text{date}(d) \in [t-n,\ t]\ \text{或}\ d\ \text{是當前背景財報}\,\} \]</div>
+        <div class="small-wrap">
+          <table class="numtbl">
+            <thead><tr><th>AAPL 每天的候選段落（平均）</th><th>段數</th><th>建議配額</th></tr></thead>
+            <tbody>
+              <tr><td>新聞（當天，含盤後歸隔日）</td><td class="n">11.2</td><td>全收（多的話取最新）</td></tr>
+              <tr><td>財報 chunk（背景 10-K／10-Q＋8-K）</td><td class="n">52.0</td><td>當天 8-K 全收，背景財報挑 MD&amp;A、風險因素開頭</td></tr>
+              <tr><td>法說會 chunk</td><td class="n">18.9</td><td>挑重要段落</td></tr>
+              <tr><td>合計</td><td class="n">約 82</td><td>縮到 15–20 段</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="muted">數字來自目前 data/processed/dataset/AAPL 的 1,381 天。</p>
+      </article>
+
+      <article class="fcard main wide" id="f-onepass">
+        <div class="fcard-head"><h3>只生成一次：Decoder 看 Z_fused 的同時就看候選</h3><span class="chip partial">已選定，有兩個風險要盯</span></div>
+        <p>context 裡同時有 Z_fused 的 prefix 和 RAG-2 的候選文字，Decoder 生成時的注意力自然會參考 Z_fused 來決定看哪幾段，等於「看 Z_fused 的時候同時查」。不需要另外學 query（W_q），也不用跑兩次。</p>
+        <p><b>可解釋性從哪來：</b>候選的短版原文就在 context 裡，敘述可以直接引用；Decoder 對各段候選的注意力可以畫出來，標出每句話主要參考哪幾段（只用來展示，不算 Loss）。</p>
+        <div class="pair" style="grid-template-columns:repeat(2,minmax(0,1fr))">
+          <div><span class="tag">風險 ① 只抄文件、不看圖</span>候選文字一開始就在 context，Decoder 很可能完全忽略 Z_fused。評估以「型態一致率」為主：Decoder 敘述的型態跟 Haiku 敘述一不一致。型態一致率分不出 Decoder 是看圖還是從文件抄，所以再補「打亂 Z_fused」當輔助檢查：換成別天的 Z_fused，敘述裡的型態應該要跟著變。</div>
+          <div><span class="tag">風險 ② context 變長</span>現行 Decoder 用 max_length 512。加上 15–20 段短版文字（約 600–800 token）後，序列大約 1,100–1,300 token，這是主線，等有 GPU 再跑。不加 RAG-2 的 512 版本是選配，可以先在 Mac 跑。</div>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <!-- ============ 分階段 ============ -->
+  <section id="plan" aria-label="分階段計畫">
+    <div class="sec-head">
+      <div><div class="eyebrow">04 · 分階段計畫</div><h2>先做什麼、後做什麼</h2></div>
+      <p>沿用「沒有運算資源前先用第一階段方法驗證」的原則。L_align 與 L_ground 都在 Decoder 之前，現在就能訓練。</p>
+    </div>
+    <div class="phase-grid" style="grid-template-columns:repeat(2,minmax(0,1fr))">
+      <article class="phase">
+        <span class="phase-tag now">現在可做</span>
+        <ol>
+          <li><b>寫 Haiku 讀圖 prompt（9 類型態）</b>，三檔股票產生 K 線文字敘述並存檔（只需 API）。<div class="chk">先抽幾十天人工看過，確認型態判斷合理。</div></li>
+          <li><b>整理 RAG-1 型態定義知識庫</b>：從教科書或技術分析資料庫整理 9 段英文定義（備用來源：ChartSchool、HF trading-finance-glossary-nlp），找不到的用 LLM 產生＋人工校對；建索引。</li>
+          <li><b>算 α* 答案卷</b>：H_t 與各段 H_r 的相似度換算（用哪份向量見 Q13）。</li>
+          <li><b>融合層輸入改成 H_t（K 線敘述）＋H_v＋RAG-1 的 H_r</b>，輸入投影改成共用的 P_v、P_t、P_r，拿掉新聞與舊 H_r。</li>
+          <li><b>訓練 L_align＋L_ground</b>（batch 避開同型態；α̂ 取融合層注意力），用第一階段方法驗證：分類器、型態類別的線性 probe、α̂ 跟 α* 的一致率、遮掉 H_t 的消融。</li>
+          <li><b>建 RAG-2 候選篩選</b>：日期過濾、固定章節（MD&amp;A、風險因素開頭）、短版文字；人工抽查幾天的候選。</li>
+          <li><b>Decoder 端程式</b>：候選放進 context、複合 Loss；小模型 smoke test。</li>
+          <li><b>（選配）Mac 上跑不加 RAG-2 的 512 版本</b>：先看新的 Z_fused（K 線敘述＋RAG-1）對 Decoder 有沒有幫助。</li>
+        </ol>
+      </article>
+      <article class="phase">
+        <span class="phase-tag gpu">需要運算資源</span>
+        <ol start="9">
+          <li><b>Decoder 聯合訓練（主線）</b>：加 RAG-2 候選，context 約 1,100–1,300 token。</li>
+          <li><b>評估</b>：TREND／RISK 準確率、LLM-judge、型態一致率（主）、打亂 Z_fused（輔助）。</li>
+          <li><b>解讀 L_belief</b>：測試完看結果再決定怎麼解讀。</li>
+          <li><b>消融</b>：只用 L_belief／＋L_align／＋L_ground／三個一起；有無 RAG-2 候選；遮掉 H_t。</li>
+          <li><b>ViT／FinBERT 微調</b>：維持規劃；L_align 降不下來時再考慮。</li>
+        </ol>
+      </article>
+    </div>
+  </section>
+
+  <!-- ============ I/O ============ -->
+  <section id="io" aria-label="新增與變動的檔案">
+    <div class="sec-head">
+      <div><div class="eyebrow">05 · 輸入／輸出</div><h2>新增與變動的資料</h2></div>
+      <p>只列跟現行程式不同的部分；路徑是建議命名，尚未建立。</p>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>步驟</th><th>讀入</th><th>寫出（建議）</th><th>形狀／格式</th></tr></thead>
+        <tbody>
+          <tr data-node="a_caption"><td>K 線文字敘述</td><td>data/raw/charts/{T}/{date}.png＋volume/{date}.png</td><td><span class="mono">data/labels/chart_caption/{T}.json</span></td><td>{date: {pattern, text}}，答案卷進版控</td></tr>
+          <tr data-node="b_capenc"><td>文字編碼 FinBERT（凍結）</td><td>chart_caption/{T}.json</td><td><span class="mono">data/vectors/{T}/{date}/H_t.npy</span>（改存 K 線敘述）</td><td>[512, 768]</td></tr>
+          <tr data-node="rag1"><td>RAG-1 知識庫</td><td>9 類型態定義（教科書／技術分析資料庫）</td><td><span class="mono">data/knowledge/patterns/*.md · _faiss/patterns</span></td><td>每段定義 ≤512 token；輸出 H_r [K, 512, 768]</td></tr>
+          <tr data-node="lbl_alpha"><td>α*（RAG-1，相似度換算）</td><td>H_t、RAG-1 檢索到的 K 段 H_r</td><td><span class="mono">data/labels/grounding/{T}_rag1.json</span></td><td>每天 K 個機率值（cosine → softmax）</td></tr>
+          <tr data-node="c_fusion"><td>融合層</td><td>H_t（K 線敘述）、H_v、H_r（RAG-1）</td><td><span class="mono">checkpoints/fusion_{T}_v2.pt</span></td><td>H_t 改讀 K 線敘述；不再讀新聞與舊 H_r</td></tr>
+          <tr data-node="doc_index"><td>RAG-2 候選庫</td><td>每日 JSON 的 news、filing_chunks、transcript_chunks</td><td><span class="mono">data/vectors/_faiss/{T}_docs.*</span></td><td>chunk＋available_date、來源</td></tr>
+          <tr data-node="rag2"><td>RAG-2 每日候選</td><td>候選庫</td><td><span class="mono">data/outputs/rag2/{T}/{date}.json</span></td><td>15–20 段短版文字與來源、日期</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer>
+    依據：計畫書 CM03（docs/reference/）、docs/decisions.md（本架構的決策見 #108–#121）。Loss 公式照計畫書原文；跟計畫書不同的地方以本頁為準。Q13 定案前，α* 用哪份向量算仍未定。
+  </footer>
+</div>
+
+<button type="button" class="fab" id="fab" aria-haspopup="dialog" aria-controls="sheet" aria-expanded="false">
+  <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M9 4h6a1 1 0 0 1 1 1v1h2a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h2V5a1 1 0 0 1 1-1Zm0 2v1h6V6H9Zm-1 5h8v1.6H8V11Zm0 3.6h8v1.6H8v-1.6Z" style="fill:currentColor"></path></svg>
+  <span>待討論</span><span class="fab-n">1</span>
+</button>
+<div class="sheet-backdrop" id="sheetBackdrop"></div>
+<section class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle" aria-hidden="true">
+  <div class="sheet-grip" aria-hidden="true"></div>
+  <div class="sheet-head">
+    <div><div class="eyebrow">待討論 · 1 項＋已決定</div><h2 id="sheetTitle">還沒定的事</h2></div>
+    <button type="button" class="close" id="sheetClose">關閉</button>
+  </div>
+  <p class="muted sheet-note">方塊裡標的「（Qn）」就是這裡的編號。已定案的題目整理在最下面，完整紀錄見 docs/decisions.md。</p>
+    <div class="q-list" id="qList">
+      <article class="q-item" data-open="q13">
+        <span class="q">Q13 · L_ground</span><h3>α* 用哪一份向量算相似度？</h3>
+        <p>Q5 選了相似度換算、Q6 選了融合層的注意力。α̂ 已經改從融合層取，但 α* 如果也用「會被訓練」的投影後向量算，答案卷會跟著訓練一起變動，模型可以同時改答案和作答。</p>
+        <div class="opts-static"><div class="opts-legend">選項</div><ul><li><b>A · 用投影前的凍結 FinBERT 向量</b><span class="tag-rec">建議</span><br>H_t、H_r 各自池化後算 cosine，一次算好存檔，答案卷固定不變</li><li><b>B · 用共用投影後的向量，但 α* 不回傳梯度</b><br>答案卷會隨投影慢慢變，但不會被直接拉向 α̂</li><li><b>C · 其他</b></li>
+        </ul></div>
+      </article>
+
+      <article class="q-item done-item">
+        <span class="q">已決定 · 11/04</span><h3>Q1–Q11、Q14、Q15 的作答（Q12 併入 Q1）</h3>
+        <ul>
+          <li><b>Q1</b> 型態類別：9 類小清單（持續上漲、持續下跌、盤整、頭肩頂、頭肩底、W 底、M 頭、突破、跌破），先試這版。<br>補充（原 Q12，11/05 改）：先嘗試價量分開說明，敘述分成〔K線〕〔成交量〕〔一起說明〕三段；成交量另標 4 類（放量、縮量、量平、爆量），用 OHLCV 公式算出的標籤對照抽查。</li>
+          <li><b>Q2</b> L_align 同型態的不同天：組 batch 時避開同型態，敘述也寫得更具體，兩個都做。</li>
+          <li><b>Q3</b> RAG-1 定義來源：引用教科書或網路上的技術分析資料庫；找不到再改用 LLM 產生＋人工校對。11/05 補：備用來源為 StockCharts ChartSchool 與 HF trading-finance-glossary-nlp；定義與 K 線敘述都用英文。</li>
+          <li><b>Q4</b> RAG-1 query：K 線圖的池化向量。</li>
+          <li><b>Q5</b> α*：H_t 跟各段 H_r 的相似度換算，先試試看（用哪份向量見 Q13）。</li>
+          <li><b>Q6</b> α̂：取融合層裡 H_t 對 H_r 的注意力。</li>
+          <li><b>Q7</b> RAG-2 候選：固定挑章節（MD&amp;A、風險因素開頭等重要章節）；不用 K 線敘述當 query。</li>
+          <li><b>Q8</b> 長 context 的運算成本：等有 GPU 再跑。</li>
+          <li><b>Q9</b> 確認有用到圖：以型態一致率為主。</li>
+          <li><b>Q10</b> H_t 的副作用：每天的敘述產生一次就存檔，之後固定使用；加做「遮掉 H_t」消融。</li>
+          <li><b>Q11</b> L_belief 下降怎麼解讀：等測試完，看結果再決定。</li>
+          <li><b>Q14</b> Decoder 做兩個版本：主線是加 RAG-2 的長 context（等 GPU）；不加 RAG-2 的 512 版本是選配，可先在 Mac 跑。</li>
+          <li><b>Q15</b> 補上「打亂 Z_fused」，當作型態一致率之外的輔助檢查。</li>
+        </ul>
+      </article>
+
+      <article class="q-item done-item">
+        <span class="q">已決定 · 11/03</span><h3>上一輪定下來的事</h3>
+        <ul><li>三個 Loss 的公式照計畫書原文。</li><li>L_align：ViT 的 H_v vs. FinBERT 的 H_t（K 線敘述）。</li><li>L_ground：FinBERT 的 H_t vs. RAG-1 的 H_r（11/04 起 α̂ 改取融合層裡的注意力）。</li><li>投影層 P_v、P_t、P_r 跟融合層共用。</li><li>融合層輸入是 [H_t; H_v; H_r]，新聞不進融合層。</li><li>RAG-2 不算 Loss，Decoder 只生成一次。</li><li>ViT、FinBERT 微調只保留規劃；附屬診斷保留。</li></ul>
+      </article>
+    </div>
+</section>
+
+<aside class="drawer" id="drawer" aria-hidden="true" aria-labelledby="dTitle">
+  <div class="drawer-head">
+    <div class="row"><div class="chips" id="dChips"></div><button type="button" class="close" id="dClose" aria-label="關閉">關閉</button></div>
+    <h3 id="dTitle"></h3>
+    <div class="mono muted" id="dFile"></div>
+  </div>
+  <div class="drawer-body" id="dBody"></div>
+</aside>
+
+<script>
+(function () {
+  const MOD = {
+    A: ['Module A 資料', '--a'], B: ['Module B 編碼與檢索', '--b'], C: ['Module C 融合', '--c'],
+    D: ['Decoder 與 Loss', '--d'], L: ['LLM 產生', '--l'], P: ['附屬診斷', '--p'], R: ['第二階段 RL', '--r']
+  };
+  const STATUS = { done: '已完成', partial: '進行中', todo: '未開始' };
+  const YEAR = { 0: '第一年 → 第二年', 1: '第一年', 2: '第二年' };
+  const PHASE = { now: '現在可做', both: '現在寫程式，正式訓練需要運算資源', gpu: '需要運算資源' };
+
+  const NODES = [
+    // ---- 圖像路徑（左欄） ----
+    { id: 'src_ohlcv', m: 'A', yr: 1, s: 'done', x: 50, y: 64, w: 190, t: '股價 OHLCV', f: 'fetch_ohlcv.py', o: '→ ohlcv/{T}.csv',
+      d: 'yfinance 日線，K 線圖、漲跌標籤與回測報酬的共同來源。', out: ['data/raw/ohlcv/{TICKER}.csv'], r: ['#9', '#22'] },
+    { id: 'a_chart', m: 'A', yr: 1, s: 'done', x: 50, y: 180, w: 190, t: 'K 線＋成交量圖', f: 'chart_generator.py', o: '→ 2×PNG 224×224',
+      d: '過去 20 個交易日的 K 線圖與成交量圖，進 ViT，也給 Haiku 讀圖。', out: ['data/raw/charts/{TICKER}/{date}.png', 'data/raw/charts/{TICKER}/volume/{date}.png'], r: ['#5', '#76'] },
+    { id: 'a_label', m: 'A', yr: 1, s: 'done', x: 270, y: 180, w: 170, t: '漲跌標籤', f: 'labeling.py', o: '→ BEAR/NEU/BULL',
+      d: '未來第 5 日報酬，依 Train 期間 1/3、2/3 分位數切三類；仍是 y_belief 開頭的 <TREND>。', r: ['#30', '#85'] },
+    { id: 'a_split', m: 'A', yr: 1, s: 'done', x: 470, y: 180, w: 170, t: '時間切分 manifest', f: 'temporal_split.py', o: '70% / 15% / 15%',
+      d: 'Train 70%｜gap 5 日｜Validation 15%｜gap 5 日｜Test 15%。融合層與 Decoder 都只用 Train 更新。', r: ['#85'] },
+    { id: 'a_caption', m: 'L', yr: 1, s: 'todo', nw: 1, ph: 'now', x: 270, y: 300, w: 430, t: 'K 線文字敘述（Claude Haiku 讀圖）', f: 'generate_chart_caption.py（建議命名）', o: '{ pattern, volume, [K線], [成交量], [一起說明] }',
+      d: 'Haiku 讀當天的 K 線圖和成交量圖，從 9 類型態（持續上漲、持續下跌、盤整、頭肩頂、頭肩底、W 底、M 頭、突破、跌破）選一類，再把價和量分開說明（先嘗試這個寫法）：[K線] 價格走勢與型態、[成交量] 量能變化、[一起說明] 量價合起來的判讀，例如「[K線] 左右肩成形、突破頸線 [成交量] 突破當天放量 [一起說明] 量增價漲，頭肩底確認」。三段合成一份敘述。成交量另外從 4 類標籤選：放量、縮量、量平（三選一），爆量（有一天特別突出，可以跟前三類並存）；〔一起說明〕不設標籤。每天產生一次就存檔，之後固定使用。編碼成 H_t 後是 L_align 與 L_ground 的文字端。',
+      i: ['K 線圖 PNG＋成交量圖 PNG'], out: ['data/labels/chart_caption/{TICKER}.json（答案卷，建議進版控）'],
+      st: ['把 K 線圖、成交量圖與 9 類型態清單放進同一個 prompt，不給股票代號與日期；敘述用英文寫（FinBERT 是英文模型）', '要求輸出 JSON：pattern（從清單選）、kline、volume、combined 三段說明（對應 [K線]、[成交量]、[一起說明]，各 1–2 句，寫進位置、量能等細節）', '三段依序串成一份敘述再編碼；pattern、volume 兩個標籤只存在 JSON，用來抽查與評估', '成交量標籤另用 OHLCV 公式算一份對照（例如近 5 日均量 ÷ 前 15 日均量 > 1.3 為放量、< 0.77 為縮量，任一天 > 20 日均量 2 倍為爆量；門檻待調）', '不給 Haiku 看未來價格或 label', '存檔成答案卷，訓練與推論都讀存檔'],
+      n: ['敘述存檔重用，結果可重現；另做「遮掉 H_t」消融，確認融合層有看 H_v', '備用方案 a：給 LLM 20 日 OHLCV 數字寫敘述', '備用方案 b：手刻型態判斷公式（較不可行）'],
+      td: ['寫 9 類型態＋4 類成交量的讀圖 prompt', '寫成交量標籤的公式並定門檻', '抽查幾十天確認 Haiku 判斷合理；成交量對照公式算一致率'], fm: ['f-align', 'f-ground'] },
+    { id: 'b_vit', m: 'B', yr: 1, s: 'done', x: 50, y: 440, w: 200, h: 76, t: 'ViT（凍結）', f: 'vision_encoder.py', o: '→ H_v [2,197,768]', sub: '雙圖共用 ViT，接共用投影 P_v',
+      d: 'google/vit-base-patch16-224，凍結。輸出 H_v 經共用投影 P_v 後，同時給 L_align 和融合層用；池化後當 RAG-1 的 query。', out: ['data/vectors/{TICKER}/{date}/H_v.npy'], r: ['#36', '#46', '#76'] },
+    { id: 'b_capenc', m: 'B', yr: 1, s: 'todo', nw: 1, ph: 'now', x: 270, y: 440, w: 240, h: 76, t: '文字編碼 FinBERT（凍結）', f: '編碼 K 線敘述（共用投影 P_t）', o: '→ H_t [512, 768]', sub: 'L_align 的文字端',
+      d: '用凍結的 FinBERT 把 K 線文字敘述編碼成 H_t（計畫書 3.2：H_t = LN(Z_t P_t)，P_t 可學，跟 L_align、L_ground、融合層共用），是 L_align 與 L_ground 的文字端，也跟 H_v、H_r 一起進融合層。RAG-1 定義與 RAG-2 候選庫也用同一個 FinBERT。',
+      i: ['K 線文字敘述'], out: ['data/vectors/{TICKER}/{date}/H_t.npy（改存 K 線敘述的編碼）'], fm: ['f-align'] },
+    { id: 'rag1', m: 'B', yr: 1, s: 'todo', nw: 1, ph: 'now', x: 520, y: 440, w: 180, h: 76, t: 'RAG-1 型態知識', f: '9 類型態定義（教科書）', o: '→ H_r [K,512,768]', sub: '必做：L_ground 依賴它',
+      d: '檢索「什麼是頭肩底、什麼是漲跌」這類定義，編碼成 H_r 進融合層，幫助模型理解圖。L_ground 比的是 H_t 對這 K 段定義的注意力，所以一定要做。',
+      i: ['query：K 線圖池化向量（ViT H_v 池化）', '型態定義知識庫（9 段）'], out: ['H_r [K, 512, 768] → 融合層'],
+      st: ['從教科書或技術分析資料庫整理 9 段英文定義，跟型態清單一一對應；找不到的用 LLM 產生＋人工校對', '備用來源：StockCharts ChartSchool 型態文章（內容詳細、有各階段量能，無授權聲明，只參考改寫並註明出處）、Hugging Face propfirmkey/trading-finance-glossary-nlp（CC BY 4.0，標註出處可直接用，但每條只有一句）', 'query 與知識庫做 cosine，取 top-K', '每段定義用 FinBERT 編碼成 [512,768]', '經共用投影 P_r 後，給 L_ground，也跟 H_t、H_v 一起進融合層'],
+      td: ['找技術分析資料庫、整理 9 段定義', '建索引'], fm: ['f-rag1', 'f-ground'] },
+    { id: 'vit_ft', m: 'B', yr: 1, s: 'todo', x: 95, y: 556, w: 160, t: 'ViT 微調（規劃）', f: 'LoRA／領域預訓練', o: '只保留規劃',
+      d: '只列為規劃。前期實驗（部分微調、LoRA r4、MaxViT、DINOv3）都沒有穩定勝過凍結 ViT；L_align 先只更新投影層，真的需要再讓梯度回到 ViT。',
+      n: ['LoRA r4 五 seed：+0.033±0.045，只勝 3/5（#83）', 'MaxViT-T／DINOv3／MaxViT-S 都沒勝過 Frozen（#88–#90）'], r: ['#36', '#78', '#83', '#88', '#89', '#90'] },
+    { id: 'bert_ft', m: 'B', yr: 1, s: 'todo', x: 312, y: 556, w: 188, t: 'FinBERT 微調（規劃）', f: 'LoRA／長文本編碼', o: '只保留規劃',
+      d: '只列為規劃。FinBERT 同時用在 K 線敘述、RAG-1 定義與 RAG-2 候選庫，微調會一次影響這三處。' },
+    { id: 'l_align', m: 'D', yr: 1, s: 'todo', nw: 1, ph: 'now', x: 270, y: 650, w: 230, t: 'L_align', f: 'ViT（H_v）vs. FinBERT（H_t）', o: '⟨H_v H_t⟩ / τ',
+      d: 'ViT 的 H_v 與 FinBERT 的 H_t 比：同一天的 K 線圖與它的文字敘述要靠近，其他天的要遠離。公式照計畫書 3.5 (1)，只是 H_t 從新聞換成 K 線敘述；不經過融合層。P_v、P_t 跟融合層共用，所以 L_align 會直接影響融合層拿到的輸入。',
+      i: ['H_v：ViT 輸出（投影 P_v 後）', 'H_t：FinBERT 輸出（投影 P_t 後）'], out: ['λ1·L_align → 複合 Loss'],
+      grad: ['b_vit', 'b_capenc'], n: ['不需要 GPU，可以先單獨訓練驗證', '梯度只更新共用投影 P_v、P_t；ViT、FinBERT 本體凍結'], td: ['組 batch 時避開同型態的日子', '敘述寫進量能、位置等細節'], fm: ['f-align'] },
+    { id: 'l_ground', m: 'D', yr: 1, s: 'todo', nw: 1, ph: 'now', x: 520, y: 650, w: 120, t: 'L_ground', f: 'α̂ 取自融合層', o: 'KL(α* ‖ α̂)',
+      d: '比較 K 線敘述（H_t）對 RAG-1 各段型態定義（H_r）的注意力 α̂，與相關分數 α*。公式照計畫書。α̂ 取融合層裡 H_t token 對 H_r token 的注意力；α* 用 H_t 與各段 H_r 的相似度換算（用哪份向量見 Q13）。',
+      i: ['α̂：融合層裡 H_t 對 K 段 H_r 的注意力', 'α*：H_t 與各段 H_r 的相似度換算'], out: ['λ2·L_ground → 複合 Loss'],
+      grad: ['c_fusion', 'b_capenc', 'rag1'], n: ['梯度直接訓練融合層本身，也經共用投影 P_t、P_r 回傳', '不需要 GPU'],
+      td: ['α* 用投影前還是投影後的向量（Q13）', '實作從融合層取 H_t→H_r 注意力'], r: ['#99', '#100'], fm: ['f-ground'] },
+    { id: 'lbl_alpha', m: 'L', yr: 1, s: 'todo', ph: 'now', x: 760, y: 650, w: 230, t: 'α* 相關性分數', f: 'H_t、H_r 相似度 → softmax', o: '備用：Haiku 打 0–3 分',
+      d: 'RAG-1 各段定義跟今天 K 線的相關程度。11/04 決定先試 (b)：H_t 與各段 H_r 的 cosine 相似度，經 softmax 換成 K 段之間的分布。效果不好時改用 (c) Haiku 逐段打 0–3 分（可沿用現有的 generate_alpha_star.py）。',
+      i: ['H_t：K 線敘述的 FinBERT 編碼', 'H_r：RAG-1 檢索到的 K 段定義'], out: ['data/labels/grounding/{TICKER}_rag1.json（建議命名）'],
+      td: ['用投影前的凍結向量還是投影後的向量（Q13）'], r: ['#99', '#105'] },
+    { id: 'c_fusion', m: 'C', yr: 1, s: 'partial', ph: 'now', x: 50, y: 780, w: 650, h: 80, t: '跨模態融合層', f: 'fusion/model.py（共用投影 P_v、P_t、P_r ＋ 2 層 × 8 頭）', o: '[CLS ; H_t ; 394 圖 token ; K 個 RAG-1 定義 token] → CLS → Z_fused', sub: '計畫書 F([H_t; H_v; H_r])：H_t 改成 K 線敘述，H_r 改成 RAG-1 定義；新聞與舊 H_r 拿掉',
+      d: '輸入照計畫書是 [H_t; H_v; H_r]：H_t 是 K 線敘述的 FinBERT 編碼、H_v 是 K 線圖、H_r 是 RAG-1 的型態定義，輸出 Z_fused。L_align、L_ground 都在融合層之前算，不從這裡取。',
+      i: ['H_t [512,768]（K 線敘述）', 'H_v [2,197,768]', 'RAG-1 的 H_r [K,512,768]'], out: ['checkpoints/fusion_{TICKER}_v2.pt（建議命名）'],
+      now: '現行程式吃 H_t（新聞）＋H_v＋H_r（舊 RAG 財報），用 3 類 CE 代打訓練。', goal: '吃 H_t（K 線敘述）＋H_v＋H_r（RAG-1 定義）；聯合訓練時由 L_belief 的梯度更新。',
+      td: ['輸入投影改成跟 L_align、L_ground 共用的 P_v、P_t、P_r', 'H_t 改讀 K 線敘述的編碼', '接上 RAG-1 的 H_r', '拿掉新聞與舊 H_r'], r: ['#43', '#104'] },
+    { id: 'zf', m: 'C', yr: 0, s: 'partial', ph: 'now', x: 260, y: 910, w: 200, t: 'Z_fused', f: '{T}_index.npz', o: '[768] · 每天一筆',
+      d: '承載 K 線圖、K 線敘述與型態定義的資訊。給 Decoder 當 prefix，也給 RL 當 state 與附屬診斷。', out: ['data/outputs/z_fused/{TICKER}_index.npz'] },
+
+    // ---- Decoder：只生成一次 ----
+    { id: 'projector', m: 'D', yr: 1, s: 'done', ph: 'both', main: 1, x: 250, y: 1150, w: 220, t: 'Soft-prompt Projector', f: 'ZFusedProjector', o: '→ 4 × 4096 prefix',
+      d: 'Z_fused 投影成 4 個 LLM prefix token（現行程式已實作）。', r: ['#57'] },
+    { id: 'decoder', m: 'D', yr: 1, s: 'partial', ph: 'both', main: 1, x: 50, y: 1250, w: 650, h: 96, t: 'Decoder：LLaMA-2 7B（4-bit 凍結）＋ LoRA', f: 'decoder/model.py · decoder/train.py', o: 'context = [ 4 個 prefix ; RAG-2 候選短版文字 × 15–20 段 ; y_belief ]', sub: '只生成一次；看 Z_fused 的同時看候選，由注意力自己挑要參考哪幾段',
+      d: '以 Z_fused（prefix）與 RAG-2 候選文字為條件生成敘述。訓練時 teacher forcing 跑 y_belief，只算 L_belief。',
+      i: ['prefix [4, 4096]', 'RAG-2 的 15–20 段短版文字', 'y_belief（teacher forcing）'], out: ['checkpoints/decoder_v2/（建議命名）'],
+      st: ['組 context：prefix → 每段候選加標頭「[來源 日期]」→ y_belief', 'forward：只對 y_belief token 算 L_belief', '加上 L_align、L_ground（融合層算好的），一次 backward'],
+      now: '現行程式只有 prefix＋y_belief，max_length 512。', goal: 'context 多了 RAG-2 候選，序列約 1,100–1,300 token。',
+      td: ['主線：加 RAG-2 的長 context，等 GPU', '選配：Mac 先跑不加 RAG-2 的 512 版本', 'L_belief 怎麼解讀：測試完再決定'], r: ['#57', '#59', '#64'], fm: ['f-onepass', 'f-belief'] },
+    { id: 'gen', m: 'D', yr: 1, s: 'todo', nw: 1, ph: 'gpu', main: 1, x: 260, y: 1390, w: 200, t: '可解釋敘述', f: 'generate()', o: '<TREND><RISK> 敘述＋依據',
+      d: '最後的敘述；Decoder 對各段候選的注意力可以標出每句話主要參考哪幾段（只用來展示，不算 Loss）。', fm: ['f-onepass'] },
+    { id: 'dec_eval', m: 'D', yr: 1, s: 'partial', ph: 'gpu', main: 1, x: 50, y: 1500, w: 650, h: 72, t: '評估與優化', f: 'decoder/evaluate.py（擴充）', o: 'TREND／RISK · LLM-judge · 型態一致率 · 打亂 Z_fused',
+      d: '以型態一致率為主：看 Decoder 敘述裡的 K 線型態跟 Haiku 敘述一不一致。候選文字一開始就在 context，型態一致率分不出 Decoder 是看圖還是抄文件，所以補「打亂 Z_fused」當輔助檢查。',
+      td: ['實作型態一致率', '實作打亂 Z_fused 檢查'], fm: ['f-onepass'] },
+
+    // ---- 文字路徑（中欄） ----
+    { id: 'src_news', m: 'A', yr: 1, s: 'done', x: 760, y: 64, w: 140, t: '新聞', f: 'fetch_news_alpaca', o: '→ news/{date}',
+      d: 'Alpaca News API，盤後新聞歸下一交易日。v2 不再進融合層，只給 RAG-2。', r: ['#23', '#27'] },
+    { id: 'src_filing', m: 'A', yr: 1, s: 'done', x: 910, y: 64, w: 140, t: '財報', f: 'fetch_filings', o: '10-K / 10-Q / 8-K',
+      d: 'SEC EDGAR。10-K／10-Q 當背景，8-K 標「N 天前」。v2 只給 RAG-2。', r: ['#45', '#47'] },
+    { id: 'src_tx', m: 'A', yr: 1, s: 'done', x: 1060, y: 64, w: 140, t: '法說會', f: 'fetch_transcripts', o: '→ EC_{date}.txt',
+      d: 'Alpha Vantage 逐字稿。v2 只給 RAG-2。', r: ['#67', '#68'] },
+    { id: 'a_clean', m: 'A', yr: 1, s: 'done', x: 760, y: 180, w: 440, t: '清洗、切段、日期對齊', f: 'text_cleaner · chunker · _effective_date', o: '→ chunk ≤512 token，帶 available date',
+      d: '去 HTML、切段、標上可得日期；這個日期是 RAG-2 不看未來的依據。' },
+    { id: 'a_docjson', m: 'A', yr: 1, s: 'done', x: 760, y: 300, w: 440, t: '每日資料 JSON', f: 'build_dataset.py → dataset/{T}/{date}.json', o: 'news[] · filing_chunks[] · transcript_chunks[] · label',
+      d: '格式不變。v2 裡它是 RAG-2 候選庫、y_belief 答案卷的來源。' },
+    { id: 'doc_index', m: 'B', yr: 1, s: 'partial', nw: 1, ph: 'now', x: 760, y: 440, w: 440, h: 70, t: 'RAG-2 候選庫（依日期過濾）', f: 'chunk 原文 · available_date · 來源', o: 'AAPL 每天候選約 82 段：新聞 11、財報 52、法說 19',
+      d: '把新聞、財報、法說會 chunk 都放進同一個庫，每段帶可得日期與來源。現行向量庫只放財報與法說，要把新聞也放進來。',
+      td: ['新聞也放進候選庫', '依 available date 過濾'], fm: ['f-rag2'] },
+    { id: 'rag2', m: 'B', yr: 1, s: 'todo', nw: 1, ph: 'now', x: 760, y: 1250, w: 440, h: 80, t: 'RAG-2 當天候選篩選（生成前）', f: '日期過濾 ＋ 固定章節 ＋ 壓成短版', o: '→ 15–20 段短版文字進 Decoder context', sub: '不做相似度排序、不學 W_q、不算 Loss',
+      d: '生成前依日期與來源把當天候選縮到 15–20 段，每段壓成標題＋第一句（或前約 40 token），放進 Decoder context。Decoder 的注意力自己挑要參考哪幾段。',
+      i: ['RAG-2 候選庫'], out: ['data/outputs/rag2/{TICKER}/{date}.json（建議命名）'],
+      st: ['候選：available_date ≤ t 的當天新聞、當前背景財報、t 以前的 8-K、最近一場法說會', '新聞與當天 8-K 全收；背景財報固定挑 MD&A、風險因素開頭；法說會挑重要段落', '每段壓成短版、加上來源與日期標頭', '交給 Decoder'],
+      td: ['確定法說會挑哪些段落'], fm: ['f-rag2', 'f-onepass'] },
+    { id: 'l_belief', m: 'D', yr: 1, s: 'done', ph: 'gpu', x: 860, y: 1390, w: 230, t: 'L_belief', f: 'Decoder 文字 vs. y_belief', o: '−Σ log p(y_t | …)',
+      d: '公式照計畫書；context 多了 RAG-2 候選。', grad: ['decoder', 'projector', 'c_fusion'], fm: ['f-belief'] },
+    { id: 'l_total', m: 'D', yr: 1, s: 'todo', ph: 'both', main: 1, x: 860, y: 1500, w: 230, h: 72, t: '複合 Loss', f: 'λ1·La + λ2·Lg + λ3·Lb', o: '一次 backward',
+      d: 'L = λ1·L_align + λ2·L_ground + λ3·L_belief（計畫書 3.5 (4)）。ViT、FinBERT、LLaMA 本體凍結。',
+      grad: ['decoder', 'projector', 'c_fusion', 'b_vit', 'b_capenc', 'rag1'], td: ['實作聯合訓練迴圈', 'λ 在 Validation 上調'], fm: ['f-overview'] },
+
+    // ---- 附屬診斷（Decoder 完成前的代打） ----
+    { id: 'c_clf', m: 'P', yr: 1, s: 'done', ph: 'now', x: 760, y: 915, w: 230, t: '市場情緒分類', f: 'validation/classifier.py', o: '→ acc / macro F1',
+      d: '凍結 Z_fused，用 Logistic Regression 預測 3 類漲跌。Decoder 完成前用來檢查 Z_fused 有沒有資訊；v2 的 Z_fused 內容改變，要重跑一次。',
+      st: ['Train fit', 'Validation 選 C ∈ {0.01, 0.1, 1, 10}', 'Train+Validation refit', 'Test 只評一次'],
+      n: ['現行架構 strict baseline（AAPL）：Test accuracy 0.3547、macro F1 0.3547（#86）', '跟 Decoder 的 <TREND> 是同一個判斷（#43）'], r: ['#43', '#85', '#86'] },
+    { id: 'c_evhead', m: 'P', yr: 1, s: 'done', ph: 'now', x: 1010, y: 915, w: 170, t: '事件驗證頭', f: 'event_validation_head', o: '→ 7 類 multi-label',
+      d: 'Z_fused → 每類一個 Logistic Regression 預測當天事件，對應計畫書第 19 頁的「診斷性分類測試」。v2 的 Z_fused 不含新聞，事件資訊預期會變少。',
+      n: ['現行架構嚴格切分後 micro F1 0.111（#86）'], r: ['#34', '#37', '#86'] },
+    { id: 'c_report', m: 'P', yr: 1, s: 'done', ph: 'now', x: 760, y: 1000, w: 230, t: '第一階段報告', f: 'pipeline_report.py', o: '→ reports/{run_id}/',
+      d: 'run_pipeline.py 結束後自動輸出 report.md、report.json、圖表與來源快照。', r: ['#97', '#98'] },
+
+    // ---- LLM 答案卷（右欄） ----
+    { id: 'lbl_event', m: 'L', yr: 1, s: 'done', x: 1250, y: 915, w: 230, t: '事件 ground truth', f: 'event_ground_truth_llm.py', o: '149 天 · 7 類',
+      d: '依年份分層抽樣 150 天，LLM 輔助標註 7 類事件。', r: ['#32'] },
+    { id: 'lbl_ybelief', m: 'L', yr: 1, s: 'partial', ph: 'now', x: 1250, y: 1390, w: 230, t: 'y_belief 答案卷', f: 'generate_y_belief.py', o: 'DeepSeek · 格式不變',
+      d: '<TREND>（A 的 label）＋<RISK_LEVEL>＋2–4 句敘述。這次不動。', td: ['補齊 AAPL 剩餘天數與 NVDA、MSFT'], r: ['#57', '#64'] },
+
+    // ---- 第二階段 ----
+    { id: 'rl_env', m: 'R', yr: 2, s: 'partial', x: 50, y: 1695, w: 200, t: 'MDP 環境', f: 'rl/env.py', o: 's = [Z_fused, w_{t−1}]', d: '不受這次調整影響。' },
+    { id: 'rl_ppo', m: 'R', yr: 2, s: 'partial', x: 290, y: 1695, w: 200, t: 'PPO 策略', f: 'rl/train_ppo.py', o: '→ ppo_agent_{T}.zip', d: '不受這次調整影響。' },
+    { id: 'bt', m: 'R', yr: 2, s: 'partial', x: 530, y: 1695, w: 200, t: '回測', f: 'backtest.py', o: '報酬 · Sharpe · MDD', d: '不受這次調整影響。' },
+    { id: 'multi', m: 'R', yr: 2, s: 'todo', x: 50, y: 1795, w: 200, t: 'N 資產投資組合', f: '（未實作）', o: 'a_t ∈ R^N', d: '計畫書最終規格，尚未開始。' },
+    { id: 'ig', m: 'R', yr: 2, s: 'partial', x: 290, y: 1795, w: 200, t: 'Integrated Gradients', f: 'integrated_gradients.py', o: '→ 769 維歸因', d: '不受這次調整影響。' }
+  ];
+
+  const EDGES = [
+    { f: 'src_ohlcv', t: 'a_chart', l: 'OHLCV（20 日窗）', p: [[145, 128], [145, 180]] },
+    { f: 'src_ohlcv', t: 'a_label', l: '收盤價', p: [[240, 96], [355, 96], [355, 180]] },
+    { f: 'a_label', t: 'a_split', l: '交易日', p: [[440, 212], [470, 212]] },
+    { f: 'a_chart', t: 'a_caption', l: 'K 線圖', p: [[240, 212], [255, 212], [255, 332], [270, 332]], k: 1 },
+    { f: 'a_label', t: 'a_docjson', l: 'label', p: [[355, 244], [355, 272], [745, 272], [745, 332], [760, 332]] },
+    { f: 'src_news', t: 'a_clean', l: '新聞', p: [[830, 128], [830, 180]] },
+    { f: 'src_filing', t: 'a_clean', l: 'HTML', p: [[980, 128], [980, 180]] },
+    { f: 'src_tx', t: 'a_clean', l: '逐字稿', p: [[1130, 128], [1130, 180]] },
+    { f: 'a_clean', t: 'a_docjson', l: 'chunks', p: [[980, 244], [980, 300]] },
+    { f: 'a_docjson', t: 'doc_index', l: '全部文字 chunk', p: [[980, 364], [980, 440]] },
+    { f: 'a_chart', t: 'b_vit', l: '2 張 PNG', p: [[145, 244], [145, 440]], k: 1 },
+    { f: 'a_caption', t: 'b_capenc', l: '敘述文字', p: [[385, 364], [385, 440]], k: 1 },
+    { f: 'b_vit', t: 'rag1', l: 'query（池化向量）', p: [[230, 440], [230, 424], [610, 424], [610, 440]], c: 'query' },
+    { f: 'vit_ft', t: 'b_vit', l: '微調（規劃）', p: [[175, 556], [175, 516]], c: 'query', nl: 1 },
+    { f: 'bert_ft', t: 'b_capenc', l: '微調（規劃）', p: [[415, 556], [415, 516]], c: 'query', nl: 1 },
+    { f: 'b_capenc', t: 'l_align', l: 'H_t', p: [[300, 516], [300, 650]], k: 1, lp: [300, 536] },
+    { f: 'b_vit', t: 'c_fusion', l: 'H_v [2,197,768]', p: [[70, 516], [70, 780]], c: 'key', k: 1, lp: [82, 536] },
+    { f: 'b_capenc', t: 'c_fusion', l: 'H_t（K 線敘述）', p: [[510, 500], [515, 500], [515, 780]], c: 'key', k: 1, lp: [515, 728] },
+    { f: 'rag1', t: 'c_fusion', l: 'H_r（型態定義）', p: [[680, 516], [680, 780]], c: 'key', k: 1, lp: [680, 728] },
+    { f: 'b_vit', t: 'l_align', l: 'H_v', p: [[250, 500], [260, 500], [260, 682], [270, 682]], k: 1, lp: [260, 640] },
+    { f: 'b_capenc', t: 'l_ground', l: 'H_t', p: [[510, 500], [515, 500], [515, 682], [520, 682]], k: 1, lp: [515, 640] },
+    { f: 'rag1', t: 'l_ground', l: 'H_r', p: [[560, 516], [560, 650]], k: 1, lp: [560, 600] },
+    { f: 'lbl_alpha', t: 'l_ground', l: 'α*', p: [[760, 682], [640, 682]], k: 1, lp: [700, 666] },
+    { f: 'c_fusion', t: 'l_ground', l: 'α̂', p: [[600, 780], [600, 714]], k: 1, lp: [600, 762] },
+    { f: 'c_fusion', t: 'zf', l: 'CLS → Z_fused', p: [[360, 860], [360, 910]], c: 'key', k: 1 },
+    { f: 'zf', t: 'c_clf', l: 'Z_fused（凍結）', p: [[460, 947], [760, 947]], c: 'dash', lp: [600, 947] },
+    { f: 'c_clf', t: 'c_report', l: 'metrics', p: [[875, 979], [875, 1000]] },
+    { f: 'lbl_event', t: 'c_evhead', l: '7 類事件', p: [[1250, 947], [1180, 947]] },
+    { f: 'zf', t: 'projector', l: 'Z_fused [768]', p: [[360, 974], [360, 1150]], c: 'key', k: 1, lp: [360, 1100] },
+    { f: 'projector', t: 'decoder', l: 'prefix [4, 4096]', p: [[360, 1214], [360, 1250]], c: 'key', k: 1 },
+    { f: 'doc_index', t: 'rag2', l: '只取 available ≤ t', p: [[1190, 510], [1190, 1250]], k: 1, lp: [1190, 1200] },
+    { f: 'rag2', t: 'decoder', l: '候選文字', p: [[760, 1290], [700, 1290]], c: 'key', k: 1, lp: [730, 1274] },
+    { f: 'decoder', t: 'gen', l: '生成（一次）', p: [[360, 1346], [360, 1390]], c: 'key', k: 1 },
+    { f: 'gen', t: 'dec_eval', l: '敘述', p: [[360, 1454], [360, 1500]], c: 'key', k: 1 },
+    { f: 'gen', t: 'l_belief', l: 'logits（teacher forcing）', p: [[460, 1422], [860, 1422]], k: 1, lp: [600, 1422] },
+    { f: 'lbl_ybelief', t: 'l_belief', l: 'y_belief', p: [[1250, 1422], [1090, 1422]], k: 1 },
+    { f: 'l_ground', t: 'l_total', l: 'λ2', p: [[640, 700], [715, 700], [715, 1520], [860, 1520]], k: 1, lp: [715, 1060] },
+    { f: 'l_belief', t: 'l_total', l: 'λ3', p: [[975, 1454], [975, 1500]], k: 1 },
+    { f: 'l_align', t: 'l_total', l: 'λ1', p: [[400, 714], [400, 740], [730, 740], [730, 1545], [860, 1545]], k: 1, lp: [730, 1120] },
+    { f: 'l_total', t: 'decoder', l: '∇ 一次 backward', p: [[975, 1572], [975, 1598], [745, 1598], [745, 1330], [700, 1330]], c: 'grad', k: 1, nl: 1, lp: [860, 1598] },
+    { f: 'dec_eval', t: 'decoder', l: '調整後重訓', p: [[50, 1536], [32, 1536], [32, 1290], [50, 1290]], c: 'loop', k: 1, nl: 1, lp: [150, 1478] },
+    { f: 'zf', t: 'rl_env', l: 'pool → s_t', p: [[260, 942], [16, 942], [16, 1727], [50, 1727]], c: 'key', k: 1, lp: [140, 942] },
+    { f: 'rl_env', t: 'rl_ppo', l: 'reward', p: [[250, 1727], [290, 1727]] },
+    { f: 'rl_ppo', t: 'bt', l: '權重 w_t', p: [[490, 1727], [530, 1727]] },
+    { f: 'rl_ppo', t: 'ig', l: 'policy π', p: [[390, 1759], [390, 1795]] },
+    { f: 'multi', t: 'rl_env', l: 'N 資產（未做）', p: [[150, 1795], [150, 1759]], c: 'todo' },
+    // 不畫，但算進上下游
+    { f: 'a_split', t: 'c_fusion', hidden: 1 }, { f: 'a_split', t: 'decoder', hidden: 1 }, { f: 'a_split', t: 'rl_ppo', hidden: 1 },
+    { f: 'a_split', t: 'c_clf', hidden: 1 }, { f: 'zf', t: 'c_evhead', hidden: 1 },
+    { f: 'a_docjson', t: 'lbl_ybelief', hidden: 1 }, { f: 'a_docjson', t: 'lbl_event', hidden: 1 }, { f: 'lbl_ybelief', t: 'decoder', hidden: 1 },
+    { f: 'a_caption', t: 'lbl_alpha', hidden: 1 }, { f: 'rag1', t: 'lbl_alpha', hidden: 1 }
+  ];
+
+  const byId = Object.fromEntries(NODES.map(n => [n.id, n]));
+  NODES.forEach(n => { n.w = n.w || 180; n.h = n.h || 64; });
+  const svg = document.getElementById('diagram');
+  const NS = 'http://www.w3.org/2000/svg';
+  function el(tag, attrs, parent) { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; }
+  function txt(parent, x, y, cls, s, style) { const t = el('text', { x, y, class: cls }, parent); if (style) t.setAttribute('style', style); t.textContent = s; return t; }
+  function roundPath(pts, r) {
+    let d = 'M' + pts[0][0] + ',' + pts[0][1];
+    for (let i = 1; i < pts.length - 1; i++) {
+      const [x0, y0] = pts[i - 1], [x1, y1] = pts[i], [x2, y2] = pts[i + 1];
+      const d1 = Math.hypot(x1 - x0, y1 - y0), d2 = Math.hypot(x2 - x1, y2 - y1);
+      const rr = Math.min(r, d1 / 2, d2 / 2);
+      d += 'L' + (x1 - (x1 - x0) / d1 * rr) + ',' + (y1 - (y1 - y0) / d1 * rr) + 'Q' + x1 + ',' + y1 + ' ' + (x1 + (x2 - x1) / d2 * rr) + ',' + (y1 + (y2 - y1) / d2 * rr);
+    }
+    const last = pts[pts.length - 1];
+    return d + 'L' + last[0] + ',' + last[1];
+  }
+  const defs = el('defs', {}, svg);
+  [['arr', 'var(--edge)'], ['arrHot', 'var(--hi)'], ['arrTodo', 'var(--no)'], ['arrGrad', 'var(--grad)'], ['arrLoop', 'var(--d)']].forEach(([id, c]) => {
+    const m = el('marker', { id, viewBox: '0 0 10 10', refX: '9', refY: '5', markerWidth: '7', markerHeight: '7', orient: 'auto' }, defs);
+    el('path', { d: 'M0,0 L10,5 L0,10 z', style: 'fill:' + c }, m);
+  });
+
+  const bg = el('g', {}, svg);
+  // Module 標題放在各區左上角；最後移到最上層並墊底色，避免被連線蓋住
+  const gBand = el('g', {}, svg);
+  function band(x, y, w, h, color, label) {
+    el('rect', { x, y, width: w, height: h, rx: 10, style: 'fill:' + color + ';fill-opacity:0.05;stroke:' + color + ';stroke-opacity:0.3' }, bg);
+    if (label) txt(gBand, x + 12, y + 16, 'band-label', label, 'fill:' + color);
+  }
+  function liftBandLabels() {
+    svg.appendChild(gBand);
+    gBand.querySelectorAll('rect').forEach(r => r.remove());
+    gBand.querySelectorAll('text').forEach(t => {
+      let w = 0;
+      try { w = t.getComputedTextLength(); } catch (err) { w = 0; }
+      if (!w) return;
+      const r = el('rect', { x: +t.getAttribute('x') - 6, y: +t.getAttribute('y') - 12, width: w + 12, height: 17, rx: 3, style: 'fill:var(--panel)' });
+      gBand.insertBefore(r, t);
+    });
+  }
+  setTimeout(liftBandLabels, 0);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(liftBandLabels);
+  el('rect', { x: 8, y: 30, width: 1484, height: 1605, rx: 14, style: 'fill:none;stroke:var(--line);stroke-width:1.2' }, bg);
+  txt(bg, 16, 22, 'frame-label', '第一年／第一階段');
+  txt(bg, 160, 22, 'frame-sub', '左：圖像路徑與 Decoder　中：文字路徑、Loss、附屬診斷　右：LLM 答案卷');
+  band(14, 36, 1472, 344, 'var(--a)', 'MODULE A · 資料');
+  band(14, 392, 1472, 352, 'var(--b)', 'MODULE B · 編碼與檢索');
+  band(14, 756, 724, 240, 'var(--c)', 'MODULE C · 融合 [H_t; H_v; H_r]');
+  band(14, 1130, 1472, 495, 'var(--d)', 'DECODER · 只生成一次 · 三個 Loss 一起訓練');
+  el('rect', { x: 750, y: 884, width: 736, height: 196, rx: 10, style: 'fill:var(--p);fill-opacity:0.07;stroke:var(--p);stroke-opacity:0.6;stroke-dasharray:4 3' }, bg);
+  txt(bg, 762, 904, 'band-label', '附屬診斷（Decoder 完成前的代打，保留）', 'fill:var(--p)');
+  [['新聞、財報、法說會不再進融合層，', 'frame-sub'], ['只透過 RAG-2 篩選後放進 Decoder 的 context。', 'frame-sub'], ['原本用 h_v＋h_t 檢索 top-3 → H_r 的 RAG 已拿掉。', 'frame-sub'], ['L_align、L_ground、融合層共用同一組投影 P_v、P_t、P_r。', 'frame-sub']]
+    .forEach((nt, i) => txt(bg, 775, 560 + i * 22, nt[1], nt[0]));
+  el('rect', { x: 8, y: 1665, width: 1484, height: 215, rx: 14, style: 'fill:none;stroke:var(--line);stroke-width:1.2' }, bg);
+  txt(bg, 16, 1657, 'frame-label', '第二年／第二階段');
+  [['不受這次調整影響', 'frame-label'], ['· RL 仍吃池化後的 Z_fused＋前期持倉。', 'frame-sub'], ['· Z_fused 的內容從「圖＋新聞＋財報」變成「K 線圖＋K 線敘述＋型態定義」，', 'frame-sub'], ['　RL 拿到的資訊會跟著改變，重訓時要注意。', 'frame-sub']]
+    .forEach((nt, i) => txt(bg, 790, 1715 + i * 26, nt[1], nt[0]));
+
+  const gEdges = el('g', {}, svg), gNodes = el('g', {}, svg), gLabels = el('g', {}, svg);
+  function markerFor(e, hot) {
+    if (e.c === 'todo') return 'url(#arrTodo)';
+    if (e.c === 'grad') return 'url(#arrGrad)';
+    if (e.c === 'loop') return 'url(#arrLoop)';
+    return hot ? 'url(#arrHot)' : 'url(#arr)';
+  }
+  EDGES.forEach(e => {
+    if (e.hidden) return;
+    const cls = ['edge'].concat((e.c || '').split(' ').filter(Boolean)).join(' ');
+    e.path = el('path', { d: roundPath(e.p, 8), class: cls, 'marker-end': markerFor(e, false) }, gEdges);
+    el('title', {}, e.path).textContent = byId[e.f].t + ' → ' + byId[e.t].t + '：' + e.l;
+    let mx, my;
+    if (e.lp) { [mx, my] = e.lp; } else {
+      let best = 0, bi = 0;
+      for (let i = 0; i < e.p.length - 1; i++) { const len = Math.hypot(e.p[i + 1][0] - e.p[i][0], e.p[i + 1][1] - e.p[i][1]); if (len > best) { best = len; bi = i; } }
+      mx = (e.p[bi][0] + e.p[bi + 1][0]) / 2; my = (e.p[bi][1] + e.p[bi + 1][1]) / 2;
+    }
+    const g = el('g', { class: 'elabel' }, gLabels);
+    e.lrect = el('rect', { rx: 4 }, g);
+    const tx = el('text', { x: mx, y: my + 4, 'text-anchor': 'middle' }, g);
+    tx.textContent = e.l;
+    if (e.c === 'grad') tx.setAttribute('style', 'fill:var(--grad)');
+    if (e.c === 'loop') tx.setAttribute('style', 'fill:var(--d)');
+    e.label = g; e.mid = [mx, my];
+  });
+
+  NODES.forEach(n => {
+    const g = el('g', { class: 'node s-' + n.s + (n.main ? ' main' : '') + (n.nw ? ' nw' : ''), tabindex: '0', role: 'button', 'data-id': n.id, 'aria-label': n.t + '，' + STATUS[n.s] + (n.nw ? '，新增' : '') }, gNodes);
+    el('rect', { class: 'box', x: n.x, y: n.y, width: n.w, height: n.h, rx: 7 }, g);
+    el('rect', { x: n.x, y: n.y + 6, width: 4, height: n.h - 12, rx: 2, style: 'fill:var(' + MOD[n.m][1] + ')' }, g);
+    txt(g, n.x + 14, n.y + 22, 'n-title', n.t);
+    txt(g, n.x + 14, n.y + 40, 'n-file', n.f);
+    txt(g, n.x + 14, n.y + 57, 'n-out', n.o, 'fill:var(' + MOD[n.m][1] + ')');
+    if (n.sub && n.h >= 76) txt(g, n.x + 14, n.y + 73, 'n-sub', n.sub);
+    const sx = n.x + n.w - 13, sy = n.y + 13;
+    if (n.nw) txt(g, sx - 22, sy + 4, 'n-new', '新');
+    if (n.s === 'done') el('circle', { cx: sx, cy: sy, r: 5, style: 'fill:var(--ok)' }, g);
+    else if (n.s === 'partial') {
+      el('circle', { cx: sx, cy: sy, r: 4.5, style: 'fill:var(--panel);stroke:var(--wip);stroke-width:1.5' }, g);
+      el('path', { d: 'M' + sx + ',' + (sy - 4.5) + ' A4.5,4.5 0 0 0 ' + sx + ',' + (sy + 4.5) + ' Z', style: 'fill:var(--wip)' }, g);
+    } else el('circle', { cx: sx, cy: sy, r: 4.5, style: 'fill:none;stroke:var(--no);stroke-width:1.5' }, g);
+    n.g = g;
+    g.addEventListener('click', ev => { ev.stopPropagation(); select(selected === n.id ? null : n.id); });
+    g.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); select(selected === n.id ? null : n.id); } });
+  });
+
+  function sizeLabels() {
+    EDGES.forEach(e => {
+      if (!e.label || !e.label.classList.contains('show') || e.sized) return;
+      let w = 0;
+      try { w = e.label.querySelector('text').getComputedTextLength(); } catch (err) { w = 0; }
+      if (!w) return;
+      e.lrect.setAttribute('x', e.mid[0] - w / 2 - 5); e.lrect.setAttribute('y', e.mid[1] - 8);
+      e.lrect.setAttribute('width', w + 10); e.lrect.setAttribute('height', 17);
+      e.sized = true;
+    });
+  }
+
+  let yearF = 'all', phaseF = 'all', onlyNew = false, statusF = new Set(['done', 'partial', 'todo']), selected = null;
+  function passes(n) {
+    const yOk = yearF === 'all' || n.yr === 0 || String(n.yr) === yearF;
+    const pOk = phaseF === 'all' || n.ph === phaseF || (n.ph === 'both' && (phaseF === 'now' || phaseF === 'gpu'));
+    return yOk && pOk && statusF.has(n.s) && (!onlyNew || n.nw);
+  }
+  function lineage(id) {
+    const up = new Set(), down = new Set();
+    const walk = (cur, dir, acc) => EDGES.forEach(e => {
+      if (e.nl) return;
+      const from = dir === 'up' ? e.t : e.f, to = dir === 'up' ? e.f : e.t;
+      if (from === cur && !acc.has(to)) { acc.add(to); walk(to, dir, acc); }
+    });
+    walk(id, 'up', up); walk(id, 'down', down);
+    return { up, down };
+  }
+  function render() {
+    const showAll = document.getElementById('showLabels').checked;
+    const lin = selected ? lineage(selected) : null;
+    const grad = new Set(selected && byId[selected].grad ? byId[selected].grad : []);
+    const inLin = id => !lin || id === selected || lin.up.has(id) || lin.down.has(id) || grad.has(id);
+    NODES.forEach(n => {
+      n.g.classList.toggle('dim', !passes(n));
+      n.g.classList.toggle('faded', passes(n) && !inLin(n.id));
+      n.g.classList.toggle('sel', n.id === selected);
+      n.g.classList.toggle('gradT', grad.has(n.id));
+    });
+    EDGES.forEach(e => {
+      if (!e.path) return;
+      const visible = passes(byId[e.f]) && passes(byId[e.t]);
+      let hot = false;
+      if (lin) {
+        const upS = x => x === selected || lin.up.has(x), dnS = x => x === selected || lin.down.has(x);
+        hot = !e.nl && ((upS(e.f) && upS(e.t)) || (dnS(e.f) && dnS(e.t)));
+        if (e.c === 'grad' && grad.size) hot = true;
+        if (e.nl && e.c !== 'grad' && (e.f === selected || e.t === selected)) hot = true;
+      }
+      e.path.classList.toggle('dim', !visible);
+      e.path.classList.toggle('faded', visible && !!lin && !hot);
+      e.path.classList.toggle('hot', hot);
+      e.path.setAttribute('marker-end', markerFor(e, hot));
+      const touches = selected && (e.f === selected || e.t === selected);
+      e.label.classList.toggle('show', visible && (showAll || (!lin && !!e.k) || !!touches || (hot && !!e.k)));
+      e.label.classList.toggle('hotl', hot);
+    });
+    sizeLabels();
+  }
+  svg.addEventListener('click', () => select(null));
+  function seg(attr, set) {
+    document.querySelectorAll('[' + attr + ']').forEach(b => b.addEventListener('click', () => {
+      set(b.getAttribute(attr));
+      document.querySelectorAll('[' + attr + ']').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+      render();
+    }));
+  }
+  seg('data-year', v => { yearF = v; });
+  seg('data-phase', v => { phaseF = v; });
+  document.querySelectorAll('[data-status]').forEach(b => b.addEventListener('click', () => {
+    const s = b.dataset.status;
+    if (statusF.has(s)) statusF.delete(s); else statusF.add(s);
+    b.setAttribute('aria-pressed', String(statusF.has(s)));
+    render();
+  }));
+  document.getElementById('onlyNew').addEventListener('change', ev => { onlyNew = ev.target.checked; render(); });
+  document.getElementById('showLabels').addEventListener('change', render);
+  document.getElementById('animFlow').addEventListener('change', ev => document.getElementById('diagramBox').classList.toggle('flowing', ev.target.checked));
+
+  const drawer = document.getElementById('drawer');
+  function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+  function list(title, arr, cls, tag) {
+    if (!arr || !arr.length) return '';
+    const t = tag || 'ul';
+    return '<div class="dsec"><h4>' + title + '</h4><' + t + ' class="' + (cls || '') + '">' + arr.map(x => '<li>' + esc(x) + '</li>').join('') + '</' + t + '></div>';
+  }
+  function nodeLinks(title, ids) {
+    const arr = [...ids].filter(id => byId[id]);
+    if (!arr.length) return '';
+    return '<div class="dsec"><h4>' + title + '</h4><div class="nb">' + arr.map(id => '<button type="button" class="linkish" data-goto="' + id + '">' + esc(byId[id].t) + '</button>').join('') + '</div></div>';
+  }
+  function select(id) {
+    selected = id;
+    render();
+    if (!id) { drawer.classList.remove('open'); drawer.setAttribute('aria-hidden', 'true'); return; }
+    const n = byId[id];
+    const direct = { up: new Set(), down: new Set() };
+    EDGES.forEach(e => { if (e.nl || e.hidden) return; if (e.t === id) direct.up.add(e.f); if (e.f === id) direct.down.add(e.t); });
+    document.getElementById('dChips').innerHTML =
+      '<span class="chip ' + n.s + '">' + STATUS[n.s] + '</span>' + (n.nw ? '<span class="chip nw">新增</span>' : '') +
+      '<span class="chip" style="color:var(' + MOD[n.m][1] + ')">' + MOD[n.m][0] + '</span>' +
+      '<span class="chip">' + YEAR[n.yr] + '</span>' + (n.ph ? '<span class="chip">' + PHASE[n.ph] + '</span>' : '');
+    document.getElementById('dTitle').textContent = n.t;
+    document.getElementById('dFile').textContent = n.f;
+    let html = '<p>' + esc(n.d) + '</p>';
+    if (n.now || n.goal) html += '<div class="dsec nowgoal">' + (n.now ? '<div><span class="tag">現行程式</span>' + esc(n.now) + '</div>' : '') + (n.goal ? '<div class="goal"><span class="tag">本架構</span>' + esc(n.goal) + '</div>' : '') + '</div>';
+    html += list('計算步驟', n.st, '', 'ol') + list('輸入', n.i, 'io') + list('輸出', n.out, 'io');
+    if (n.grad) html += list('梯度會更新（圖上紅框）', n.grad.map(g => byId[g].t), 'grad-list');
+    html += list('重點', n.n) + list('還沒完成', n.td, 'todo-list');
+    if (n.fm) html += '<div class="dsec"><h4>相關說明</h4><div class="nb">' + n.fm.map(f => '<button type="button" class="linkish" data-formula="' + f + '">' + esc(document.querySelector('#' + f + ' h3').textContent) + '</button>').join('') + '</div></div>';
+    html += nodeLinks('直接上游', direct.up) + nodeLinks('直接下游', direct.down);
+    if (n.r) html += '<div class="dsec"><h4>相關決議（docs/decisions.md）</h4><div class="chips">' + n.r.map(r => '<span class="chip ref">' + r + '</span>').join('') + '</div></div>';
+    const body = document.getElementById('dBody');
+    body.innerHTML = html; body.scrollTop = 0;
+    drawer.classList.add('open'); drawer.setAttribute('aria-hidden', 'false');
+  }
+  document.getElementById('dClose').addEventListener('click', () => select(null));
+  document.addEventListener('keydown', ev => { if (ev.key === 'Escape' && selected) select(null); });
+  const smooth = () => matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+  drawer.addEventListener('click', ev => {
+    const g = ev.target.closest('[data-goto]');
+    if (g) { select(g.dataset.goto); return; }
+    const f = ev.target.closest('[data-formula]');
+    if (f) {
+      const card = document.getElementById(f.dataset.formula);
+      select(null);
+      card.scrollIntoView({ behavior: smooth(), block: 'start' });
+      card.classList.add('flash'); setTimeout(() => card.classList.remove('flash'), 1600);
+    }
+  });
+  function focusNode(id) {
+    const n = byId[id];
+    document.getElementById('diagramBox').scrollIntoView({ behavior: 'auto', block: 'start' });
+    const scale = svg.getBoundingClientRect().width / 1500;
+    window.scrollBy({ top: n.y * scale - 80, behavior: smooth() });
+    select(id);
+  }
+  document.querySelectorAll('tr[data-node]').forEach(tr => tr.addEventListener('click', () => focusNode(tr.dataset.node)));
+
+  render();
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { EDGES.forEach(e => { e.sized = false; }); sizeLabels(); });
+})();
+</script>
+<script>
+(function () {
+  // ---- 底部面板開關 ----
+  const fab = document.getElementById('fab'), sheet = document.getElementById('sheet');
+  const back = document.getElementById('sheetBackdrop'), closeBtn = document.getElementById('sheetClose');
+  function setOpen(on) {
+    sheet.classList.toggle('open', on); back.classList.toggle('open', on);
+    sheet.setAttribute('aria-hidden', String(!on)); fab.setAttribute('aria-expanded', String(on));
+    if (on) { sheet.scrollTop = 0; closeBtn.focus(); } else { fab.focus(); }
+  }
+  fab.addEventListener('click', () => setOpen(!sheet.classList.contains('open')));
+  closeBtn.addEventListener('click', () => setOpen(false));
+  back.addEventListener('click', () => setOpen(false));
+  document.addEventListener('keydown', ev => { if (ev.key === 'Escape' && sheet.classList.contains('open')) setOpen(false); });
+
+})();
+</script>
+</body>
+</html>

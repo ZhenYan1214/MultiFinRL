@@ -16,7 +16,7 @@ Both phases remain in the project scope. The current automated pipeline covers P
 
 ## System Architecture
 
-[✏️ Open in draw.io](https://app.diagrams.net/#Uhttps%3A%2F%2Fraw.githubusercontent.com%2FZhenYan1214%2FMultiFinRL%2Fmain%2Fdocs%2Farchitecture_diagram_detailed.drawio)
+Full interactive architecture (v2, the source of truth): [`docs/architecture/architecture.html`](docs/architecture/architecture.html) — open it in a browser. Decisions behind it: `docs/decisions.md` #108–#121.
 
 ```mermaid
 flowchart LR
@@ -66,6 +66,7 @@ MultiFinRL/
 ├── configs/
 │   └── config.yaml                  # global parameters: tickers, date range, chart/label settings
 ├── docs/
+│   ├── architecture/architecture.html  # system architecture v2; overrides the proposal where they differ
 │   ├── data_format.md               # data contract between A / B / C
 │   ├── decisions.md                 # decision log, including open questions
 │   ├── data_and_experiments_log.md  # data sources and classification results over time
