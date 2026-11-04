@@ -75,7 +75,9 @@ MultiFinRL/
 │   ├── spec_b_event_extraction_llm.md  # spec: LLM-based event extraction (implemented, see decisions.md #35)
 │   └── reference/
 │       ├── 115WFAA310699_CM03.pdf              # the formal grant proposal — source of truth
-│       ├── 115WFAA310699_CM03_extracted_text.txt
+│       ├── 115WFAA310699_CM03.md               # Markdown transcription (LaTeX formulas)
+│       ├── 115WFAA310699_CM03_zh.md            # Traditional Chinese translation
+│       ├── images/                             # figures cropped from the PDF
 │       └── README.md
 ├── samples/
 │   ├── DataStruct.example.json      # example of A's output format

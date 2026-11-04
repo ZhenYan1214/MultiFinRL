@@ -30,12 +30,13 @@ LABEL_TO_ID = {"BEARISH": 0, "NEUTRAL": 1, "BULLISH": 2}
 ID_TO_LABEL = {v: k for k, v in LABEL_TO_ID.items()}
 
 
-def build_index(ticker: str) -> dict:
+def build_index(ticker: str, tag: str | None = None) -> dict:
     """掃 data/outputs/z_fused/{ticker}/*.npy，比對 A 的每日 JSON 取 label/報酬，依日期排序彙整。
 
     回傳空 dict 代表找不到任何可彙整的資料（該股票尚未產出 Z_fused）。
+    tag 不為 None 時改讀實驗組的 data/outputs/z_fused_{tag}/（fusion/train.py --tag）。
     """
-    z_dir = paths.OUTPUTS / "z_fused" / ticker
+    z_dir = paths.z_fused_dir(tag) / ticker
     files = sorted(z_dir.glob("*.npy"))  # 檔名即日期，字串排序 = 時間排序（YYYY-MM-DD）
 
     split_lookup = None
@@ -83,8 +84,9 @@ def save_index(
     data: dict,
     checkpoint_path: str | Path | None = None,
     run_id: str | None = None,
+    tag: str | None = None,
 ) -> None:
-    out_dir = paths.OUTPUTS / "z_fused"
+    out_dir = paths.z_fused_dir(tag)
     out_dir.mkdir(parents=True, exist_ok=True)
     npz_path = out_dir / f"{ticker}_index.npz"
     np.savez(npz_path, **data)
@@ -121,12 +123,13 @@ def save_index(
           f"{meta['date_range'][1]}) -> {npz_path}")
 
 
-def load_index(ticker: str) -> dict | None:
+def load_index(ticker: str, tag: str | None = None) -> dict | None:
     """給 classifier.py / backtest.py / train_ppo.py 用。
 
     索引檔不存在時回傳 None（呼叫端應 fallback 成逐日掃描，見各檔案的 load_* 函式）。
+    tag 不為 None 時讀實驗組的索引（data/outputs/z_fused_{tag}/）。
     """
-    path = paths.OUTPUTS / "z_fused" / f"{ticker}_index.npz"
+    path = paths.z_fused_dir(tag) / f"{ticker}_index.npz"
     if not path.exists():
         return None
     npz = np.load(path, allow_pickle=False)

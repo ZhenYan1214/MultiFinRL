@@ -18,8 +18,33 @@
   比較接近，財報因此被結構性排擠，不是每天公平比相關性選出來的。`quota` 讓每個來源
   至少保留幾個名額（例如 {"filing": 1, "transcript": 1}），其餘名額才照相似度自由競爭，
   避免同一種文體壟斷 top-K。預設 `quota=None` 時完全比照原本行為（純相似度排序）。
+
+時效懲罰（`staleness` 參數，docs/decisions.md #104）：
+  向量庫只會累積、不淘汰，越後期越多被新版本取代的舊文件，AAPL 有一半的 top-3 已被取代 3 次以上。
+  給定 staleness 時，先取較大的候選池，再以
+      分數 = cosine − β × 類型權重 × log(1 + 被取代次數)
+  重新排序（被取代次數見 shared/doc_meta.py）。是軟性懲罰：舊文件只要夠相似仍可被選上
+  （β=0.01 時被取代 10 次約扣 0.024，大約等於 cosine 第 1 名與第 30 名的差距）。10-K 預設權重 0.5
+  （風險因素、長期策略等內容較耐久）。預設 None 時行為完全不變。
 """
+import math
+
 import numpy as np
+
+from shared.doc_meta import parse_chunk_id, superseded_count
+
+DEFAULT_TYPE_WEIGHTS = {"10-K": 0.5, "10-Q": 1.0, "8-K": 1.0, "earnings_call": 1.0}
+
+
+def staleness_penalty(chunk_id: str, date: str, ticker: str, beta: float,
+                      type_weights: dict[str, float] | None = None) -> float:
+    """β × 類型權重 × log(1 + 被取代次數)；類型不在權重表（macro 等）時不懲罰。"""
+    weights = DEFAULT_TYPE_WEIGHTS if type_weights is None else type_weights
+    source, doc_date = parse_chunk_id(chunk_id)
+    weight = weights.get(source, 0.0)
+    if weight == 0.0 or beta == 0.0:
+        return 0.0
+    return beta * weight * math.log1p(superseded_count(ticker, source, doc_date, date))
 
 
 def build_query(h_v: np.ndarray, h_t: np.ndarray, alpha: float = 0.5) -> np.ndarray:
@@ -71,20 +96,43 @@ def _select_with_quota(hits: list[tuple[str, str, float, str | None]], k: int,
     return selected[:k]
 
 
+def rerank_by_staleness(hits: list, staleness: dict) -> list:
+    """hits 的分數扣掉時效懲罰後重新排序（由高至低）。staleness: {beta, date, ticker[, type_weights]}。"""
+    penalized = [
+        (cid, text, score - staleness_penalty(cid, staleness["date"], staleness["ticker"],
+                                              staleness["beta"], staleness.get("type_weights")), src)
+        for cid, text, score, src in hits
+    ]
+    return sorted(penalized, key=lambda h: h[2], reverse=True)
+
+
+def select_hits(h_v: np.ndarray, h_t: np.ndarray, db, k: int = 3, alpha: float = 0.5,
+                quota: dict[str, int] | None = None, staleness: dict | None = None) -> list:
+    """只做檢索、不編碼：回傳選中的 [(chunk_id, text, score, source)]。"""
+    query = build_query(h_v, h_t, alpha)
+    if quota:
+        pool_n = db.index.ntotal if hasattr(db, "index") else k * 20
+        hits = db.search(query, pool_n)
+        if staleness:
+            hits = rerank_by_staleness(hits, staleness)
+        return _select_with_quota(hits, k, quota)
+    if staleness:
+        hits = rerank_by_staleness(db.search(query, staleness.get("pool", 50)), staleness)
+        return hits[:k]
+    return db.search(query, k)
+
+
 def retrieve(h_v: np.ndarray, h_t: np.ndarray, db, text_encoder,
              k: int = 3, alpha: float = 0.5,
-             quota: dict[str, int] | None = None) -> tuple[np.ndarray, list[str]]:
+             quota: dict[str, int] | None = None,
+             staleness: dict | None = None) -> tuple[np.ndarray, list[str]]:
     """回傳 (H_r [K, 512, 768], retrieved_chunk_ids)。
 
     quota 給定時（例如 {"filing": 1, "transcript": 1}），會先對更大的候選池（pool_n）
     搜尋，確保各來源有機會被挑到，不會因為 k 太小、候選池又被單一來源塞滿而挑不到。
+    staleness 給定時套用時效懲罰（見檔頭說明）。
     """
-    if quota:
-        pool_n = db.index.ntotal if hasattr(db, "index") else k * 20
-        hits = db.search(build_query(h_v, h_t, alpha), pool_n)
-        hits = _select_with_quota(hits, k, quota)
-    else:
-        hits = db.search(build_query(h_v, h_t, alpha), k)
+    hits = select_hits(h_v, h_t, db, k, alpha, quota, staleness)
 
     h_r = np.zeros((k, 512, 768), dtype=np.float32)
     chunk_ids = []
