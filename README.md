@@ -16,7 +16,7 @@ Both phases remain in the project scope. The current automated pipeline covers P
 
 ## System Architecture
 
-Full interactive architecture (v2, the source of truth): [`docs/architecture/architecture.html`](docs/architecture/architecture.html) — open it in a browser. Decisions behind it: `docs/decisions.md` #108–#121.
+Full interactive architecture (v2, the source of truth): [`docs/architecture/architecture.html`](docs/architecture/architecture.html) — open it in a browser. Decisions behind it: `docs/decisions.md` #108–#122.
 
 ```mermaid
 flowchart LR

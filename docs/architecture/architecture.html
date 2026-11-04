@@ -294,7 +294,7 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line)
     </div>
     <div class="stamp">
       版本 v2 · 更新 2026-11-05<br>
-      決策紀錄：docs/decisions.md #108–#121<br>
+      決策紀錄：docs/decisions.md #108–#122<br>
       待討論項目在右下角
     </div>
   </header>
@@ -320,6 +320,7 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line)
           <tr data-node="l_belief"><td>L_belief</td><td><span class="tag-chg keep">相同</span></td><td>3.5 (3)：y_belief 為結構化 token＋敘述</td><td>公式與 y_belief 格式相同；Decoder 的 context 多了 RAG-2 候選文字</td></tr>
           <tr data-node="l_total"><td>複合 Loss</td><td><span class="tag-chg keep">相同</span></td><td>3.5 (4)：L = λ1 L_align + λ2 L_ground + λ3 L_belief，λ3 優先加重</td><td>相同</td></tr>
           <tr data-node="decoder"><td>運算環境</td><td><span class="tag-chg mv">改</span></td><td>3.5：單台高效能工作站（例如 RTX 5090）上做 QLoRA</td><td>目前沒有 GPU：L_align、L_ground 與附屬診斷先在 Mac 上做；加 RAG-2 的長 context Decoder 訓練是主線，等有 GPU；不加 RAG-2 的 512 版本是選配，可先在 Mac 跑</td></tr>
+          <tr data-node="src_macro"><td>總體經濟資料</td><td><span class="tag-chg mv">暫緩</span></td><td>3.3：RAG 語料包含總經公報</td><td>資料源保留（fetch_macro.py、data/raw/macro），pending 不做，不進 v2 的任何路徑</td></tr>
           <tr data-node="c_clf"><td>附屬診斷</td><td><span class="tag-chg keep">相同</span></td><td>第 19 頁：表徵效能驗證（診斷性分類測試）</td><td>保留分類驗證、事件驗證頭、第一階段報告</td></tr>
           <tr data-node="rl_env"><td>第二階段 RL</td><td><span class="tag-chg keep">相同</span></td><td>3.6：PPO／SAC，state 來自 Z_fused</td><td>PPO，state＝池化 Z_fused＋前期持倉；細節不在這次調整範圍</td></tr>
         </tbody>
@@ -575,7 +576,7 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line)
   </section>
 
   <footer>
-    依據：計畫書 CM03（docs/reference/）、docs/decisions.md（本架構的決策見 #108–#121）。Loss 公式照計畫書原文；跟計畫書不同的地方以本頁為準。Q13 定案前，α* 用哪份向量算仍未定。
+    依據：計畫書 CM03（docs/reference/）、docs/decisions.md（本架構的決策見 #108–#122）。Loss 公式照計畫書原文；跟計畫書不同的地方以本頁為準。Q13 定案前，α* 用哪份向量算仍未定。
   </footer>
 </div>
 
@@ -712,6 +713,9 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line)
       td: ['實作型態一致率', '實作打亂 Z_fused 檢查'], fm: ['f-onepass'] },
 
     // ---- 文字路徑（中欄） ----
+    { id: 'src_macro', m: 'A', yr: 1, s: 'done', x: 1230, y: 64, w: 230, h: 76, t: '總經資料（pending）', f: 'fetch_macro.py · --macro', o: '→ FRED/ALFRED · FOMC · SEP', sub: '資料源保留，暫不進 v2 流程',
+      d: '總體經濟資料：FRED／ALFRED point-in-time 指標、FOMC 新聞與 SEP 點陣圖（#93、#96）。資料源與抓取程式保留，但 pending 不做，不接進 v2 的任何路徑。SPY 首輪實驗沒有改善（#94），先前產出的 SPY 向量、Z_fused、checkpoint 已刪除，之後要用再從 data/raw/macro 重跑。',
+      out: ['data/raw/macro/{fomc,indicators,news}'], n: ['計畫書 3.3 把總經公報列為 RAG 語料；本架構暫不納入'], r: ['#38', '#93', '#94', '#96'] },
     { id: 'src_news', m: 'A', yr: 1, s: 'done', x: 760, y: 64, w: 140, t: '新聞', f: 'fetch_news_alpaca', o: '→ news/{date}',
       d: 'Alpaca News API，盤後新聞歸下一交易日。v2 不再進融合層，只給 RAG-2。', r: ['#23', '#27'] },
     { id: 'src_filing', m: 'A', yr: 1, s: 'done', x: 910, y: 64, w: 140, t: '財報', f: 'fetch_filings', o: '10-K / 10-Q / 8-K',
