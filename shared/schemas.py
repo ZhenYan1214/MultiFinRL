@@ -132,6 +132,6 @@ def validate_vector_index(index: dict) -> None:
         raise ValueError("vectors.H_t 必須是 K 線文字敘述的編碼（source=chart_caption）")
     caption = index["caption"]
     if caption.get("pattern") not in PATTERNS:
-        raise ValueError(f"caption.pattern 不在 7 類型態內: {caption.get('pattern')}")
+        raise ValueError(f"caption.pattern 不在 PATTERNS 型態內: {caption.get('pattern')}")
     if caption.get("volume_label") not in VOLUME_LABELS:
         raise ValueError(f"caption.volume_label 不在四類內: {caption.get('volume_label')}")

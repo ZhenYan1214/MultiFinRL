@@ -965,4 +965,4 @@ Walk-forward（7 窗，2023-01 ～ 2026-07）：
 - 只用 H_t（K 線敘述）和價格數值特徵都低於 0.5，在後期甚至明顯反向。這比較像這段期間 AAPL 短期報酬容易反轉，不是穩定可用的訊號。
 - 改成兩類並不會讓漲跌變好預測。主線維持分位數三類（#30）；二元 AUC 和 balanced accuracy 只當對照的評估指標。
 
-程式與結果：`data/outputs/experiments/binary_updown/`。三個 seed 的 checkpoint 與 Z_fused 在 `data/outputs/{checkpoints/fusion_AAPL_seed*.pt,z_fused_seed*}`。
+程式與結果：`data/outputs/experiments/binary_updown/`。三個 seed 的 checkpoint 與 Z_fused 記錄完後已刪除（2026-11-06）。

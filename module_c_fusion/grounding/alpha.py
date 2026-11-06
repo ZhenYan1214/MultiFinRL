@@ -39,7 +39,7 @@ def align_top1(g_v: torch.Tensor, g_t: torch.Tensor) -> int:
 
 
 def alpha_star(cos_all: torch.Tensor, idx: torch.Tensor, tau: float) -> torch.Tensor:
-    """cos_all [B,N]（H_t 對全部 7 段定義）、idx [B,K]（當天取到的段）-> α* [B,K]。"""
+    """cos_all [B,N]（H_t 對全部 N 段定義）、idx [B,K]（當天取到的段）-> α* [B,K]。"""
     return torch.softmax(cos_all.gather(1, idx) / tau, dim=-1)
 
 

@@ -39,6 +39,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from shared import paths
+from shared.patterns import PATTERN_IDS
 from shared.utils import read_json, write_json
 
 
@@ -561,7 +562,7 @@ def _write_markdown(report: dict, output: Path, source_names: dict[str, str]) ->
             ["H_t（K 線文字敘述）", inputs.get("text", {}).get("encoder"),
              f"shape={inputs.get('text', {}).get('shape')}；敘述模型={(inputs.get('caption') or {}).get('model')}"],
             ["H_r（RAG-1 型態定義）", inputs.get("text", {}).get("encoder"),
-             f"7 段定義，每天取 top_k={inputs.get('rag1_top_k')}"],
+             f"{len(PATTERN_IDS)} 段定義，每天取 top_k={inputs.get('rag1_top_k')}"],
         ],
     ))
 

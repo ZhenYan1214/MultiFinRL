@@ -6,7 +6,7 @@ K 線文字敘述（module_a_data/chart_caption.py）、RAG-1 型態定義知識
 RAG-1 知識庫的第 i 段定義就是 PATTERNS[i]。
 """
 
-# 7 類 K 線型態：代號 -> (中文, 英文名稱)
+# K 線型態（目前 7 類，類別仍在實驗）：代號 -> (中文, 英文名稱)
 # decisions.md #128：頭肩頂、頭肩底、W 底、M 頭合併成反轉；#129：反轉再拆成頂部、底部
 PATTERNS: dict[str, tuple[str, str]] = {
     "UPTREND": ("持續上漲", "Uptrend"),

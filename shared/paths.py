@@ -68,7 +68,7 @@ def chart_caption_path(ticker: str) -> Path:
 
 
 def rag1_alpha_star_path(ticker: str) -> Path:
-    """L_ground 的 α* 原始分數：每天 H_t 與 7 段 RAG-1 定義的 cosine（凍結向量，Q13 選項 A）。
+    """L_ground 的 α* 原始分數：每天 H_t 與每段 RAG-1 定義的 cosine（凍結向量，Q13 選項 A）。
     見 module_c_fusion/grounding/alpha_star_rag1.py；是答案卷，進版本控制。"""
     return LABELS / "grounding" / f"{ticker}_rag1.json"
 

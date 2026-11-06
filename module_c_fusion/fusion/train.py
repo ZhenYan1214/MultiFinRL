@@ -2,11 +2,11 @@
 
     L = λ1·L_align + λ2·L_ground  （＋選配的 λ_ce·CE 代打，預設 0）
 
-- 輸入：B 的 H_v（兩張圖）、H_t（K 線文字敘述）、RAG-1 的 7 段定義（data/vectors/_patterns/patterns.npz）、
+- 輸入：B 的 H_v（兩張圖）、H_t（K 線文字敘述）、RAG-1 的 N 段型態定義（data/vectors/_patterns/patterns.npz）、
   α* 預設直接用敘述的型態標籤（--alpha_star_space label，#131）；frozen 時才讀 data/labels/grounding/{T}_rag1.json。
 - 新聞與舊 H_r 不再進融合層（#110、#111）。
 - 組 batch 時同一批不放同型態的日子（L_align 公式不動，從資料端處理，#114）；所以 batch 上限是型態數（6）。
-- 前 rag1.retrieve_warmup_epochs 個 epoch 共用空間還沒對齊，RAG-1 先放全部 7 段；之後改取前 K 段。
+- 前 rag1.retrieve_warmup_epochs 個 epoch 共用空間還沒對齊，RAG-1 先放全部 N 段；之後改取前 K 段。
 - 只用 Train 更新參數，Validation 選最佳 epoch（λ1·L_align + λ2·L_ground 最低），Test 不參與。
 - 這一階段沒有 L_belief：Z_fused（CLS -> head）只靠注意力層間接被訓練；正式的 Z_fused 由
   decoder/train.py 聯合訓練時的 L_belief 更新。要先看 Z_fused 有沒有資訊，可加 --ce_weight 用 3 類 CE 代打。
@@ -366,7 +366,7 @@ def main():
     ap.add_argument("--fake", action="store_true")
     ap.add_argument("--n", type=int, default=64, help="--fake 時樣本數")
     ap.add_argument("--epochs", type=int, default=5)
-    ap.add_argument("--batch", type=int, default=6, help="上限 7（同 batch 不放同型態）")
+    ap.add_argument("--batch", type=int, default=6, help="上限 = 型態類別數（同 batch 不放同型態）")
     ap.add_argument("--lr", type=float, default=1e-4)
     ap.add_argument("--align_weight", type=float, default=cfg["loss"]["lambda_align"], help="λ1")
     ap.add_argument("--ground_weight", type=float, default=cfg["loss"]["lambda_ground"], help="λ2")

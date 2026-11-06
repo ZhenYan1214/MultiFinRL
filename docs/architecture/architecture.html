@@ -443,7 +443,7 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line)
         <div class="pair">
           <div><span class="tag">(a) 型態類別直接對應・採用（11/05）</span>K 線敘述的型態類別跟定義相同，就算相關。不用另外打分，但只有「對／不對」兩種。</div>
           <div><span class="tag">(b) 相似度換算（11/04 採用，11/05 停用）</span>用 H_t 跟每段 H_r 的相似度當 α*。α̂ 改取融合層的注意力後，兩邊不再是同一個式子；但 α* 若用會被訓練的投影後向量，答案卷會跟著訓練變動（Q13）。</div>
-          <div><span class="tag">(c) Haiku 打 0–3 分（原案，備用）</span>流程可沿用現有的 generate_alpha_star.py，改 prompt 即可；(b) 效果不好時改用。</div>
+          <div><span class="tag">(c) Haiku 打 0–3 分（原案，備用）</span>舊的 generate_alpha_star.py 已刪除，要用時得重寫打分腳本；(a) 的對／不對太粗時再考慮。</div>
         </div>
         <p class="muted">FinBERT 凍結、RAG-1 的檢索結果固定；α̂ 取自融合層，所以 L_ground 會直接訓練融合層本身，也透過共用投影 P_t、P_r 影響輸入。RAG-1 的 query 用 K 線圖的池化向量，不用 K 線敘述，避免跟 α* 循環。</p>
         <p><b>一個例子（數字是示意）：</b>今天的 K 線敘述是「頭肩底成形」（屬於底部反轉），RAG-1 取回 3 段定義。</p>

@@ -1,13 +1,14 @@
-"""第一階段 pipeline 入口：A -> B -> C（融合層 L_align＋L_ground／分類驗證）依序執行。
+"""第一階段 pipeline 入口：A -> B -> C（融合層 L_align＋L_ground／型態 probe／附屬分類）依序執行。
 
-B 的步驟（docs/architecture/architecture.html）：K 線文字敘述（Claude Haiku，存檔重用）-> 向量（H_v、
-H_t = 敘述）-> RAG-1 定義庫 -> α* -> RAG-2 候選。Decoder 聯合訓練（decoder/train.py）不在這支裡，
-要另外跑（主線需要 GPU）。
+流程（docs/architecture/architecture.html）：
+    A：股價、K 線圖、財報、新聞、法說會 -> 每日 JSON -> K 線文字敘述（Claude Haiku，存檔重用）
+    B：RAG-1 型態定義庫 -> 向量（H_v、H_t = K 線敘述）-> RAG-2 候選文字
+    C：融合層（正式＋遮掉 H_t）-> 型態 probe -> 3 類情緒分類器（附屬參考）-> 報告
+α* 直接用敘述的型態標籤（#131），不需要另外產答案卷；事件抽取已移出 pipeline（#130）。
+Decoder 聯合訓練（decoder/train.py）不在這支裡，要另外跑（主線需要 GPU）。
 
 平常各自開發時，直接跑自己模組的主程式即可，不需要這支；
-這支是給「要一次跑出一支股票從頭到尾的完整結果」時用的，涵蓋 A 的全部資料來源
-（股價、K 線圖、財報、新聞、法說會，或 ETF／指數的總經替代資料）、
-B 的向量與事件抽取，以及 C 的 Fusion 訓練與分類驗證。
+這支是給「要一次跑出一支股票從頭到尾的完整結果」時用的。
 
 [第二階段 - Pending] RL 與 Backtest 模組目前保留，但不由本入口自動執行；待多資產
 state／action／reward 與回測協定確認後再接回 pipeline。

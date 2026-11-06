@@ -5,7 +5,7 @@
 
 - 共用投影 P_v、P_t、P_r（計畫書 3.2：H = LN(Z P)）：同一組投影同時給 L_align、L_ground 與融合層用，
   兩個 Loss 的梯度才會改到融合層拿到的輸入（#116）。ViT、FinBERT 凍結，輸入是 B 存好的向量。
-- RAG-1 檢索（#112）：query = K 線圖與成交量圖 token 經 P_v 後的平均（g_v），key = 7 段定義經 P_t 後的
+- RAG-1 檢索（#112）：query = K 線圖與成交量圖 token 經 P_v 後的平均（g_v），key = N 段定義經 P_t 後的
   池化向量；兩者在 L_align 對齊過的共用空間算 cosine，取前 K 段。key 用 P_t 而不是 P_r，是因為定義跟
   K 線敘述是同一個 FinBERT 空間，而 L_align 只對齊 P_v 與 P_t；P_r 還沒被任何 Loss 對齊時，用它算的
   cosine 沒有意義。選段不可微分（top-K），不影響梯度。

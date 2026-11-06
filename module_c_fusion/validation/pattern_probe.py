@@ -1,6 +1,6 @@
 """型態類別的線性 probe（第一階段驗證，architecture.html 04 段）：Z_fused 讀得出 K 線型態嗎？
 
-凍結 Z_fused，用 Logistic Regression 預測當天 K 線敘述的型態（shared/patterns.PATTERN_IDS，最多 7 類）。
+凍結 Z_fused，用 Logistic Regression 預測當天 K 線敘述的型態（shared/patterns.PATTERN_IDS）。
 跟 classifier.py 同一套協定：Train fit、Validation 選 C、Train＋Validation refit、Test 只評一次。
 另外回報多數類 baseline；probe 只贏一點點代表 Z_fused 幾乎沒有型態資訊。
 

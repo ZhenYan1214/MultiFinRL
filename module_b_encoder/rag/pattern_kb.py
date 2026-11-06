@@ -1,9 +1,9 @@
 """
-RAG-1 型態定義知識庫：7 段英文定義 -> FinBERT 編碼（decisions.md #112）。
+RAG-1 型態定義知識庫：N 段英文定義（N = PATTERN_IDS 數） -> FinBERT 編碼（decisions.md #112）。
 
 輸入：data/knowledge/patterns/{NN}_{pattern}.md（順序 = shared/patterns.PATTERN_IDS）
 輸出：data/vectors/_patterns/patterns.npz
-        H_r_all  [7, 512, 768] float32   每段定義的 token-level 編碼（padding 為 0）
+        H_r_all  [N, 512, 768] float32   每段定義的 token-level 編碼（padding 為 0）
         pooled   [7, 768] float32        masked mean，α* 與檢索 key 用
         ids      [7]                     型態代號
       data/vectors/_patterns/meta.json   每段的 token 數與檔案 SHA256（改了定義要重建）

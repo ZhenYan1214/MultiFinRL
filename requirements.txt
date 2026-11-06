@@ -22,7 +22,6 @@ torch
 torchvision        # AutoImageProcessor（ViT 圖片前處理）需要，transformers 沒有把它列為必裝
 transformers
 sentencepiece
-faiss-cpu          # GPU 機器可改 faiss-gpu；若改用 Milvus 則加 pymilvus
 
 # --- Module C: fusion + RL + backtest ---
 peft               # QLoRA
@@ -37,7 +36,7 @@ captum              # Integrated Gradients，見 module_c_fusion/explainability/
 # --- Module B: event_ground_truth_llm.py 建 ground truth、
 # event_extraction.py --method llm 要打 LLM API 時才需要，見 docs/spec_b_event_extraction_llm.md ---
 # anthropic：--provider claude（預設，event_ground_truth_llm 用 Claude Haiku 5.5 標 ground truth）；
-# C 的 L_ground 打分（module_c_fusion/grounding/generate_alpha_star.py）也用 Claude Haiku 5.5。
+# A 的 K 線敘述（module_a_data/chart_caption.py）也用 Claude Haiku 5.5。
 # openai 套件同時支援 --provider openai 跟 --provider deepseek（deepseek 是 OpenAI 相容
 # 介面，換 base_url 就能用；C 的 decoder 預設用 deepseek）。
 openai

@@ -45,12 +45,12 @@ caption:
   model: claude-haiku-5-5
   effort: null              # null = 模型預設；可改 low/medium/high
 
-# RAG-1：7 類型態定義（data/knowledge/patterns/*.md），檢索結果 H_r 進融合層
+# RAG-1：型態定義（data/knowledge/patterns/*.md，段數 = shared/patterns.PATTERN_IDS，類別仍在實驗），檢索結果 H_r 進融合層
 rag1:
-  top_k: 3                  # 每天從 7 段定義取前 K 段；7 = 全部放進融合層
+  top_k: 3                  # 每天從 N 段定義取前 K 段；K = N 就是全部放進融合層
   # query = K 線圖的池化向量（P_v 投影後），key = 定義的池化向量（P_t 投影後），
   # 在 L_align 對齊過的共用空間算 cosine；見 fusion/model.py 的 retrieve()
-  retrieve_warmup_epochs: 1 # 前 N 個 epoch 共用空間還沒對齊，先用全部 7 段（K=7）
+  retrieve_warmup_epochs: 1 # 前 N 個 epoch 共用空間還沒對齊，先用全部 N 段（K=N）
 
 # RAG-2：Decoder 生成前篩選當天候選（module_b_encoder/rag/rag2.py）
 rag2:
@@ -62,7 +62,7 @@ rag2:
 # encoder 預設（B 模組讀取；shape 一旦定案不可再變，見 docs/data_format.md）
 encoders:
   vision: google/vit-base-patch16-224   # H_v: [2, 197, 768]（圖別, token, hidden）
-  text: ProsusAI/finbert                # H_t（K 線敘述）: [512, 768]；RAG-1 定義: [9, 512, 768]
+  text: ProsusAI/finbert                # H_t（K 線敘述）: [512, 768]；RAG-1 定義: [N, 512, 768]（N = 型態類別數）
 
 # 融合層（C 模組讀取）
 fusion:

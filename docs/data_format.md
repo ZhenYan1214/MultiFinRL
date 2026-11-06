@@ -150,7 +150,7 @@ ETF／指數的 `--macro` record 將 `filing_chunks`、`transcript_chunks` 設�
 
 **路徑規則**：`data/vectors/{TICKER}/{YYYY-MM-DD}/`
 向量本體用 `.npy` 儲存（float32），另附一份 `index.json` 描述中繼資料。JSON 內不直接放大型數值陣列。
-不再有每天的 `H_r.npy`：RAG-1 的 7 段型態定義所有日子共用，檢索（每天取哪 K 段）在融合層裡做。
+不再有每天的 `H_r.npy`：RAG-1 的型態定義（段數 = `PATTERN_IDS`）所有日子共用，檢索（每天取哪 K 段）在融合層裡做。
 
 ```
 data/vectors/AAPL/2021-03-15/
@@ -193,7 +193,7 @@ data/vectors/_patterns/
 | 檔案 | 產生程式 | 內容 |
 |---|---|---|
 | `data/labels/chart_caption/{T}.json` | `module_a_data/chart_caption.py`（A） | `{date: {pattern, volume_label, kline, volume, combined, volume_ratios, model}}`；答案卷，進版控；只存三段，不存串起來的 text |
-| `data/knowledge/patterns/{NN}_{pattern}.md` | 人工／LLM 草稿 | 7 段英文定義，檔名前綴 = `PATTERN_IDS` 順序；進版控 |
+| `data/knowledge/patterns/{NN}_{pattern}.md` | 人工／LLM 草稿 | 每類一段英文定義（類別仍在實驗），檔名前綴 = `PATTERN_IDS` 順序；進版控 |
 | `data/labels/grounding/{T}_rag1.json` | `module_c_fusion/grounding/alpha_star_rag1.py` | `{_meta: {kb_sha256, ...}, date: {cos: [7], caption_pattern}}`；α* 的 cosine 對照版本，只在 `--alpha_star_space frozen` 時用（預設 α* 用型態標籤，#131），定義改過要重跑 |
 | `data/outputs/rag2/{T}/{date}.json` | `module_b_encoder/rag/rag2.py` | `{snippets: [{source, doc_type, date, section, chunk_id, text}], context}`；Decoder 直接讀 `context` |
 

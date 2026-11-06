@@ -184,7 +184,7 @@ def main():
     ap.add_argument("--rag2", dest="rag2", action="store_true", default=True, help="主線：放 RAG-2 候選（預設）")
     ap.add_argument("--no_rag2", dest="rag2", action="store_false", help="選配：不放候選（512 版本）")
     ap.add_argument("--epochs", type=int, default=3)
-    ap.add_argument("--batch_size", type=int, default=2, help="上限 7（同 batch 不放同型態）")
+    ap.add_argument("--batch_size", type=int, default=2, help="上限 = 型態類別數（同 batch 不放同型態）")
     ap.add_argument("--lr", type=float, default=2e-4, help="LoRA 與 Projector")
     ap.add_argument("--fusion_lr", type=float, default=1e-4, help="融合層與共用投影")
     ap.add_argument("--warmup_ratio", type=float, default=0.05)

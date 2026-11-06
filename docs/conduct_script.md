@@ -29,6 +29,11 @@ py -m module_a_data.build_dataset --ticker AAPL --limit 100
 # 把以上所有資料彙整成一天一筆的 JSON，存到 data/processed/dataset/AAPL/
 # 漲跌標籤門檻只依 Train 報酬分布計算，再固定套用 Validation/Test
 # 這一步一定要放在其他 A 指令「之後」，因為它是彙整、不是抓取
+
+py -m module_a_data.chart_caption --ticker AAPL --workers 8
+# K 線文字敘述：Claude Haiku 讀 K 線圖＋成交量圖，存型態、量能 label 與三段敘述到
+# data/labels/chart_caption/AAPL.json（需要 ANTHROPIC_API_KEY，會花 API 費用；已做過的日期會跳過）
+# 量能 label 由公式判斷，Haiku 只拿到狀況描述；--check 只印分布不呼叫 API
 ```
 
 ### ETF／指數總經模式
@@ -45,14 +50,21 @@ Fusion 會耗時；terminal 會顯示目前階段。若只想先驗證少量資�
 若要比較 Volume 視覺輸入，把 `config.yaml` 的 `macro.vision_inputs` 改成
 `[candlestick, volume]` 後重建 dataset 與 vectors。
 
-## B：Encoder + RAG + 事件抽取
+## B：Encoder + RAG
 
 ```bash
 py -m module_b_encoder.generate_vectors --fake --n 10
 # 第一次先測：不需要 A 的資料，用隨機數字測存檔格式對不對
 
+py -m module_b_encoder.rag.pattern_kb
+# RAG-1：把 data/knowledge/patterns/*.md 的型態定義編成 data/vectors/_patterns/patterns.npz
+# 改過定義或型態類別後要重跑
+
 py -m module_b_encoder.generate_vectors --ticker AAPL --limit 100
-# 正式執行：讀 A 的 JSON，跑 ViT/FinBERT/RAG，產出 H_v/H_t/H_r，存到 data/vectors/AAPL/
+# 讀 A 的 JSON 與 K 線敘述，產出 H_v（ViT，兩張圖）與 H_t（FinBERT 編 K 線敘述），存到 data/vectors/AAPL/
+
+py -m module_b_encoder.rag.rag2 --ticker AAPL
+# RAG-2：每天先挑好 15–20 段新聞／財報／法說會短版文字，給 Decoder 用，存到 data/outputs/rag2/
 
 # 2026-10-02：既有 ViT 訓練實驗已完成並封存，舊 runner 已移除。
 # 統一結果：docs/vit_experiments_summary_2026-10-02.md
@@ -65,8 +77,8 @@ python experiments/vision/render_experiment_report.py \
 python experiments/vision/render_experiment_report.py \
   --all data/outputs/experiments
 
+# 選用：事件抽取（獨立的資料品質工具，不在 pipeline 裡，#130）
 py -m module_b_encoder.event_extraction --ticker AAPL
-# 從新聞/財報文字抽財經事件（獨立於 Z_fused 的分析，不影響 B/C 的向量或訓練），
 # 報告存到 data/outputs/metrics/event_extraction_report.json
 # --method llm 可切換成 LLM 版（需 API 金鑰，見 docs/spec_b_event_extraction_llm.md）
 ```
@@ -87,19 +99,21 @@ py -m module_a_data.build_dataset --ticker AAPL
 # 若以後改圖、新聞、文件或 Fusion 回報缺少 manifest 日期，才需重跑：
 # py -u -m module_b_encoder.generate_vectors --ticker AAPL
 
-py -m module_c_fusion.fusion.train --ticker AAPL --weighted
-# 正式執行：只用 manifest 的 Train 日期更新 Fusion，以 Validation 選最佳 epoch；
-# Test label 全程封存。產出每日 Z_fused，跑完自動彙整成
-# data/outputs/z_fused/AAPL_index.npz（給下面三支直接讀，不用再逐日掃描）
-# --weighted：類別加權，decisions.md #28 定案為預設做法，不加這個旗標分類效果會明顯變差
+py -m module_c_fusion.fusion.train --ticker AAPL
+# 正式執行：L_align＋L_ground，只用 manifest 的 Train 日期更新融合層，以 Validation 選最佳 epoch；
+# Test 全程封存。產出每日 Z_fused，跑完自動彙整成 data/outputs/z_fused/AAPL_index.npz
+# α* 預設用 K 線敘述的型態標籤（config.yaml loss.alpha_star_space，#131）
+
+py -m module_c_fusion.fusion.train --ticker AAPL --mask_ht --tag mask_ht
+# 遮掉 H_t 的融合層，給下面的型態 probe 用（敘述直接寫了型態，沒遮會偷看答案，#125）
+
+py -m module_c_fusion.validation.pattern_probe --ticker AAPL
+# 主要驗證：Z_fused 讀不讀得出 K 線型態，跟多數類 baseline 比
+# 結果存到 data/outputs/metrics/pattern_probe_report_AAPL_mask_ht.json
 
 py -m module_c_fusion.validation.classifier --ticker AAPL --weighted
-# 沿用同一 manifest；Validation 選 C，Test 最後評估一次
-# 準確率與 macro F1 存到 data/outputs/metrics/classification_report_AAPL.json
-
-py -m module_c_fusion.validation.event_validation_head --ticker AAPL
-# 用 Z_fused 做事件類型多標籤驗證（7 類），也沿用 Train/Validation/Test manifest
-# 需要 data/labels/event_ground_truth/AAPL.json
+# 附屬參考：3 類情緒分類，Validation 選 C，Test 最後評估一次
+# 結果存到 data/outputs/metrics/classification_report_AAPL.json
 ```
 
 ### [第二階段 - Pending] RL + 回測
@@ -132,11 +146,12 @@ py -m module_c_fusion.backtest.backtest --ticker AAPL --strategy ppo
 
 ```bash
 py -m module_c_fusion.decoder.generate_y_belief --ticker AAPL --limit 50
-# 先用 --limit 50 測試品質，人工看過幾筆再拿掉 --limit 跑全量（需 DeepSeek API 金鑰）
+# 先用 --limit 50 測試品質，人工看過幾筆再拿掉 --limit 跑全量（--provider 選 claude／deepseek，需對應 API 金鑰）
 # 訓練目標存到 data/labels/y_belief/AAPL.json，支援中斷續跑
 
 py -m module_c_fusion.decoder.train --ticker AAPL --epochs 3
-# QLoRA 微調 LLaMA-2-7b（4-bit + LoRA 全掛 attention+MLP），需要先有 Z_fused 跟 y_belief
+# QLoRA 微調 LLaMA-2-7b（4-bit + LoRA 全掛 attention+MLP），L_belief 也會一起訓練融合層
+# 需要先有 H_v／H_t、RAG-2 與 y_belief；Mac 可先跑 --no_rag2 --limit 8 --epochs 1
 # 跑訓練時不要同時跑其他吃 GPU 的程式（VRAM 預算吃緊，見 decisions.md #63）
 # 中途中斷可加 --resume 從上次的 epoch 接續訓練，不用整個重來
 
@@ -155,9 +170,10 @@ py scripts/run_pipeline.py --fake
 # 只驗證 B 產出的格式 C 讀不讀得進去，不是真的分析
 
 py scripts/run_pipeline.py --ticker AAPL
-# 真跑第一階段：抓資料 → 畫圖 → 彙整 → 產向量 → Fusion 訓練 → 分類驗證
+# 真跑第一階段：抓資料 → 畫圖 → 彙整 → K 線敘述 → RAG-1／向量／RAG-2 → 融合層（正式＋遮 H_t）→ 型態 probe → 情緒分類（附屬）→ 報告
+# Decoder 不在裡面，要另外跑
 # 完成後自動輸出 data/outputs/reports/{YYYYMMDD_HHMMSS}/report.md、report.json 與 figures/
 # run_id 資料夾不含 ticker；ticker、macro/equity 模式與來源 provenance 都寫在報告內
 # [第二階段 - Pending] 不會自動執行 RL 或 Backtest
-# 用 --skip_transcripts 可以跳過法說會抓取那步（foolcalls 套件不穩定時用）
+# 用 --skip_transcripts 可以跳過法說會抓取那步（沒有 ALPHA_VANTAGE_API_KEY 時用）
 ```

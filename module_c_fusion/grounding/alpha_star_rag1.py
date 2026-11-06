@@ -1,4 +1,4 @@
-"""α* 的 cosine 對照版本：每天 K 線敘述（H_t）與 7 段 RAG-1 定義的 cosine（decisions.md #115）。
+"""α* 的 cosine 對照版本：每天 K 線敘述（H_t）與每段 RAG-1 定義的 cosine（decisions.md #115）。
 
 11/05 起 α* 預設改用敘述的型態標籤（#131，grounding/alpha.py 的 label_target），這份檔案只在
 --alpha_star_space frozen 時使用，或拿來診斷「凍結 FinBERT 分不分得出型態」（AAPL 實測一致率 18.7%）。
