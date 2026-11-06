@@ -39,26 +39,48 @@ temporal_split:
 text:
   max_chunk_tokens: 512     # FinBERT 上限
 
-rag:
-  top_k: 3
-  vector_db: faiss          # faiss 或 milvus
-  query_alpha: 0.5          # RAG query 合併權重（H_v 的權重，1-alpha 為 H_t），見 retriever.py
+# ---- 架構見 docs/architecture/architecture.html，decisions.md #108–#131 ----
+# K 線文字敘述：Claude Haiku 讀 K 線圖＋成交量圖（module_a_data/chart_caption.py）
+caption:
+  model: claude-haiku-5-5
+  effort: null              # null = 模型預設；可改 low/medium/high
+
+# RAG-1：7 類型態定義（data/knowledge/patterns/*.md），檢索結果 H_r 進融合層
+rag1:
+  top_k: 3                  # 每天從 7 段定義取前 K 段；7 = 全部放進融合層
+  # query = K 線圖的池化向量（P_v 投影後），key = 定義的池化向量（P_t 投影後），
+  # 在 L_align 對齊過的共用空間算 cosine；見 fusion/model.py 的 retrieve()
+  retrieve_warmup_epochs: 1 # 前 N 個 epoch 共用空間還沒對齊，先用全部 7 段（K=7）
+
+# RAG-2：Decoder 生成前篩選當天候選（module_b_encoder/rag/rag2.py）
+rag2:
+  max_snippets: 20          # 15–20 段
+  snippet_words: 40         # 每段短版約前 40 個英文字
+  background_sections: [mda, risk_factors]   # 背景 10-K／10-Q 固定挑的章節
+  transcript_snippets: 4    # 最近一場法說會挑幾段
 
 # encoder 預設（B 模組讀取；shape 一旦定案不可再變，見 docs/data_format.md）
 encoders:
   vision: google/vit-base-patch16-224   # H_v: [2, 197, 768]（圖別, token, hidden）
-  text: ProsusAI/finbert                # H_t: [512, 768]；H_r: [3, 512, 768]
-  # H_t 產生方式（decisions.md #99）：chunk_relevance_max = 段落級編碼 + 公司相關性過濾 + 逐維 max，
-  # 結果放 H_t 第 0 列；concat_truncate = 舊版（全部新聞串接截 512 token）
-  text_method: chunk_relevance_max
-  text_min_mentions: 3      # 段落內文提到公司名稱/ticker 至少幾次才保留
+  text: ProsusAI/finbert                # H_t（K 線敘述）: [512, 768]；RAG-1 定義: [9, 512, 768]
 
-# fusion / RL（C 模組讀取）
+# 融合層（C 模組讀取）
 fusion:
   d_model: 768              # 融合層內部維度
   n_heads: 8
   n_layers: 2
   z_dim: 768                # Z_fused 輸出維度
+  max_caption_tokens: 192   # H_t 只取 K 線敘述實際的 token（敘述約 80–150 token）
+
+# 三個 Loss（計畫書 3.5，公式不動）：L = λ1·L_align + λ2·L_ground + λ3·L_belief
+loss:
+  lambda_align: 1.0
+  lambda_ground: 1.0
+  lambda_belief: 1.0
+  align_tau: 0.07           # L_align 溫度 τ
+  alpha_star_space: label   # α*：label＝敘述的型態標籤（#131，Q13 定案）；frozen／projected 是 cosine 版本，只當對照
+  ground_smoothing: 0.1     # label 版 α*：正確那段 1−ε，其他段平分 ε
+  ground_tau: 0.01          # 只有 frozen／projected 用：α* = softmax(cos / τ)
 
 timezone: America/New_York
 seed: 42

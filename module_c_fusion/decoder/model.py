@@ -1,25 +1,16 @@
-"""Decoder 架構：Z_fused 當 soft-prompt 前綴，接上凍結的 LLaMA-2 backbone + LoRA adapters
-（計畫書 3.4/3.5 節）。
+"""Decoder：Z_fused 當 soft-prompt 前綴，加上 RAG-2 候選文字，接凍結的 LLaMA-2 + LoRA
+（計畫書 3.4/3.5；decisions.md #113、#117、#118）。
 
-- ZFusedProjector：把 Z_fused（z_dim 維）投影成 n_prefix_tokens 個 soft-prompt embedding，
-  維度對齊 LLM 的 hidden_size，串接在文字 token embedding 前面，讓生成過程「條件於
-  Z_fused」，對應計畫書公式 p(Y|Ht,Hv,Hr) = ∏p(yi|y<i, Zfused)（Z_fused 已經是
-  Ht/Hv/Hr 融合後的結果，decoder 只需要吃 Z_fused，不用重新接觸原始三個模態，
-  這是既定的 decoupled architecture，見 docs/decisions.md）。
-- load_backbone：4-bit 量化載入 LLaMA-2，掛 LoRA adapter（q_proj/v_proj），backbone
-  其餘參數凍結，只有 adapter 會被訓練（計畫書 3.5 節 QLoRA 的定義：「updating only the
-  projection layers and specific attention adapters while freezing the backbone MLLM」）。
-- ZFusedDecoder.forward：算 L_belief = -Σlog p_θ(y_belief,t | y_belief<t, Z_fused)，
-  用標準 causal LM cross-entropy 實作，prefix 位置的 label 設 -100，不計入 loss
-  （prefix 是條件輸入，不是要被預測的目標）。
+    context = [ 4 個 prefix ; RAG-2 候選短版文字（15–20 段）; y_belief ]
 
-只實作 L_belief 一項 loss。L_align 需要 H_v/H_t 聯合訓練（目前 encoder 是凍結的，
-架構上還沒開放）；L_ground 需要一份目前也不存在的 oracle relevance scores 標記。
-這兩項先不做，範圍見 train.py 檔頭說明與 docs/decisions.md。
-
-本檔案需要 torch/transformers/peft/bitsandbytes（見 requirements.txt Module C 區塊，
-已經列在裡面），且 load_backbone() 需要 GPU 與 HuggingFace 登入權限，無法在沒有 GPU 的
-環境執行，只能靠語法檢查（py_compile）驗證，實際跑通需要在你自己機器上執行。
+- ZFusedProjector：Z_fused [B,768] -> 4 個 LLM prefix token。
+- ZFusedDecoder.forward：只對 y_belief 的 token 算 L_belief = −Σ log p(y_t | y_<t, prefix, 候選)；
+  prefix 與候選文字的 label 都是 -100（條件輸入，不是預測目標）。只生成一次：Decoder 看 Z_fused 的
+  同時看候選，由注意力自己挑要參考哪幾段。
+- 不加 RAG-2 的 512 版本（選配，可在 Mac 跑）就是候選文字為空。
+- Z_fused 由融合層即時算出（decoder/train.py 聯合訓練），L_belief 的梯度會回到融合層。
+- load_tiny_random：用本機快取的 LLaMA-2 tokenizer 建一個隨機初始化的小 LLaMA（不用下載、不用 GPU），
+  只用來 smoke test 整條聯合訓練流程。
 """
 import torch
 import torch.nn as nn
@@ -165,52 +156,57 @@ class ZFusedDecoder(nn.Module):
         self.projector = ZFusedProjector(z_dim, hidden_size, n_prefix_tokens).to(llm.device)
 
     def forward(self, z_fused: torch.Tensor, input_ids: torch.Tensor,
-               attention_mask: torch.Tensor) -> torch.Tensor:
-        """z_fused [B,z_dim]，input_ids/attention_mask 是 y_belief 文字 tokenize 後的結果。
-        回傳 L_belief（純量 loss）。
+                attention_mask: torch.Tensor, labels: torch.Tensor | None = None) -> torch.Tensor:
+        """z_fused [B,z_dim]；input_ids = 候選文字＋y_belief 串好、右側 padding 的 token。
+        labels：候選文字與 padding 位置為 -100、y_belief 位置為原 token（decoder/train.py 的 collate 組好）；
+        不給時視為沒有候選文字，整段 input_ids（padding 除外）都是 y_belief。回傳 L_belief。
         """
         prefix_embeds = self.projector(z_fused)                          # [B, P, H]
         token_embeds = self.llm.get_input_embeddings()(input_ids)        # [B, L, H]
-        inputs_embeds = torch.cat([prefix_embeds, token_embeds], dim=1)  # [B, P+L, H]
-
+        inputs_embeds = torch.cat([prefix_embeds.to(token_embeds.dtype), token_embeds], dim=1)
         prefix_mask = torch.ones(z_fused.size(0), self.n_prefix_tokens,
                                  device=attention_mask.device, dtype=attention_mask.dtype)
         full_mask = torch.cat([prefix_mask, attention_mask], dim=1)
-
-        # prefix 是條件輸入不是預測目標，label 設 -100 讓 HF 內建的 cross-entropy 跳過這段。
-        # padding 位置也要蓋成 -100：tokenizer.pad_token 跟 eos_token 是同一個 token，
-        # 如果不蓋掉，padding 區段會變成「看到 eos 預測下一個還是 eos」這種 trivial、
-        # loss 趨近於 0 的規律，訓練資料裡敘述文字通常遠短於 max_length，padding 佔比很大，
-        # 不蓋掉的話模型會被大量獎勵「盡快輸出 eos」，最後在生成時（沒有 teacher forcing
-        # 硬塞正確 token）直接在第一步就選擇輸出 eos，生成空字串——這正是目前遇到的問題。
-        content_labels = input_ids.masked_fill(attention_mask == 0, -100)
+        # padding 一定要蓋成 -100：pad_token 跟 eos 相同，不蓋掉的話模型會學到「盡快輸出 eos」，
+        # 生成時第一步就結束（舊版遇過的空字串問題）。
+        if labels is None:
+            labels = input_ids.masked_fill(attention_mask == 0, -100)
         prefix_labels = torch.full((z_fused.size(0), self.n_prefix_tokens), -100,
-                                   device=input_ids.device, dtype=input_ids.dtype)
-        labels = torch.cat([prefix_labels, content_labels], dim=1)
-
-        out = self.llm(inputs_embeds=inputs_embeds, attention_mask=full_mask, labels=labels)
+                                   device=input_ids.device, dtype=labels.dtype)
+        out = self.llm(inputs_embeds=inputs_embeds, attention_mask=full_mask,
+                       labels=torch.cat([prefix_labels, labels], dim=1))
         return out.loss
 
     @torch.no_grad()
-    def generate(self, z_fused: torch.Tensor, max_new_tokens: int = 200) -> str:
-        """給單一一筆 Z_fused（[1, z_dim]），實際生成一段文字（不是算 loss，是真的推論）。
-        用 greedy decoding（do_sample=False）而不是隨機抽樣，確保評估時同一份輸入每次
-        生成結果都一樣，可重現、可比較（評估用途本來就該用確定性生成，不是創作用途）。
-
-        `@torch.no_grad()` 只關掉梯度計算，不會自動把 module 切成 eval 模式——
-        `torch.no_grad()` 跟 `.eval()` 是兩件獨立的事。LoRA 掛了 `lora_dropout=0.05`，
-        如果呼叫端忘記在呼叫前切 `.eval()`（例如呼叫完 `train.py` 的 `eval_loss()` 之後，
-        它結束時會自動切回 `.train()`），dropout 在生成時還是啟用的，會讓 greedy decoding
-        變得不確定、生成品質也會變差。這裡直接在方法內部強制切一次，不依賴呼叫端記得做。
-        """
+    def generate(self, z_fused: torch.Tensor, context_ids: torch.Tensor | None = None,
+                 max_new_tokens: int = 200) -> str:
+        """單筆 Z_fused [1,z_dim]（＋候選文字的 token [1,Lc]）-> greedy 生成的文字（可重現）。
+        方法內強制切 eval：LoRA dropout 在生成時不可啟用。"""
         self.eval()
-        prefix_embeds = self.projector(z_fused)  # [1, P, H]
-        prefix_mask = torch.ones(1, self.n_prefix_tokens, device=z_fused.device, dtype=torch.long)
+        embeds = self.projector(z_fused)                                  # [1, P, H]
+        if context_ids is not None and context_ids.numel():
+            ctx = self.llm.get_input_embeddings()(context_ids)
+            embeds = torch.cat([embeds.to(ctx.dtype), ctx], dim=1)
+        mask = torch.ones(1, embeds.size(1), device=z_fused.device, dtype=torch.long)
         out_ids = self.llm.generate(
-            inputs_embeds=prefix_embeds,
-            attention_mask=prefix_mask,
-            max_new_tokens=max_new_tokens,
-            do_sample=False,
-            pad_token_id=self.tokenizer.pad_token_id,
+            inputs_embeds=embeds, attention_mask=mask, max_new_tokens=max_new_tokens,
+            do_sample=False, pad_token_id=self.tokenizer.pad_token_id,
         )
         return self.tokenizer.decode(out_ids[0], skip_special_tokens=True)
+
+
+def load_tiny_random(base_model_name: str = "meta-llama/Llama-2-7b-hf", lora_r: int = 4):
+    """smoke test 用：LLaMA-2 tokenizer（本機快取）＋隨機初始化的 2 層小 LLaMA ＋ LoRA，CPU 就跑得動。"""
+    from transformers import AutoTokenizer, LlamaConfig, LlamaForCausalLM
+    from peft import LoraConfig, get_peft_model
+
+    tokenizer = AutoTokenizer.from_pretrained(base_model_name)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    config = LlamaConfig(vocab_size=len(tokenizer), hidden_size=64, intermediate_size=128,
+                         num_hidden_layers=2, num_attention_heads=4, num_key_value_heads=4,
+                         max_position_embeddings=4096)
+    model = LlamaForCausalLM(config)
+    model = get_peft_model(model, LoraConfig(r=lora_r, lora_alpha=8, target_modules=["q_proj", "v_proj"],
+                                             task_type="CAUSAL_LM"))
+    return tokenizer, model

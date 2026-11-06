@@ -293,8 +293,8 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line)
       <p class="lead">K 線圖改成跟「K 線文字敘述」對齊；RAG-1 檢索型態定義送進融合層，L_ground 比較 K 線敘述的文字編碼與這些定義；新聞、財報、法說會不再進融合層，改由 RAG-2 篩選後放進 Decoder 的 context，只生成一次。三個 Loss 的公式照計畫書不動；跟計畫書不同的地方列在 00 段，一律以本頁為準。點方塊看細節；點 Loss 方塊會用紅框標出梯度更新的範圍。</p>
     </div>
     <div class="stamp">
-      版本 v2 · 更新 2026-11-05<br>
-      決策紀錄：docs/decisions.md #108–#122<br>
+      版本 v2 · 更新 2026-11-05（程式已改成本架構）<br>
+      決策紀錄：docs/decisions.md #108–#131<br>
       待討論項目在右下角
     </div>
   </header>
@@ -309,9 +309,9 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line)
         <thead><tr><th>項目</th><th>差異</th><th>企劃書</th><th>本架構（以此為準）</th></tr></thead>
         <tbody>
           <tr data-node="b_vit"><td>視覺輸入</td><td><span class="tag-chg mv">改</span></td><td>3.1：K 線圖、技術指標、財務報表影像；視覺編碼器用財經圖表語料預訓練的 CLIP／ViT</td><td>K 線圖＋成交量圖兩張，進凍結的 ImageNet ViT（google/vit-base-patch16-224）；技術指標圖尚未納入；ViT 微調只保留在規劃</td></tr>
-          <tr data-node="a_caption"><td>文字輸入 H_t</td><td><span class="tag-chg mv">改</span></td><td>3.2：金融文字查詢（新聞、分析師報告、公司申報文件）經 FinBERT 編碼</td><td>Claude Haiku 讀 K 線圖和成交量圖，寫成「K 線文字敘述」：9 類 K 線型態＋4 類成交量標籤，說明分〔K線〕〔成交量〕〔一起說明〕三段，用英文寫，經凍結的 FinBERT 編碼成 H_t；每天產生一次存檔重用</td></tr>
+          <tr data-node="a_caption"><td>文字輸入 H_t</td><td><span class="tag-chg mv">改</span></td><td>3.2：金融文字查詢（新聞、分析師報告、公司申報文件）經 FinBERT 編碼</td><td>Claude Haiku 讀 K 線圖和成交量圖，寫成「K 線文字敘述」：7 類 K 線型態＋1 個成交量標籤（四選一，公式決定），說明分〔K線〕〔成交量〕〔一起說明〕三段，用英文寫，經凍結的 FinBERT 編碼成 H_t；每天產生一次存檔重用</td></tr>
           <tr data-node="doc_index"><td>新聞、財報、法說會</td><td><span class="tag-chg mv">改</span></td><td>文字編碼器的輸入，也是 RAG 語料，經 H_t／H_r 進融合層</td><td>不進融合層；只進 RAG-2，篩選後以短版原文放進 Decoder 的 context</td></tr>
-          <tr data-node="rag1"><td>RAG（融合層這一路）</td><td><span class="tag-chg mv">改</span></td><td>3.3：一個 RAG；query q = pool([h_v; h_t])；語料是 SEC 申報、分析師報告、新聞、總經公報；檢索 top-K 文件 → H_r</td><td>RAG-1：語料是 9 類 K 線型態的定義（教科書／技術分析資料庫）；query 只用 K 線圖的池化向量；檢索結果 → H_r 進融合層</td></tr>
+          <tr data-node="rag1"><td>RAG（融合層這一路）</td><td><span class="tag-chg mv">改</span></td><td>3.3：一個 RAG；query q = pool([h_v; h_t])；語料是 SEC 申報、分析師報告、新聞、總經公報；檢索 top-K 文件 → H_r</td><td>RAG-1：語料是 7 類 K 線型態的定義（教科書／技術分析資料庫）；query 只用 K 線圖的池化向量；檢索結果 → H_r 進融合層</td></tr>
           <tr data-node="rag2"><td>RAG（Decoder 這一路）</td><td><span class="tag-chg add">新增</span></td><td>沒有這一路；3.3 寫 [H_t; H_v; H_r] 直接當解碼器輸入</td><td>RAG-2：依可得日期過濾當天新聞、8-K、背景 10-K／10-Q（固定挑 MD&amp;A、風險因素開頭）、法說會，縮到 15–20 段短版文字放進 Decoder context；不做相似度排序、不算 Loss、不能看到未來</td></tr>
           <tr data-node="c_fusion"><td>融合層</td><td><span class="tag-chg mv">改</span></td><td>3.4：Z_fused = F([H_t; H_v; H_r])，輸出整段 token 序列；各模態各自一組投影 P_v、P_t</td><td>輸入同樣是 [H_t; H_v; H_r]，但內容改成 K 線敘述、雙圖、RAG-1 定義；投影 P_v、P_t、P_r 跟 L_align、L_ground 共用；輸出取 CLS 成 768 維的 Z_fused</td></tr>
           <tr data-node="projector"><td>解碼器的條件</td><td><span class="tag-chg mv">改</span></td><td>3.4：以融合表徵 Z_fused 為條件；解碼器可用 LLaVA 或領域調適的 LLaMA-2</td><td>Z_fused 投影成 4 個 prefix token，加上 RAG-2 候選文字；LLaMA-2 7B（4-bit 凍結）＋LoRA；只生成一次</td></tr>
@@ -321,7 +321,7 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line)
           <tr data-node="l_total"><td>複合 Loss</td><td><span class="tag-chg keep">相同</span></td><td>3.5 (4)：L = λ1 L_align + λ2 L_ground + λ3 L_belief，λ3 優先加重</td><td>相同</td></tr>
           <tr data-node="decoder"><td>運算環境</td><td><span class="tag-chg mv">改</span></td><td>3.5：單台高效能工作站（例如 RTX 5090）上做 QLoRA</td><td>目前沒有 GPU：L_align、L_ground 與附屬診斷先在 Mac 上做；加 RAG-2 的長 context Decoder 訓練是主線，等有 GPU；不加 RAG-2 的 512 版本是選配，可先在 Mac 跑</td></tr>
           <tr data-node="src_macro"><td>總體經濟資料</td><td><span class="tag-chg mv">暫緩</span></td><td>3.3：RAG 語料包含總經公報</td><td>資料源保留（fetch_macro.py、data/raw/macro），pending 不做，不進 v2 的任何路徑</td></tr>
-          <tr data-node="c_clf"><td>附屬診斷</td><td><span class="tag-chg keep">相同</span></td><td>第 19 頁：表徵效能驗證（診斷性分類測試）</td><td>保留分類驗證、事件驗證頭、第一階段報告</td></tr>
+          <tr data-node="c_clf"><td>附屬診斷</td><td><span class="tag-chg keep">相同</span></td><td>第 19 頁：表徵效能驗證（診斷性分類測試）</td><td>保留分類驗證（附屬參考）與第一階段報告；事件驗證頭移除（Z_fused 不再含新聞，#130），改用型態 probe</td></tr>
           <tr data-node="rl_env"><td>第二階段 RL</td><td><span class="tag-chg keep">相同</span></td><td>3.6：PPO／SAC，state 來自 Z_fused</td><td>PPO，state＝池化 Z_fused＋前期持倉；細節不在這次調整範圍</td></tr>
         </tbody>
       </table>
@@ -332,7 +332,7 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line)
   <section id="map" aria-label="架構圖">
     <div class="sec-head">
       <div><div class="eyebrow">01 · 架構與資料流</div><h2>架構圖</h2></div>
-      <p>左欄是圖像路徑與 Decoder，中欄是文字路徑、Loss 與附屬診斷，右欄是 LLM 答案卷。紫底＋「新」是現行程式碼還沒有的元件；外框實線＝已完成、黃色虛線＝進行中、灰色點線＝未開始。</p>
+      <p>左欄是圖像路徑與 Decoder，中欄是文字路徑、Loss 與附屬診斷，右欄是 LLM 答案卷。紫底＋「新」是本架構（v2）新增的元件；外框實線＝已完成、黃色虛線＝進行中、灰色點線＝未開始。</p>
     </div>
     <div class="toolbar">
       <div><span class="tool-label">年度</span>
@@ -370,7 +370,7 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line)
       <span><i class="sw" style="background:var(--l)"></i>LLM 產生</span>
       <span><i class="sw" style="background:var(--p)"></i>附屬診斷</span>
       <span><i class="sw" style="background:var(--r)"></i>第二階段 RL</span>
-      <span><b class="nw">新</b>程式碼尚未實作</span>
+      <span><b class="nw">新</b>v2 新增</span>
       <span><i class="ln"></i>資料流</span>
       <span><i class="ln d"></i>附屬</span>
       <span><i class="ln q"></i>檢索 query／規劃中的微調</span>
@@ -393,7 +393,7 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line)
             <thead><tr><th>Loss</th><th>比較的一側</th><th>比較的另一側</th><th>在哪裡算</th><th>梯度會更新</th><th>需要 GPU？</th></tr></thead>
             <tbody>
               <tr><td><b>L_align</b></td><td>H_v：ViT 輸出（K 線圖）</td><td>H_t：FinBERT 輸出（同一天的 K 線敘述）</td><td>ViT、FinBERT 之後（融合層之前）</td><td>共用投影 P_v、P_t（也是融合層的輸入投影）</td><td>不需要</td></tr>
-              <tr><td><b>L_ground</b></td><td>α̂：融合層裡 H_t 對 RAG-1 各段定義 H_r 的注意力</td><td>α*：H_t 與各段 H_r 的相似度換算（用哪份向量見 Q13）</td><td>融合層內</td><td>融合層本身、共用投影 P_t、P_r</td><td>不需要</td></tr>
+              <tr><td><b>L_ground</b></td><td>α̂：融合層裡 H_t 對 RAG-1 各段定義 H_r 的注意力</td><td>α*：K 線敘述的型態標籤，敘述型態那段 0.9、其他段平分 0.1（Q13，#131）</td><td>融合層內</td><td>融合層本身、共用投影 P_t、P_r</td><td>不需要</td></tr>
               <tr><td><b>L_belief</b></td><td>Decoder 生成的文字</td><td>LLM 產的 y_belief</td><td>Decoder 輸出</td><td>Decoder LoRA、projector、融合層</td><td>需要</td></tr>
             </tbody>
           </table>
@@ -410,10 +410,10 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line)
         <div class="math">\[ L_{align} = -\log \frac{\exp\left(\langle H_v H_t \rangle / \tau\right)}{\sum_{t'} \exp\left(\langle H_v H_{t'} \rangle / \tau\right)} \]</div>
         <ul>
           <li><b>H_v</b>：當天 K 線圖經 ViT（凍結）與共用投影 P_v 的視覺編碼，直接從 ViT 接過來，不經過融合層。</li>
-          <li><b>H_t</b>：同一天 K 線文字敘述（Claude Haiku 讀圖寫的）經 FinBERT 與共用投影 P_t 的文字編碼。（現行程式的 H_t 仍是新聞，要改成 K 線敘述。）</li>
+          <li><b>H_t</b>：同一天 K 線文字敘述（Claude Haiku 讀圖寫的）經 FinBERT 與共用投影 P_t 的文字編碼。</li>
           <li><b>H_{t′}</b>：其他天的 K 線敘述；<b>τ</b> 是溫度參數。</li>
           <li><b>同型態的不同天（11/04 決定）</b>：組 batch 時同一批不放同型態的日子（可以同時看 K 線型態和成交量標籤），K 線敘述也寫進量能、位置等細節，讓不同天的敘述不會一模一樣。公式不動。</li>
-          <li>讓視覺端學會「這張圖是頭肩底」，也是 ViT domain gap 的對策之一。</li>
+          <li>讓視覺端學會「這張圖是反轉（例如頭肩底）」，也是 ViT domain gap 的對策之一。</li>
         </ul>
       </article>
 
@@ -434,31 +434,31 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line)
         <div class="src">計畫書 3.5 (2)（原式）· α̂ 取自融合層 · 現有 grounding/alpha.py 的 KL 可沿用</div>
         <div class="math">\[ L_{ground} = \sum_{i=1}^{K} \alpha_i^* \log \frac{\alpha_i^*}{\hat{\alpha}_i} \]</div>
         <div class="pair">
-          <div><span class="tag">K</span>RAG-1 檢索到的 K 段型態定義（H_r），例如「頭肩底」「W 底」「持續下跌」。</div>
+          <div><span class="tag">K</span>RAG-1 檢索到的 K 段型態定義（H_r），例如「底部反轉」「突破」「持續下跌」。</div>
           <div><span class="tag">α̂（模型的注意力權重）</span><b>取融合層裡 H_t token 對 H_r token 的注意力（11/04 決定）。</b>把 H_t token 對每段定義的注意力加總，再在 K 段之間正規化。</div>
-          <div><span class="tag">α*（oracle 相關性分數）</span><b>相似度換算，先試（11/04 決定）。</b>H_t 跟每段 H_r 的 cosine 相似度，經 softmax 換成 K 段之間的分布。要用投影前的凍結向量還是投影後的向量，見 Q13。</div>
+          <div><span class="tag">α*（oracle 相關性分數）</span><b>型態類別直接對應（11/05 改，#131）。</b>K 線敘述是哪一型，當天取到的 K 段裡那段定義就拿 0.9，其他段平分 0.1；正確那段沒被取到的天不算 L_ground。原本的相似度換算實測大多指向錯的定義（見下方 (b)）。</div>
         </div>
-        <p>意思是：K 線敘述說今天是「頭肩底」，文字端就應該把注意力放在「頭肩底」那段定義上。L_ground 只看 H_t 和 H_r 這兩組 token 之間的注意力，不經過 Decoder，現在沒有 GPU 也能算。</p>
+        <p>意思是：K 線敘述說今天是「底部反轉」（例如頭肩底），文字端就應該把注意力放在「底部反轉」那段定義上。L_ground 只看 H_t 和 H_r 這兩組 token 之間的注意力，不經過 Decoder，現在沒有 GPU 也能算。</p>
         <h3 style="margin-top:6px">α* 的三個候選做法</h3>
         <div class="pair">
-          <div><span class="tag">(a) 型態類別直接對應</span>K 線敘述的型態類別跟定義相同，就算相關。不用另外打分，但只有「對／不對」兩種。</div>
-          <div><span class="tag">(b) 相似度換算・採用</span>用 H_t 跟每段 H_r 的相似度當 α*。α̂ 改取融合層的注意力後，兩邊不再是同一個式子；但 α* 若用會被訓練的投影後向量，答案卷會跟著訓練變動（Q13）。</div>
+          <div><span class="tag">(a) 型態類別直接對應・採用（11/05）</span>K 線敘述的型態類別跟定義相同，就算相關。不用另外打分，但只有「對／不對」兩種。</div>
+          <div><span class="tag">(b) 相似度換算（11/04 採用，11/05 停用）</span>用 H_t 跟每段 H_r 的相似度當 α*。α̂ 改取融合層的注意力後，兩邊不再是同一個式子；但 α* 若用會被訓練的投影後向量，答案卷會跟著訓練變動（Q13）。</div>
           <div><span class="tag">(c) Haiku 打 0–3 分（原案，備用）</span>流程可沿用現有的 generate_alpha_star.py，改 prompt 即可；(b) 效果不好時改用。</div>
         </div>
         <p class="muted">FinBERT 凍結、RAG-1 的檢索結果固定；α̂ 取自融合層，所以 L_ground 會直接訓練融合層本身，也透過共用投影 P_t、P_r 影響輸入。RAG-1 的 query 用 K 線圖的池化向量，不用 K 線敘述，避免跟 α* 循環。</p>
-        <p><b>一個例子（數字是示意）：</b>今天的 K 線敘述是「頭肩底成形」，RAG-1 取回 3 段定義。</p>
+        <p><b>一個例子（數字是示意）：</b>今天的 K 線敘述是「頭肩底成形」（屬於底部反轉），RAG-1 取回 3 段定義。</p>
         <div class="small-wrap">
           <table class="numtbl">
-            <thead><tr><th></th><th>定義 1：頭肩底</th><th>定義 2：W 底</th><th>定義 3：持續下跌</th></tr></thead>
+            <thead><tr><th></th><th>定義 1：底部反轉</th><th>定義 2：突破</th><th>定義 3：持續下跌</th></tr></thead>
             <tbody>
-              <tr><td>H_t 與 H_r 的 cosine</td><td class="n">0.82</td><td class="n">0.62</td><td class="n">0.52</td></tr>
-              <tr><td>α*</td><td class="n">0.84</td><td class="n">0.11</td><td class="n">0.04</td></tr>
+              <tr><td>是不是敘述的型態</td><td class="n">是</td><td class="n">否</td><td class="n">否</td></tr>
+              <tr><td>α*</td><td class="n">0.90</td><td class="n">0.05</td><td class="n">0.05</td></tr>
               <tr><td>α̂（融合層裡 H_t 對三段定義的注意力）</td><td class="n">0.33</td><td class="n">0.50</td><td class="n">0.17</td></tr>
-              <tr><td>α* · log(α*/α̂)</td><td class="n">+0.79</td><td class="n">−0.17</td><td class="n">−0.06</td></tr>
+              <tr><td>α* · log(α*/α̂)</td><td class="n">+0.90</td><td class="n">−0.12</td><td class="n">−0.06</td></tr>
             </tbody>
           </table>
         </div>
-        <p>α* 是 cosine 除以溫度 0.1 後做 softmax。三格加起來 L_ground ≈ 0.56。融合層把較多注意力放在 W 底，跟今天的頭肩底不符，所以被罰；訓練後注意力會移到「頭肩底」那段。</p>
+        <p>α* 直接由敘述的型態決定：型態那段 0.9，其他兩段平分 0.1（#131）。三格加起來 L_ground ≈ 0.73。融合層把較多注意力放在突破，跟今天的底部反轉不符，所以被罰；訓練後注意力會移到「底部反轉」那段。</p>
       </article>
     </div>
   </section>
@@ -474,7 +474,7 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line)
         <div class="fcard-head"><h3>RAG-1：K 線型態知識</h3><span class="chip nw">新元件・必做</span></div>
         <div class="src">L_ground 依賴它，所以一定要做 · 定義從教科書／技術分析資料庫整理</div>
         <div class="pair">
-          <div><span class="tag">語料</span>9 類型態各一段定義，例如「頭肩底：左肩、頭、右肩，頸線突破後偏多」。以英文撰寫（FinBERT 是英文模型），每段分「型態」「成交量」「量價判讀」三部分，對應 K 線敘述的三段。引用教科書或網路上的技術分析資料庫；找不到再用 LLM 產生＋人工校對。備用來源：StockCharts ChartSchool 型態文章（內容詳細、有各階段量能，無授權聲明，只參考改寫並註明出處）、Hugging Face propfirmkey/trading-finance-glossary-nlp（CC BY 4.0，標註出處可直接用，但每條只有一句）。</div>
+          <div><span class="tag">語料</span>7 類型態各一段定義，例如「底部反轉：先跌後漲、收在區間上半，含頭肩底、W 底、V 型」。以英文撰寫（FinBERT 是英文模型），每段分「型態」「成交量」「量價判讀」三部分，對應 K 線敘述的三段。引用教科書或網路上的技術分析資料庫；找不到再用 LLM 產生＋人工校對。備用來源：StockCharts ChartSchool 型態文章（內容詳細、有各階段量能，無授權聲明，只參考改寫並註明出處）、Hugging Face propfirmkey/trading-finance-glossary-nlp（CC BY 4.0，標註出處可直接用，但每條只有一句）。</div>
           <div><span class="tag">query</span>當天 K 線圖的池化向量（ViT H_v 池化）。推論時不必等 Haiku，也不會跟 α* 循環。</div>
           <div><span class="tag">輸出</span>K 段定義編碼成 H_r，進融合層，跟 H_t、H_v 一起做 self-attention。</div>
         </div>
@@ -514,7 +514,7 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line)
         <p><b>可解釋性從哪來：</b>候選的短版原文就在 context 裡，敘述可以直接引用；Decoder 對各段候選的注意力可以畫出來，標出每句話主要參考哪幾段（只用來展示，不算 Loss）。</p>
         <div class="pair" style="grid-template-columns:repeat(2,minmax(0,1fr))">
           <div><span class="tag">風險 ① 只抄文件、不看圖</span>候選文字一開始就在 context，Decoder 很可能完全忽略 Z_fused。評估以「型態一致率」為主：Decoder 敘述的型態跟 Haiku 敘述一不一致。型態一致率分不出 Decoder 是看圖還是從文件抄，所以再補「打亂 Z_fused」當輔助檢查：換成別天的 Z_fused，敘述裡的型態應該要跟著變。</div>
-          <div><span class="tag">風險 ② context 變長</span>現行 Decoder 用 max_length 512。加上 15–20 段短版文字（約 600–800 token）後，序列大約 1,100–1,300 token，這是主線，等有 GPU 再跑。不加 RAG-2 的 512 版本是選配，可以先在 Mac 跑。</div>
+          <div><span class="tag">風險 ② context 變長</span>不加 RAG-2 的版本用 max_length 512。加上 15–20 段短版文字（約 600–800 token）後，序列大約 1,100–1,300 token，這是主線，等有 GPU 再跑。不加 RAG-2 的 512 版本是選配，可以先在 Mac 跑。</div>
         </div>
       </article>
     </div>
@@ -530,11 +530,11 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line)
       <article class="phase">
         <span class="phase-tag now">現在可做</span>
         <ol>
-          <li><b>寫 Haiku 讀圖 prompt（9 類型態）</b>，三檔股票產生 K 線文字敘述並存檔（只需 API）。<div class="chk">先抽幾十天人工看過，確認型態判斷合理。</div></li>
-          <li><b>整理 RAG-1 型態定義知識庫</b>：從教科書或技術分析資料庫整理 9 段英文定義（備用來源：ChartSchool、HF trading-finance-glossary-nlp），找不到的用 LLM 產生＋人工校對；建索引。</li>
-          <li><b>算 α* 答案卷</b>：H_t 與各段 H_r 的相似度換算（用哪份向量見 Q13）。</li>
+          <li><b>寫 Haiku 讀圖 prompt（7 類型態）</b>，三檔股票產生 K 線文字敘述並存檔（只需 API）。<div class="chk">先抽幾十天人工看過，確認型態判斷合理。</div></li>
+          <li><b>整理 RAG-1 型態定義知識庫</b>：從教科書或技術分析資料庫整理 7 段英文定義（備用來源：ChartSchool、HF trading-finance-glossary-nlp），找不到的用 LLM 產生＋人工校對；建索引。</li>
+          <li><b>α*</b>：直接用 K 線敘述的型態標籤，不另外算答案卷（#131）。</li>
           <li><b>融合層輸入改成 H_t（K 線敘述）＋H_v＋RAG-1 的 H_r</b>，輸入投影改成共用的 P_v、P_t、P_r，拿掉新聞與舊 H_r。</li>
-          <li><b>訓練 L_align＋L_ground</b>（batch 避開同型態；α̂ 取融合層注意力），用第一階段方法驗證：分類器、型態類別的線性 probe、α̂ 跟 α* 的一致率、遮掉 H_t 的消融。</li>
+          <li><b>訓練 L_align＋L_ground</b>（batch 避開同型態；α̂ 取融合層注意力），用第一階段方法驗證：型態類別的線性 probe（只看遮掉 H_t 的融合層，敘述寫了型態名稱，沒遮會偷看答案）、α̂ 跟 α* 的一致率、RAG-1 檢索命中率、遮掉 H_t 的消融；3 類情緒分類器只當附屬參考（#125）。</li>
           <li><b>建 RAG-2 候選篩選</b>：日期過濾、固定章節（MD&amp;A、風險因素開頭）、短版文字；人工抽查幾天的候選。</li>
           <li><b>Decoder 端程式</b>：候選放進 context、複合 Loss；小模型 smoke test。</li>
           <li><b>（選配）Mac 上跑不加 RAG-2 的 512 版本</b>：先看新的 Z_fused（K 線敘述＋RAG-1）對 Decoder 有沒有幫助。</li>
@@ -557,57 +557,50 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line)
   <section id="io" aria-label="新增與變動的檔案">
     <div class="sec-head">
       <div><div class="eyebrow">05 · 輸入／輸出</div><h2>新增與變動的資料</h2></div>
-      <p>只列跟現行程式不同的部分；路徑是建議命名，尚未建立。</p>
+      <p>本架構新增與變動的資料，程式已實作（#123–#131）。</p>
     </div>
     <div class="tbl-wrap">
       <table>
-        <thead><tr><th>步驟</th><th>讀入</th><th>寫出（建議）</th><th>形狀／格式</th></tr></thead>
+        <thead><tr><th>步驟</th><th>讀入</th><th>寫出</th><th>形狀／格式</th></tr></thead>
         <tbody>
-          <tr data-node="a_caption"><td>K 線文字敘述</td><td>data/raw/charts/{T}/{date}.png＋volume/{date}.png</td><td><span class="mono">data/labels/chart_caption/{T}.json</span></td><td>{date: {pattern, text}}，答案卷進版控</td></tr>
+          <tr data-node="a_caption"><td>K 線文字敘述</td><td>data/raw/charts/{T}/{date}.png＋volume/{date}.png</td><td><span class="mono">data/labels/chart_caption/{T}.json</span></td><td>{date: {pattern, volume_label, kline, volume, combined, formula}}，只存三段（編碼時才串起來），答案卷進版控；程式 module_a_data/chart_caption.py（A 模組）</td></tr>
           <tr data-node="b_capenc"><td>文字編碼 FinBERT（凍結）</td><td>chart_caption/{T}.json</td><td><span class="mono">data/vectors/{T}/{date}/H_t.npy</span>（改存 K 線敘述）</td><td>[512, 768]</td></tr>
-          <tr data-node="rag1"><td>RAG-1 知識庫</td><td>9 類型態定義（教科書／技術分析資料庫）</td><td><span class="mono">data/knowledge/patterns/*.md · _faiss/patterns</span></td><td>每段定義 ≤512 token；輸出 H_r [K, 512, 768]</td></tr>
-          <tr data-node="lbl_alpha"><td>α*（RAG-1，相似度換算）</td><td>H_t、RAG-1 檢索到的 K 段 H_r</td><td><span class="mono">data/labels/grounding/{T}_rag1.json</span></td><td>每天 K 個機率值（cosine → softmax）</td></tr>
-          <tr data-node="c_fusion"><td>融合層</td><td>H_t（K 線敘述）、H_v、H_r（RAG-1）</td><td><span class="mono">checkpoints/fusion_{T}_v2.pt</span></td><td>H_t 改讀 K 線敘述；不再讀新聞與舊 H_r</td></tr>
-          <tr data-node="doc_index"><td>RAG-2 候選庫</td><td>每日 JSON 的 news、filing_chunks、transcript_chunks</td><td><span class="mono">data/vectors/_faiss/{T}_docs.*</span></td><td>chunk＋available_date、來源</td></tr>
-          <tr data-node="rag2"><td>RAG-2 每日候選</td><td>候選庫</td><td><span class="mono">data/outputs/rag2/{T}/{date}.json</span></td><td>15–20 段短版文字與來源、日期</td></tr>
+          <tr data-node="rag1"><td>RAG-1 知識庫</td><td>7 類型態定義（教科書／技術分析資料庫）</td><td><span class="mono">data/knowledge/patterns/*.md → data/vectors/_patterns/patterns.npz</span></td><td>7 段定義各 ≤512 token（[7, 512, 768]）；每天取哪 K 段在融合層裡檢索；程式 rag/pattern_kb.py</td></tr>
+          <tr data-node="lbl_alpha"><td>α*（RAG-1，型態標籤）</td><td>K 線敘述的型態、當天取到的 K 段</td><td><span class="mono">訓練時即時算（grounding/alpha.py）</span></td><td>敘述型態那段 0.9、其他段平分 0.1（#131）。cosine 對照版本仍可用 alpha_star_rag1.py 產生 data/labels/grounding/{T}_rag1.json（每天 7 個 cosine）</td></tr>
+          <tr data-node="c_fusion"><td>融合層</td><td>H_t（K 線敘述）、H_v、H_r（RAG-1）</td><td><span class="mono">checkpoints/fusion_{T}.pt</span></td><td>H_t 改讀 K 線敘述；不再讀新聞與舊 H_r；Z_fused 仍輸出到 z_fused/{T}/</td></tr>
+          <tr data-node="doc_index"><td>RAG-2 候選庫</td><td>每日 JSON 的 news、filing_chunks、transcript_chunks</td><td>（不另建索引：不做相似度排序，直接讀每日 JSON）</td><td>chunk＋available_date、來源</td></tr>
+          <tr data-node="rag2"><td>RAG-2 每日候選</td><td>候選庫</td><td><span class="mono">data/outputs/rag2/{T}/{date}.json</span></td><td>15–20 段短版文字與來源、日期；程式 rag/rag2.py</td></tr>
         </tbody>
       </table>
     </div>
   </section>
 
   <footer>
-    依據：計畫書 CM03（docs/reference/）、docs/decisions.md（本架構的決策見 #108–#122）。Loss 公式照計畫書原文；跟計畫書不同的地方以本頁為準。Q13 定案前，α* 用哪份向量算仍未定。
+    依據：計畫書 CM03（docs/reference/）、docs/decisions.md（本架構的決策見 #108–#131）。Loss 公式照計畫書原文；跟計畫書不同的地方以本頁為準。α* 用 K 線敘述的型態標籤（Q13，#131）。
   </footer>
 </div>
 
 <button type="button" class="fab" id="fab" aria-haspopup="dialog" aria-controls="sheet" aria-expanded="false">
   <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M9 4h6a1 1 0 0 1 1 1v1h2a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h2V5a1 1 0 0 1 1-1Zm0 2v1h6V6H9Zm-1 5h8v1.6H8V11Zm0 3.6h8v1.6H8v-1.6Z" style="fill:currentColor"></path></svg>
-  <span>待討論</span><span class="fab-n">1</span>
+  <span>待討論</span><span class="fab-n">0</span>
 </button>
 <div class="sheet-backdrop" id="sheetBackdrop"></div>
 <section class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle" aria-hidden="true">
   <div class="sheet-grip" aria-hidden="true"></div>
   <div class="sheet-head">
-    <div><div class="eyebrow">待討論 · 1 項＋已決定</div><h2 id="sheetTitle">還沒定的事</h2></div>
+    <div><div class="eyebrow">待討論 · 0 項＋已決定</div><h2 id="sheetTitle">還沒定的事</h2></div>
     <button type="button" class="close" id="sheetClose">關閉</button>
   </div>
   <p class="muted sheet-note">方塊裡標的「（Qn）」就是這裡的編號。已定案的題目整理在最下面，完整紀錄見 docs/decisions.md。</p>
     <div class="q-list" id="qList">
-      <article class="q-item" data-open="q13">
-        <span class="q">Q13 · L_ground</span><h3>α* 用哪一份向量算相似度？</h3>
-        <p>Q5 選了相似度換算、Q6 選了融合層的注意力。α̂ 已經改從融合層取，但 α* 如果也用「會被訓練」的投影後向量算，答案卷會跟著訓練一起變動，模型可以同時改答案和作答。</p>
-        <div class="opts-static"><div class="opts-legend">選項</div><ul><li><b>A · 用投影前的凍結 FinBERT 向量</b><span class="tag-rec">建議</span><br>H_t、H_r 各自池化後算 cosine，一次算好存檔，答案卷固定不變</li><li><b>B · 用共用投影後的向量，但 α* 不回傳梯度</b><br>答案卷會隨投影慢慢變，但不會被直接拉向 α̂</li><li><b>C · 其他</b></li>
-        </ul></div>
-      </article>
-
       <article class="q-item done-item">
         <span class="q">已決定 · 11/04</span><h3>Q1–Q11、Q14、Q15 的作答（Q12 併入 Q1）</h3>
         <ul>
-          <li><b>Q1</b> 型態類別：9 類小清單（持續上漲、持續下跌、盤整、頭肩頂、頭肩底、W 底、M 頭、突破、跌破），先試這版。<br>補充（原 Q12，11/05 改）：先嘗試價量分開說明，敘述分成〔K線〕〔成交量〕〔一起說明〕三段；成交量另標 4 類（放量、縮量、量平、爆量），用 OHLCV 公式算出的標籤對照抽查。</li>
+          <li><b>Q1</b> 型態類別：原本 9 類小清單（持續上漲、持續下跌、盤整、頭肩頂、頭肩底、W 底、M 頭、突破、跌破）；11/05 AAPL 全量試跑後改成 6 類（反轉合成一類，#128），同日再拆成 7 類：持續上漲、持續下跌、盤整、突破、跌破、頂部反轉（頭肩頂、M 頭、倒 V）、底部反轉（頭肩底、W 底、V 型）。20 天的圖很少出現完整的頭肩或雙底雙頂（9 類版本四種反轉合計只占 1.7%，拉長到 30、40 根也只有 1.9%、2.5%，頭肩底都是 0 天）；反轉合成一類後占 36%，頂部、底部意思相反，所以拆開。K 線根數維持 20（30 根差距在雜訊內、40 根跌破太少），見 docs/data_and_experiments_log.md 2026-11-05 與 #129。<br>補充（原 Q12，11/05 改）：先嘗試價量分開說明，敘述分成〔K線〕〔成交量〕〔一起說明〕三段；成交量另標 1 個標籤，四選一（爆量、放量、縮量、量平；爆量只看最後 3 天，#127），用 OHLCV 公式算出的標籤對照抽查。</li>
           <li><b>Q2</b> L_align 同型態的不同天：組 batch 時避開同型態，敘述也寫得更具體，兩個都做。</li>
           <li><b>Q3</b> RAG-1 定義來源：引用教科書或網路上的技術分析資料庫；找不到再改用 LLM 產生＋人工校對。11/05 補：備用來源為 StockCharts ChartSchool 與 HF trading-finance-glossary-nlp；定義與 K 線敘述都用英文。</li>
           <li><b>Q4</b> RAG-1 query：K 線圖的池化向量。</li>
-          <li><b>Q5</b> α*：H_t 跟各段 H_r 的相似度換算，先試試看（用哪份向量見 Q13）。</li>
+          <li><b>Q5</b> α*：原本選相似度換算；11/05 改成型態類別直接對應（見 Q13）。</li>
           <li><b>Q6</b> α̂：取融合層裡 H_t 對 H_r 的注意力。</li>
           <li><b>Q7</b> RAG-2 候選：固定挑章節（MD&amp;A、風險因素開頭等重要章節）；不用 K 線敘述當 query。</li>
           <li><b>Q8</b> 長 context 的運算成本：等有 GPU 再跑。</li>
@@ -616,6 +609,7 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line)
           <li><b>Q11</b> L_belief 下降怎麼解讀：等測試完，看結果再決定。</li>
           <li><b>Q14</b> Decoder 做兩個版本：主線是加 RAG-2 的長 context（等 GPU）；不加 RAG-2 的 512 版本是選配，可先在 Mac 跑。</li>
           <li><b>Q15</b> 補上「打亂 Z_fused」，當作型態一致率之外的輔助檢查。</li>
+          <li><b>Q13</b>（11/05 定案）α* 不用 cosine 算：AAPL 實測凍結 FinBERT 的 cosine 最高那段只有 18.7% 跟敘述型態一致，大多指向「突破」或「上漲」（FinBERT 是情緒模型，分不出型態語意）。改成α* 直接用 K 線敘述的型態標籤：當天取到的 K 段裡，敘述型態那段拿 0.9，其他段平分 0.1；正確那段沒被取到的天不算 L_ground（#131）。</li>
         </ul>
       </article>
 
@@ -655,45 +649,44 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line)
       d: '未來第 5 日報酬，依 Train 期間 1/3、2/3 分位數切三類；仍是 y_belief 開頭的 <TREND>。', r: ['#30', '#85'] },
     { id: 'a_split', m: 'A', yr: 1, s: 'done', x: 470, y: 180, w: 170, t: '時間切分 manifest', f: 'temporal_split.py', o: '70% / 15% / 15%',
       d: 'Train 70%｜gap 5 日｜Validation 15%｜gap 5 日｜Test 15%。融合層與 Decoder 都只用 Train 更新。', r: ['#85'] },
-    { id: 'a_caption', m: 'L', yr: 1, s: 'todo', nw: 1, ph: 'now', x: 270, y: 300, w: 430, t: 'K 線文字敘述（Claude Haiku 讀圖）', f: 'generate_chart_caption.py（建議命名）', o: '{ pattern, volume, [K線], [成交量], [一起說明] }',
-      d: 'Haiku 讀當天的 K 線圖和成交量圖，從 9 類型態（持續上漲、持續下跌、盤整、頭肩頂、頭肩底、W 底、M 頭、突破、跌破）選一類，再把價和量分開說明（先嘗試這個寫法）：[K線] 價格走勢與型態、[成交量] 量能變化、[一起說明] 量價合起來的判讀，例如「[K線] 左右肩成形、突破頸線 [成交量] 突破當天放量 [一起說明] 量增價漲，頭肩底確認」。三段合成一份敘述。成交量另外從 4 類標籤選：放量、縮量、量平（三選一），爆量（有一天特別突出，可以跟前三類並存）；〔一起說明〕不設標籤。每天產生一次就存檔，之後固定使用。編碼成 H_t 後是 L_align 與 L_ground 的文字端。',
-      i: ['K 線圖 PNG＋成交量圖 PNG'], out: ['data/labels/chart_caption/{TICKER}.json（答案卷，建議進版控）'],
-      st: ['把 K 線圖、成交量圖與 9 類型態清單放進同一個 prompt，不給股票代號與日期；敘述用英文寫（FinBERT 是英文模型）', '要求輸出 JSON：pattern（從清單選）、kline、volume、combined 三段說明（對應 [K線]、[成交量]、[一起說明]，各 1–2 句，寫進位置、量能等細節）', '三段依序串成一份敘述再編碼；pattern、volume 兩個標籤只存在 JSON，用來抽查與評估', '成交量標籤另用 OHLCV 公式算一份對照（例如近 5 日均量 ÷ 前 15 日均量 > 1.3 為放量、< 0.77 為縮量，任一天 > 20 日均量 2 倍為爆量；門檻待調）', '不給 Haiku 看未來價格或 label', '存檔成答案卷，訓練與推論都讀存檔'],
-      n: ['敘述存檔重用，結果可重現；另做「遮掉 H_t」消融，確認融合層有看 H_v', '備用方案 a：給 LLM 20 日 OHLCV 數字寫敘述', '備用方案 b：手刻型態判斷公式（較不可行）'],
-      td: ['寫 9 類型態＋4 類成交量的讀圖 prompt', '寫成交量標籤的公式並定門檻', '抽查幾十天確認 Haiku 判斷合理；成交量對照公式算一致率'], fm: ['f-align', 'f-ground'] },
+    { id: 'a_caption', m: 'A', yr: 1, s: 'partial', nw: 1, ph: 'now', x: 270, y: 300, w: 430, t: 'K 線文字敘述（Claude Haiku 讀圖）', f: 'chart_caption.py', o: '{ pattern, volume, [K線], [成交量], [一起說明] }',
+      d: 'Haiku 讀當天的 K 線圖和成交量圖，從 7 類型態（持續上漲、持續下跌、盤整、突破、跌破、頂部反轉（頭肩頂、M 頭、倒 V）、底部反轉（頭肩底、W 底、V 型））依序判斷選一類（突破、跌破、持續上漲、持續下跌、頂部反轉、底部反轉、盤整），〔K線〕那段寫出具體形狀（例如頭肩底），再把價和量分開說明（先嘗試這個寫法）：[K線] 價格走勢與型態、[成交量] 量能變化、[一起說明] 量價合起來的判讀，例如「[K線] 左右肩成形、突破頸線 [成交量] 突破當天放量 [一起說明] 量增價漲，頭肩底確認」。三段合成一份敘述。成交量只標 1 個標籤，四選一：爆量（最後 3 天有一天特別高；視窗前段的高量不算）、放量、縮量、量平。標籤由 OHLCV 公式決定，只把狀況（不含倍數）告訴 Haiku，請它照狀況寫〔成交量〕那段（#127、#128）；〔一起說明〕不設標籤。每天產生一次就存檔，之後固定使用。編碼成 H_t 後是 L_align 與 L_ground 的文字端。',
+      i: ['K 線圖 PNG＋成交量圖 PNG'], out: ['data/labels/chart_caption/{TICKER}.json（答案卷，進版控）'],
+      st: ['把 K 線圖、成交量圖與 7 類型態清單放進同一個 prompt，不給股票代號與日期；敘述用英文寫（FinBERT 是英文模型）', '要求輸出 JSON：pattern（從清單選）、kline、volume、combined 三段說明（對應 [K線]、[成交量]、[一起說明]，各 1–2 句，寫進位置、量能等細節）', '三段依序串成一份敘述再編碼；pattern、volume 兩個標籤只存在 JSON，用來抽查與評估', '成交量標籤由 OHLCV 公式決定：最後 3 天任一天 > 20 日均量 2 倍為爆量；否則近 5 日均量 ÷ 前 15 日均量 > 1.3 為放量、< 0.77 為縮量，其餘量平（門檻待調）。prompt 只寫狀況，例如「最近幾天的量明顯比前面高」，不給倍數', '不給 Haiku 看未來價格或 label', '存檔成答案卷，訓練與推論都讀存檔'],
+      n: ['敘述存檔重用，結果可重現；另做「遮掉 H_t」消融，確認融合層有看 H_v', '備用方案 a：給 LLM 20 日 OHLCV 數字寫敘述'],
+      td: ['三檔股票跑完 Haiku 敘述（AAPL 目前只試跑 2 天；跑完後 B 再產生 H_t）', '抽查幾十天確認 Haiku 判斷合理；--check 看成交量公式一致率', '成交量門檻待調（shared/patterns.py）'], fm: ['f-align', 'f-ground'] },
     { id: 'b_vit', m: 'B', yr: 1, s: 'done', x: 50, y: 440, w: 200, h: 76, t: 'ViT（凍結）', f: 'vision_encoder.py', o: '→ H_v [2,197,768]', sub: '雙圖共用 ViT，接共用投影 P_v',
       d: 'google/vit-base-patch16-224，凍結。輸出 H_v 經共用投影 P_v 後，同時給 L_align 和融合層用；池化後當 RAG-1 的 query。', out: ['data/vectors/{TICKER}/{date}/H_v.npy'], r: ['#36', '#46', '#76'] },
-    { id: 'b_capenc', m: 'B', yr: 1, s: 'todo', nw: 1, ph: 'now', x: 270, y: 440, w: 240, h: 76, t: '文字編碼 FinBERT（凍結）', f: '編碼 K 線敘述（共用投影 P_t）', o: '→ H_t [512, 768]', sub: 'L_align 的文字端',
+    { id: 'b_capenc', m: 'B', yr: 1, s: 'done', nw: 1, ph: 'now', x: 270, y: 440, w: 240, h: 76, t: '文字編碼 FinBERT（凍結）', f: 'generate_vectors.py（H_t = K 線敘述）', o: '→ H_t [512, 768]', sub: 'L_align 的文字端',
       d: '用凍結的 FinBERT 把 K 線文字敘述編碼成 H_t（計畫書 3.2：H_t = LN(Z_t P_t)，P_t 可學，跟 L_align、L_ground、融合層共用），是 L_align 與 L_ground 的文字端，也跟 H_v、H_r 一起進融合層。RAG-1 定義與 RAG-2 候選庫也用同一個 FinBERT。',
       i: ['K 線文字敘述'], out: ['data/vectors/{TICKER}/{date}/H_t.npy（改存 K 線敘述的編碼）'], fm: ['f-align'] },
-    { id: 'rag1', m: 'B', yr: 1, s: 'todo', nw: 1, ph: 'now', x: 520, y: 440, w: 180, h: 76, t: 'RAG-1 型態知識', f: '9 類型態定義（教科書）', o: '→ H_r [K,512,768]', sub: '必做：L_ground 依賴它',
-      d: '檢索「什麼是頭肩底、什麼是漲跌」這類定義，編碼成 H_r 進融合層，幫助模型理解圖。L_ground 比的是 H_t 對這 K 段定義的注意力，所以一定要做。',
-      i: ['query：K 線圖池化向量（ViT H_v 池化）', '型態定義知識庫（9 段）'], out: ['H_r [K, 512, 768] → 融合層'],
-      st: ['從教科書或技術分析資料庫整理 9 段英文定義，跟型態清單一一對應；找不到的用 LLM 產生＋人工校對', '備用來源：StockCharts ChartSchool 型態文章（內容詳細、有各階段量能，無授權聲明，只參考改寫並註明出處）、Hugging Face propfirmkey/trading-finance-glossary-nlp（CC BY 4.0，標註出處可直接用，但每條只有一句）', 'query 與知識庫做 cosine，取 top-K', '每段定義用 FinBERT 編碼成 [512,768]', '經共用投影 P_r 後，給 L_ground，也跟 H_t、H_v 一起進融合層'],
-      td: ['找技術分析資料庫、整理 9 段定義', '建索引'], fm: ['f-rag1', 'f-ground'] },
+    { id: 'rag1', m: 'B', yr: 1, s: 'partial', nw: 1, ph: 'now', x: 520, y: 440, w: 180, h: 76, t: 'RAG-1 型態知識', f: 'pattern_kb.py · data/knowledge/patterns', o: '→ H_r [K,512,768]', sub: '必做：L_ground 依賴它',
+      d: '檢索「什麼是反轉、什麼是突破」這類定義，編碼成 H_r 進融合層，幫助模型理解圖。L_ground 比的是 H_t 對這 K 段定義的注意力，所以一定要做。',
+      i: ['query：K 線圖池化向量（ViT H_v 池化）', '型態定義知識庫（7 段）'], out: ['H_r [K, 512, 768] → 融合層'],
+      st: ['從教科書或技術分析資料庫整理 7 段英文定義，跟型態清單一一對應；找不到的用 LLM 產生＋人工校對', '備用來源：StockCharts ChartSchool 型態文章（內容詳細、有各階段量能，無授權聲明，只參考改寫並註明出處）、Hugging Face propfirmkey/trading-finance-glossary-nlp（CC BY 4.0，標註出處可直接用，但每條只有一句）', 'query 與知識庫做 cosine，取 top-K', '每段定義用 FinBERT 編碼成 [512,768]', '經共用投影 P_r 後，給 L_ground，也跟 H_t、H_v 一起進融合層'],
+      td: ['人工校對 7 段定義（目前是 LLM 草稿，status: draft）', '校對後重建 patterns.npz 與 α*'], fm: ['f-rag1', 'f-ground'] },
     { id: 'vit_ft', m: 'B', yr: 1, s: 'todo', x: 95, y: 556, w: 160, t: 'ViT 微調（規劃）', f: 'LoRA／領域預訓練', o: '只保留規劃',
       d: '只列為規劃。前期實驗（部分微調、LoRA r4、MaxViT、DINOv3）都沒有穩定勝過凍結 ViT；L_align 先只更新投影層，真的需要再讓梯度回到 ViT。',
       n: ['LoRA r4 五 seed：+0.033±0.045，只勝 3/5（#83）', 'MaxViT-T／DINOv3／MaxViT-S 都沒勝過 Frozen（#88–#90）'], r: ['#36', '#78', '#83', '#88', '#89', '#90'] },
     { id: 'bert_ft', m: 'B', yr: 1, s: 'todo', x: 312, y: 556, w: 188, t: 'FinBERT 微調（規劃）', f: 'LoRA／長文本編碼', o: '只保留規劃',
       d: '只列為規劃。FinBERT 同時用在 K 線敘述、RAG-1 定義與 RAG-2 候選庫，微調會一次影響這三處。' },
-    { id: 'l_align', m: 'D', yr: 1, s: 'todo', nw: 1, ph: 'now', x: 270, y: 650, w: 230, t: 'L_align', f: 'ViT（H_v）vs. FinBERT（H_t）', o: '⟨H_v H_t⟩ / τ',
+    { id: 'l_align', m: 'D', yr: 1, s: 'done', nw: 1, ph: 'now', x: 270, y: 650, w: 230, t: 'L_align', f: 'ViT（H_v）vs. FinBERT（H_t）', o: '⟨H_v H_t⟩ / τ',
       d: 'ViT 的 H_v 與 FinBERT 的 H_t 比：同一天的 K 線圖與它的文字敘述要靠近，其他天的要遠離。公式照計畫書 3.5 (1)，只是 H_t 從新聞換成 K 線敘述；不經過融合層。P_v、P_t 跟融合層共用，所以 L_align 會直接影響融合層拿到的輸入。',
       i: ['H_v：ViT 輸出（投影 P_v 後）', 'H_t：FinBERT 輸出（投影 P_t 後）'], out: ['λ1·L_align → 複合 Loss'],
-      grad: ['b_vit', 'b_capenc'], n: ['不需要 GPU，可以先單獨訓練驗證', '梯度只更新共用投影 P_v、P_t；ViT、FinBERT 本體凍結'], td: ['組 batch 時避開同型態的日子', '敘述寫進量能、位置等細節'], fm: ['f-align'] },
-    { id: 'l_ground', m: 'D', yr: 1, s: 'todo', nw: 1, ph: 'now', x: 520, y: 650, w: 120, t: 'L_ground', f: 'α̂ 取自融合層', o: 'KL(α* ‖ α̂)',
-      d: '比較 K 線敘述（H_t）對 RAG-1 各段型態定義（H_r）的注意力 α̂，與相關分數 α*。公式照計畫書。α̂ 取融合層裡 H_t token 對 H_r token 的注意力；α* 用 H_t 與各段 H_r 的相似度換算（用哪份向量見 Q13）。',
-      i: ['α̂：融合層裡 H_t 對 K 段 H_r 的注意力', 'α*：H_t 與各段 H_r 的相似度換算'], out: ['λ2·L_ground → 複合 Loss'],
+      grad: ['b_vit', 'b_capenc'], n: ['不需要 GPU，可以先單獨訓練驗證', '梯度只更新共用投影 P_v、P_t；ViT、FinBERT 本體凍結'], td: ['τ 與 batch 大小再調（同 batch 不放同型態，上限 7）'], fm: ['f-align'] },
+    { id: 'l_ground', m: 'D', yr: 1, s: 'done', nw: 1, ph: 'now', x: 520, y: 650, w: 120, t: 'L_ground', f: 'α̂ 取自融合層', o: 'KL(α* ‖ α̂)',
+      d: '比較 K 線敘述（H_t）對 RAG-1 各段型態定義（H_r）的注意力 α̂，與相關分數 α*。公式照計畫書。α̂ 取融合層裡 H_t token 對 H_r token 的注意力；α* 直接用 K 線敘述的型態標籤（敘述型態那段 0.9、其他段平分 0.1，Q13，#131）。',
+      i: ['α̂：融合層裡 H_t 對 K 段 H_r 的注意力', 'α*：K 線敘述的型態標籤（label smoothing 0.1）'], out: ['λ2·L_ground → 複合 Loss'],
       grad: ['c_fusion', 'b_capenc', 'rag1'], n: ['梯度直接訓練融合層本身，也經共用投影 P_t、P_r 回傳', '不需要 GPU'],
-      td: ['α* 用投影前還是投影後的向量（Q13）', '實作從融合層取 H_t→H_r 注意力'], r: ['#99', '#100'], fm: ['f-ground'] },
-    { id: 'lbl_alpha', m: 'L', yr: 1, s: 'todo', ph: 'now', x: 760, y: 650, w: 230, t: 'α* 相關性分數', f: 'H_t、H_r 相似度 → softmax', o: '備用：Haiku 打 0–3 分',
-      d: 'RAG-1 各段定義跟今天 K 線的相關程度。11/04 決定先試 (b)：H_t 與各段 H_r 的 cosine 相似度，經 softmax 換成 K 段之間的分布。效果不好時改用 (c) Haiku 逐段打 0–3 分（可沿用現有的 generate_alpha_star.py）。',
-      i: ['H_t：K 線敘述的 FinBERT 編碼', 'H_r：RAG-1 檢索到的 K 段定義'], out: ['data/labels/grounding/{TICKER}_rag1.json（建議命名）'],
-      td: ['用投影前的凍結向量還是投影後的向量（Q13）'], r: ['#99', '#105'] },
-    { id: 'c_fusion', m: 'C', yr: 1, s: 'partial', ph: 'now', x: 50, y: 780, w: 650, h: 80, t: '跨模態融合層', f: 'fusion/model.py（共用投影 P_v、P_t、P_r ＋ 2 層 × 8 頭）', o: '[CLS ; H_t ; 394 圖 token ; K 個 RAG-1 定義 token] → CLS → Z_fused', sub: '計畫書 F([H_t; H_v; H_r])：H_t 改成 K 線敘述，H_r 改成 RAG-1 定義；新聞與舊 H_r 拿掉',
+      td: ['正確那段沒被取到的天不算 L_ground（報告的 ground_coverage）；檢索準了之後覆蓋率會上升'], r: ['#99', '#100', '#131'], fm: ['f-ground'] },
+    { id: 'lbl_alpha', m: 'L', yr: 1, s: 'done', ph: 'now', x: 760, y: 650, w: 230, t: 'α* 相關性分數', f: 'grounding/alpha.py（型態標籤）', o: '敘述型態那段 0.9 · 其他平分 0.1',
+      d: '11/05 改用 (a) 型態類別直接對應（#131）：K 線敘述的型態就是答案，當天取到的 K 段裡那段定義拿 0.9，其他段平分 0.1；正確那段沒被取到的天不算 L_ground。原本 (b) 用凍結 FinBERT 的 cosine 換算，AAPL 實測只有 18.7% 的天最高分那段跟敘述型態一致（1,381 天裡 710 天指向突破、570 天指向上漲），保留在 alpha_star_rag1.py 只當對照。',
+      i: ['K 線敘述的型態（chart_caption 答案卷）', 'RAG-1 當天取到的 K 段'], out: ['訓練時即時算，不另存答案卷'],
+      n: ['cosine 版本：--alpha_star_space frozen／projected'], r: ['#99', '#105', '#131'] },
+    { id: 'c_fusion', m: 'C', yr: 1, s: 'done', ph: 'now', x: 50, y: 780, w: 650, h: 80, t: '跨模態融合層', f: 'fusion/model.py · fusion/train.py（共用投影 P_v、P_t、P_r ＋ 2 層 × 8 頭）', o: '[CLS ; H_t ; 394 圖 token ; K 個 RAG-1 定義 token] → CLS → Z_fused', sub: '計畫書 F([H_t; H_v; H_r])：H_t 改成 K 線敘述，H_r 改成 RAG-1 定義；新聞與舊 H_r 拿掉',
       d: '輸入照計畫書是 [H_t; H_v; H_r]：H_t 是 K 線敘述的 FinBERT 編碼、H_v 是 K 線圖、H_r 是 RAG-1 的型態定義，輸出 Z_fused。L_align、L_ground 都在融合層之前算，不從這裡取。',
-      i: ['H_t [512,768]（K 線敘述）', 'H_v [2,197,768]', 'RAG-1 的 H_r [K,512,768]'], out: ['checkpoints/fusion_{TICKER}_v2.pt（建議命名）'],
-      now: '現行程式吃 H_t（新聞）＋H_v＋H_r（舊 RAG 財報），用 3 類 CE 代打訓練。', goal: '吃 H_t（K 線敘述）＋H_v＋H_r（RAG-1 定義）；聯合訓練時由 L_belief 的梯度更新。',
-      td: ['輸入投影改成跟 L_align、L_ground 共用的 P_v、P_t、P_r', 'H_t 改讀 K 線敘述的編碼', '接上 RAG-1 的 H_r', '拿掉新聞與舊 H_r'], r: ['#43', '#104'] },
+      i: ['H_t [512,768]（K 線敘述）', 'H_v [2,197,768]', 'RAG-1 的 H_r [K,512,768]'], out: ['checkpoints/fusion_{TICKER}.pt'], goal: '吃 H_t（K 線敘述）＋H_v＋H_r（RAG-1 定義）；聯合訓練時由 L_belief 的梯度更新。',
+      td: ['Haiku 敘述跑完後重訓', '遮掉 H_t 消融（--mask_ht）＋型態 probe（validation/pattern_probe.py）'], r: ['#43', '#104'] },
     { id: 'zf', m: 'C', yr: 0, s: 'partial', ph: 'now', x: 260, y: 910, w: 200, t: 'Z_fused', f: '{T}_index.npz', o: '[768] · 每天一筆',
       d: '承載 K 線圖、K 線敘述與型態定義的資訊。給 Decoder 當 prefix，也給 RL 當 state 與附屬診斷。', out: ['data/outputs/z_fused/{TICKER}_index.npz'] },
 
@@ -702,15 +695,14 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line)
       d: 'Z_fused 投影成 4 個 LLM prefix token（現行程式已實作）。', r: ['#57'] },
     { id: 'decoder', m: 'D', yr: 1, s: 'partial', ph: 'both', main: 1, x: 50, y: 1250, w: 650, h: 96, t: 'Decoder：LLaMA-2 7B（4-bit 凍結）＋ LoRA', f: 'decoder/model.py · decoder/train.py', o: 'context = [ 4 個 prefix ; RAG-2 候選短版文字 × 15–20 段 ; y_belief ]', sub: '只生成一次；看 Z_fused 的同時看候選，由注意力自己挑要參考哪幾段',
       d: '以 Z_fused（prefix）與 RAG-2 候選文字為條件生成敘述。訓練時 teacher forcing 跑 y_belief，只算 L_belief。',
-      i: ['prefix [4, 4096]', 'RAG-2 的 15–20 段短版文字', 'y_belief（teacher forcing）'], out: ['checkpoints/decoder_v2/（建議命名）'],
-      st: ['組 context：prefix → 每段候選加標頭「[來源 日期]」→ y_belief', 'forward：只對 y_belief token 算 L_belief', '加上 L_align、L_ground（融合層算好的），一次 backward'],
-      now: '現行程式只有 prefix＋y_belief，max_length 512。', goal: 'context 多了 RAG-2 候選，序列約 1,100–1,300 token。',
-      td: ['主線：加 RAG-2 的長 context，等 GPU', '選配：Mac 先跑不加 RAG-2 的 512 版本', 'L_belief 怎麼解讀：測試完再決定'], r: ['#57', '#59', '#64'], fm: ['f-onepass', 'f-belief'] },
-    { id: 'gen', m: 'D', yr: 1, s: 'todo', nw: 1, ph: 'gpu', main: 1, x: 260, y: 1390, w: 200, t: '可解釋敘述', f: 'generate()', o: '<TREND><RISK> 敘述＋依據',
+      i: ['prefix [4, 4096]', 'RAG-2 的 15–20 段短版文字', 'y_belief（teacher forcing）'], out: ['checkpoints/decoder/（不加 RAG-2：decoder_512/）'],
+      st: ['組 context：prefix → 每段候選加標頭「[來源 日期]」→ y_belief', 'forward：只對 y_belief token 算 L_belief', '加上 L_align、L_ground（融合層算好的），一次 backward'], goal: 'context 多了 RAG-2 候選，序列約 1,100–1,300 token。',
+      td: ['主線：加 RAG-2 的長 context，等 GPU（程式已完成，tiny 模型 smoke test 通過）', '選配：Mac 先跑 --no_rag2 的 512 版本', 'L_belief 怎麼解讀：測試完再決定'], r: ['#57', '#59', '#64'], fm: ['f-onepass', 'f-belief'] },
+    { id: 'gen', m: 'D', yr: 1, s: 'partial', nw: 1, ph: 'gpu', main: 1, x: 260, y: 1390, w: 200, t: '可解釋敘述', f: 'generate()', o: '<TREND><RISK> 敘述＋依據',
       d: '最後的敘述；Decoder 對各段候選的注意力可以標出每句話主要參考哪幾段（只用來展示，不算 Loss）。', fm: ['f-onepass'] },
     { id: 'dec_eval', m: 'D', yr: 1, s: 'partial', ph: 'gpu', main: 1, x: 50, y: 1500, w: 650, h: 72, t: '評估與優化', f: 'decoder/evaluate.py（擴充）', o: 'TREND／RISK · LLM-judge · 型態一致率 · 打亂 Z_fused',
       d: '以型態一致率為主：看 Decoder 敘述裡的 K 線型態跟 Haiku 敘述一不一致。候選文字一開始就在 context，型態一致率分不出 Decoder 是看圖還是抄文件，所以補「打亂 Z_fused」當輔助檢查。',
-      td: ['實作型態一致率', '實作打亂 Z_fused 檢查'], fm: ['f-onepass'] },
+      td: ['在 GPU 訓練完後跑 evaluate.py（型態一致率、打亂 Z_fused 已實作）', 'y_belief 本身不寫型態，型態提到率可能很低'], fm: ['f-onepass'] },
 
     // ---- 文字路徑（中欄） ----
     { id: 'src_macro', m: 'A', yr: 1, s: 'done', x: 1230, y: 64, w: 230, h: 76, t: '總經資料（pending）', f: 'fetch_macro.py · --macro', o: '→ FRED/ALFRED · FOMC · SEP', sub: '資料源保留，暫不進 v2 流程',
@@ -728,34 +720,31 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line)
       d: '格式不變。v2 裡它是 RAG-2 候選庫、y_belief 答案卷的來源。' },
     { id: 'doc_index', m: 'B', yr: 1, s: 'partial', nw: 1, ph: 'now', x: 760, y: 440, w: 440, h: 70, t: 'RAG-2 候選庫（依日期過濾）', f: 'chunk 原文 · available_date · 來源', o: 'AAPL 每天候選約 82 段：新聞 11、財報 52、法說 19',
       d: '把新聞、財報、法說會 chunk 都放進同一個庫，每段帶可得日期與來源。現行向量庫只放財報與法說，要把新聞也放進來。',
-      td: ['新聞也放進候選庫', '依 available date 過濾'], fm: ['f-rag2'] },
-    { id: 'rag2', m: 'B', yr: 1, s: 'todo', nw: 1, ph: 'now', x: 760, y: 1250, w: 440, h: 80, t: 'RAG-2 當天候選篩選（生成前）', f: '日期過濾 ＋ 固定章節 ＋ 壓成短版', o: '→ 15–20 段短版文字進 Decoder context', sub: '不做相似度排序、不學 W_q、不算 Loss',
+      td: ['MSFT 還沒有新聞／財報／法說資料，要先抓'], fm: ['f-rag2'] },
+    { id: 'rag2', m: 'B', yr: 1, s: 'partial', nw: 1, ph: 'now', x: 760, y: 1250, w: 440, h: 80, t: 'RAG-2 當天候選篩選（生成前）', f: 'rag2.py：日期過濾 ＋ 固定章節 ＋ 壓成短版', o: '→ 15–20 段短版文字進 Decoder context', sub: '不做相似度排序、不學 W_q、不算 Loss',
       d: '生成前依日期與來源把當天候選縮到 15–20 段，每段壓成標題＋第一句（或前約 40 token），放進 Decoder context。Decoder 的注意力自己挑要參考哪幾段。',
-      i: ['RAG-2 候選庫'], out: ['data/outputs/rag2/{TICKER}/{date}.json（建議命名）'],
+      i: ['RAG-2 候選庫'], out: ['data/outputs/rag2/{TICKER}/{date}.json'],
       st: ['候選：available_date ≤ t 的當天新聞、當前背景財報、t 以前的 8-K、最近一場法說會', '新聞與當天 8-K 全收；背景財報固定挑 MD&A、風險因素開頭；法說會挑重要段落', '每段壓成短版、加上來源與日期標頭', '交給 Decoder'],
-      td: ['確定法說會挑哪些段落'], fm: ['f-rag2', 'f-onepass'] },
+      td: ['人工抽查幾天的候選（--show）', '確定法說會挑哪些段落（目前挑財務關鍵字最多的 4 段）'], fm: ['f-rag2', 'f-onepass'] },
     { id: 'l_belief', m: 'D', yr: 1, s: 'done', ph: 'gpu', x: 860, y: 1390, w: 230, t: 'L_belief', f: 'Decoder 文字 vs. y_belief', o: '−Σ log p(y_t | …)',
       d: '公式照計畫書；context 多了 RAG-2 候選。', grad: ['decoder', 'projector', 'c_fusion'], fm: ['f-belief'] },
-    { id: 'l_total', m: 'D', yr: 1, s: 'todo', ph: 'both', main: 1, x: 860, y: 1500, w: 230, h: 72, t: '複合 Loss', f: 'λ1·La + λ2·Lg + λ3·Lb', o: '一次 backward',
+    { id: 'l_total', m: 'D', yr: 1, s: 'partial', ph: 'both', main: 1, x: 860, y: 1500, w: 230, h: 72, t: '複合 Loss', f: 'λ1·La + λ2·Lg + λ3·Lb', o: '一次 backward',
       d: 'L = λ1·L_align + λ2·L_ground + λ3·L_belief（計畫書 3.5 (4)）。ViT、FinBERT、LLaMA 本體凍結。',
-      grad: ['decoder', 'projector', 'c_fusion', 'b_vit', 'b_capenc', 'rag1'], td: ['實作聯合訓練迴圈', 'λ 在 Validation 上調'], fm: ['f-overview'] },
+      grad: ['decoder', 'projector', 'c_fusion', 'b_vit', 'b_capenc', 'rag1'], td: ['decoder/train.py 已實作聯合訓練迴圈', 'λ 在 Validation 上調'], fm: ['f-overview'] },
 
     // ---- 附屬診斷（Decoder 完成前的代打） ----
-    { id: 'c_clf', m: 'P', yr: 1, s: 'done', ph: 'now', x: 760, y: 915, w: 230, t: '市場情緒分類', f: 'validation/classifier.py', o: '→ acc / macro F1',
-      d: '凍結 Z_fused，用 Logistic Regression 預測 3 類漲跌。Decoder 完成前用來檢查 Z_fused 有沒有資訊；v2 的 Z_fused 內容改變，要重跑一次。',
+    { id: 'c_clf', m: 'P', yr: 1, s: 'done', ph: 'now', x: 760, y: 915, w: 230, t: '市場情緒分類（附屬參考）', f: 'validation/classifier.py', o: '→ acc / macro F1',
+      d: '凍結 Z_fused，用 Logistic Regression 預測 3 類漲跌。只當附屬參考，不當主要結果：融合層沒有為漲跌三分類訓練（#125）。',
       st: ['Train fit', 'Validation 選 C ∈ {0.01, 0.1, 1, 10}', 'Train+Validation refit', 'Test 只評一次'],
       n: ['現行架構 strict baseline（AAPL）：Test accuracy 0.3547、macro F1 0.3547（#86）', '跟 Decoder 的 <TREND> 是同一個判斷（#43）'], r: ['#43', '#85', '#86'] },
-    { id: 'c_evhead', m: 'P', yr: 1, s: 'done', ph: 'now', x: 1010, y: 915, w: 170, t: '事件驗證頭', f: 'event_validation_head', o: '→ 7 類 multi-label',
-      d: 'Z_fused → 每類一個 Logistic Regression 預測當天事件，對應計畫書第 19 頁的「診斷性分類測試」。v2 的 Z_fused 不含新聞，事件資訊預期會變少。',
-      n: ['現行架構嚴格切分後 micro F1 0.111（#86）'], r: ['#34', '#37', '#86'] },
     { id: 'c_report', m: 'P', yr: 1, s: 'done', ph: 'now', x: 760, y: 1000, w: 230, t: '第一階段報告', f: 'pipeline_report.py', o: '→ reports/{run_id}/',
       d: 'run_pipeline.py 結束後自動輸出 report.md、report.json、圖表與來源快照。', r: ['#97', '#98'] },
 
     // ---- LLM 答案卷（右欄） ----
-    { id: 'lbl_event', m: 'L', yr: 1, s: 'done', x: 1250, y: 915, w: 230, t: '事件 ground truth', f: 'event_ground_truth_llm.py', o: '149 天 · 7 類',
-      d: '依年份分層抽樣 150 天，LLM 輔助標註 7 類事件。', r: ['#32'] },
+    { id: 'lbl_event', m: 'L', yr: 1, s: 'done', x: 1250, y: 915, w: 230, t: '事件 ground truth', f: 'event_ground_truth_llm.py', o: '1,381 天 · 7 類',
+      d: '以 Claude Haiku 5.5 全量重標 AAPL 1,381 天（657 天至少有一個事件；LAWSUIT 345、PRODUCT_LAUNCH 277、MANAGEMENT_CHANGE 69、EARNINGS 50、DIVIDEND 36、GUIDANCE 29、MA 16）。最早是依年份分層抽樣 150 天。事件驗證頭與 pipeline 裡的事件抽取已移除（#130），目前不接主線；之後可用來檢查 Decoder 敘述有沒有提到正確事件。', r: ['#32', '#130'] },
     { id: 'lbl_ybelief', m: 'L', yr: 1, s: 'partial', ph: 'now', x: 1250, y: 1390, w: 230, t: 'y_belief 答案卷', f: 'generate_y_belief.py', o: 'DeepSeek · 格式不變',
-      d: '<TREND>（A 的 label）＋<RISK_LEVEL>＋2–4 句敘述。這次不動。', td: ['補齊 AAPL 剩餘天數與 NVDA、MSFT'], r: ['#57', '#64'] },
+      d: '<TREND>（A 的 label）＋<RISK_LEVEL>＋2–4 句敘述。這次不動。', td: ['補齊 AAPL 剩餘天數與 NVDA、MSFT（聯合訓練只用有 y_belief 的天）'], r: ['#57', '#64'] },
 
     // ---- 第二階段 ----
     { id: 'rl_env', m: 'R', yr: 2, s: 'partial', x: 50, y: 1695, w: 200, t: 'MDP 環境', f: 'rl/env.py', o: 's = [Z_fused, w_{t−1}]', d: '不受這次調整影響。' },
@@ -793,7 +782,6 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line)
     { f: 'c_fusion', t: 'zf', l: 'CLS → Z_fused', p: [[360, 860], [360, 910]], c: 'key', k: 1 },
     { f: 'zf', t: 'c_clf', l: 'Z_fused（凍結）', p: [[460, 947], [760, 947]], c: 'dash', lp: [600, 947] },
     { f: 'c_clf', t: 'c_report', l: 'metrics', p: [[875, 979], [875, 1000]] },
-    { f: 'lbl_event', t: 'c_evhead', l: '7 類事件', p: [[1250, 947], [1180, 947]] },
     { f: 'zf', t: 'projector', l: 'Z_fused [768]', p: [[360, 974], [360, 1150]], c: 'key', k: 1, lp: [360, 1100] },
     { f: 'projector', t: 'decoder', l: 'prefix [4, 4096]', p: [[360, 1214], [360, 1250]], c: 'key', k: 1 },
     { f: 'doc_index', t: 'rag2', l: '只取 available ≤ t', p: [[1190, 510], [1190, 1250]], k: 1, lp: [1190, 1200] },
@@ -814,7 +802,7 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line)
     { f: 'multi', t: 'rl_env', l: 'N 資產（未做）', p: [[150, 1795], [150, 1759]], c: 'todo' },
     // 不畫，但算進上下游
     { f: 'a_split', t: 'c_fusion', hidden: 1 }, { f: 'a_split', t: 'decoder', hidden: 1 }, { f: 'a_split', t: 'rl_ppo', hidden: 1 },
-    { f: 'a_split', t: 'c_clf', hidden: 1 }, { f: 'zf', t: 'c_evhead', hidden: 1 },
+    { f: 'a_split', t: 'c_clf', hidden: 1 },
     { f: 'a_docjson', t: 'lbl_ybelief', hidden: 1 }, { f: 'a_docjson', t: 'lbl_event', hidden: 1 }, { f: 'lbl_ybelief', t: 'decoder', hidden: 1 },
     { f: 'a_caption', t: 'lbl_alpha', hidden: 1 }, { f: 'rag1', t: 'lbl_alpha', hidden: 1 }
   ];
@@ -869,8 +857,8 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line)
   band(14, 392, 1472, 352, 'var(--b)', 'MODULE B · 編碼與檢索');
   band(14, 756, 724, 240, 'var(--c)', 'MODULE C · 融合 [H_t; H_v; H_r]');
   band(14, 1130, 1472, 495, 'var(--d)', 'DECODER · 只生成一次 · 三個 Loss 一起訓練');
-  el('rect', { x: 750, y: 884, width: 736, height: 196, rx: 10, style: 'fill:var(--p);fill-opacity:0.07;stroke:var(--p);stroke-opacity:0.6;stroke-dasharray:4 3' }, bg);
-  txt(bg, 762, 904, 'band-label', '附屬診斷（Decoder 完成前的代打，保留）', 'fill:var(--p)');
+  el('rect', { x: 750, y: 884, width: 252, height: 196, rx: 10, style: 'fill:var(--p);fill-opacity:0.07;stroke:var(--p);stroke-opacity:0.6;stroke-dasharray:4 3' }, bg);
+  txt(bg, 762, 904, 'band-label', '附屬診斷（代打，保留）', 'fill:var(--p)');
   [['新聞、財報、法說會不再進融合層，', 'frame-sub'], ['只透過 RAG-2 篩選後放進 Decoder 的 context。', 'frame-sub'], ['原本用 h_v＋h_t 檢索 top-3 → H_r 的 RAG 已拿掉。', 'frame-sub'], ['L_align、L_ground、融合層共用同一組投影 P_v、P_t、P_r。', 'frame-sub']]
     .forEach((nt, i) => txt(bg, 775, 560 + i * 22, nt[1], nt[0]));
   el('rect', { x: 8, y: 1665, width: 1484, height: 215, rx: 14, style: 'fill:none;stroke:var(--line);stroke-width:1.2' }, bg);

@@ -23,6 +23,8 @@ VECTORS = DATA / "vectors"                  # B 的交付物
 OUTPUTS = DATA / "outputs"                  # C 的產出
 PIPELINE_REPORTS = OUTPUTS / "reports"      # 每次正式 pipeline 的 Markdown／圖表 bundle
 LABELS = DATA / "labels"                    # 人工／LLM 標記的答案卷（進版本控制，見 .gitignore）
+KNOWLEDGE_PATTERNS = DATA / "knowledge" / "patterns"   # RAG-1 型態定義（進版本控制）
+PATTERN_KB = VECTORS / "_patterns"          # RAG-1 定義的 FinBERT 編碼（可重建，不進版控）
 
 
 def daily_json(ticker: str, date: str) -> Path:
@@ -30,15 +32,9 @@ def daily_json(ticker: str, date: str) -> Path:
     return DATASET / ticker / f"{date}.json"
 
 
-def vectors_root(tag: str | None = None) -> Path:
-    """向量根目錄；tag（例如 recency）是另一套檢索設定的實驗 H_r，存在 data/vectors_{tag}/，
-    該目錄只放 H_r.npy 與 index.json，H_v／H_t 仍讀正式的 data/vectors/。"""
-    return DATA / f"vectors_{tag}" if tag else VECTORS
-
-
-def vector_dir(ticker: str, date: str, tag: str | None = None) -> Path:
-    """B 的每日向量目錄路徑。"""
-    return vectors_root(tag) / ticker / date
+def vector_dir(ticker: str, date: str) -> Path:
+    """B 的每日向量目錄路徑（H_v、H_t 與 index.json）。"""
+    return VECTORS / ticker / date
 
 
 def temporal_split_path(ticker: str) -> Path:
@@ -65,22 +61,29 @@ def y_belief_path(ticker: str) -> Path:
     return LABELS / "y_belief" / f"{ticker}.json"
 
 
-def grounding_labels_path(ticker: str, vectors_tag: str | None = None) -> Path:
-    """L_ground 的 LLM 相關性分數：{date: {chunk_ids, scores, reasons, ...}}。是答案卷，
-    進版本控制，見 module_c_fusion/grounding/generate_alpha_star.py。
-    vectors_tag（例如 recency）對應另一套檢索的 H_r，答案卷另存 {ticker}_{tag}.json。
-    """
-    return LABELS / "grounding" / (f"{ticker}_{vectors_tag}.json" if vectors_tag else f"{ticker}.json")
+def chart_caption_path(ticker: str) -> Path:
+    """K 線文字敘述答案卷（Claude Haiku 讀圖）：{date: {pattern, volume_label, kline, volume, combined, ...}}。
+    進版本控制，見 module_a_data/chart_caption.py（decisions.md #109）。"""
+    return LABELS / "chart_caption" / f"{ticker}.json"
+
+
+def rag1_alpha_star_path(ticker: str) -> Path:
+    """L_ground 的 α* 原始分數：每天 H_t 與 7 段 RAG-1 定義的 cosine（凍結向量，Q13 選項 A）。
+    見 module_c_fusion/grounding/alpha_star_rag1.py；是答案卷，進版本控制。"""
+    return LABELS / "grounding" / f"{ticker}_rag1.json"
 
 
 def fusion_checkpoint_path(tickers: str | list[str], tag: str | None = None) -> Path:
-    """Fusion checkpoint；單股與多股都把 ticker 寫進檔名，避免互相覆蓋。
-    tag（例如 grounding 實驗組名）會接在檔名最後，實驗組不會蓋掉正式 checkpoint。
-    """
+    """Fusion checkpoint：fusion_{TICKERS}[_{tag}].pt。"""
     names = [tickers] if isinstance(tickers, str) else list(tickers)
     if tag:
         names.append(tag)
     return OUTPUTS / "checkpoints" / f"fusion_{'_'.join(names)}.pt"
+
+
+def rag2_path(ticker: str, date: str) -> Path:
+    """RAG-2 每日候選（15–20 段短版文字），見 module_b_encoder/rag/rag2.py。"""
+    return OUTPUTS / "rag2" / ticker / f"{date}.json"
 
 
 def z_fused_dir(tag: str | None = None) -> Path:

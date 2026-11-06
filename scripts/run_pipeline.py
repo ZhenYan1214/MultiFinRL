@@ -1,4 +1,8 @@
-"""第一階段 pipeline 入口：A -> B -> C（Fusion／分類驗證）依序執行。
+"""第一階段 pipeline 入口：A -> B -> C（融合層 L_align＋L_ground／分類驗證）依序執行。
+
+B 的步驟（docs/architecture/architecture.html）：K 線文字敘述（Claude Haiku，存檔重用）-> 向量（H_v、
+H_t = 敘述）-> RAG-1 定義庫 -> α* -> RAG-2 候選。Decoder 聯合訓練（decoder/train.py）不在這支裡，
+要另外跑（主線需要 GPU）。
 
 平常各自開發時，直接跑自己模組的主程式即可，不需要這支；
 這支是給「要一次跑出一支股票從頭到尾的完整結果」時用的，涵蓋 A 的全部資料來源
@@ -52,13 +56,12 @@ def main():
     ap.add_argument("--macro", action="store_true",
                     help="ETF／指數總經模式：抓 FRED/FOMC、跳過公司文件；ViT 圖片讀 macro.vision_inputs")
     ap.add_argument("--no_weighted", action="store_true",
-                    help="C 訓練/驗證預設帶 --weighted（decisions.md #28 定案），"
-                         "加這個旗標可以跑不加權的對照組")
+                    help="分類驗證預設帶 --weighted（decisions.md #28 定案），加這個旗標跑不加權的對照組")
     args = ap.parse_args()
 
     if args.fake:
         run("module_b_encoder.generate_vectors", "--fake", "--n", "10")
-        run("module_c_fusion.fusion.train", "--fake", "--n", "16", "--epochs", "1")
+        run("module_c_fusion.fusion.train", "--fake", "--n", "32", "--epochs", "1")
         print("\n[pipeline] fake 流程通過：B 產出格式 -> C 讀入訓練皆正常")
         return
 
@@ -96,18 +99,23 @@ def main():
         run("module_a_data.crawler.fetch_transcripts", "--ticker", args.ticker)
     macro_args = ["--macro"] if args.macro else []
     run("module_a_data.build_dataset", "--ticker", args.ticker, *macro_args, *limit_args)
+    # K 線文字敘述（Claude Haiku 讀圖，會呼叫 API；已做過的日期會跳過）
+    run("module_a_data.chart_caption", "--ticker", args.ticker, "--workers", "8",
+        *(["--limit", str(args.limit)] if args.limit else []))
 
-    # B：向量 + 事件抽取
+    # B：RAG-1 定義 -> 向量 -> RAG-2（事件抽取與事件驗證頭已移出 pipeline，#130）
+    run("module_b_encoder.rag.pattern_kb")
     run("module_b_encoder.generate_vectors", "--ticker", args.ticker, *limit_args)
-    if args.macro:
-        print("\n[pipeline] macro 模式略過公司事件抽取：現有七類 ground truth 不適用 ETF／指數")
-    else:
-        run("module_b_encoder.event_extraction", "--ticker", args.ticker,
-            "--run_id", run_id)
+    # α* 預設用敘述的型態標籤（#131），不需要 alpha_star_rag1 的 cosine 答案卷
+    run("module_b_encoder.rag.rag2", "--ticker", args.ticker, *limit_args)
 
-    # C（第一階段）：融合訓練 + 分類驗證
-    run("module_c_fusion.fusion.train", "--ticker", args.ticker,
-        "--run_id", run_id, *weighted_args)
+    # C（第一階段）：融合層 L_align＋L_ground -> Z_fused
+    run("module_c_fusion.fusion.train", "--ticker", args.ticker, "--run_id", run_id)
+    # 型態 probe 只看遮掉 H_t 的融合層（敘述直接寫了型態，沒遮會偷看答案，#125）
+    run("module_c_fusion.fusion.train", "--ticker", args.ticker, "--mask_ht", "--tag", "mask_ht",
+        "--run_id", run_id)
+    run("module_c_fusion.validation.pattern_probe", "--ticker", args.ticker, "--run_id", run_id)
+    # 3 類情緒分類器：附屬參考，不當主要結果（#125）
     run("module_c_fusion.validation.classifier", "--ticker", args.ticker,
         "--run_id", run_id, *weighted_args)
 
@@ -126,7 +134,9 @@ def main():
     #     run("module_c_fusion.backtest.backtest", "--ticker", args.ticker,
     #         "--strategy", strategy, *strategy_args)
 
-    print("\n[pipeline] 第一階段 A -> B -> C（Fusion + 分類驗證）完成")
+    print("\n[pipeline] 第一階段 A -> B -> C（融合層 + 分類驗證）完成")
+    print("[pipeline] 下一步：python -m module_c_fusion.decoder.train --ticker", args.ticker,
+          "（主線加 RAG-2，需要 GPU；Mac 可先跑 --no_rag2）")
     print("[pipeline] [第二階段 - Pending] RL 與 Backtest 未執行")
 
 

@@ -13,7 +13,8 @@
 4. Download SEC EDGAR filings (10-K/10-Q as background, 8-K as timestamped supplementary events that don't overwrite the background — see `docs/decisions.md` #41/#44/#45) and earnings-call transcripts via the official Alpha Vantage API (`crawler/fetch_transcripts.py`, replacing the earlier third-party `foolcalls` scraper), chunked to ≤512 tokens (`crawler/fetch_filings.py`, `preprocess/chunker.py`). ETF/index mode uses point-in-time FRED/ALFRED indicators, FOMC news and SEP dot plots instead (`crawler/fetch_macro.py`, `build_dataset.py --macro`).
 5. Generate BULLISH / BEARISH / NEUTRAL labels from the 5-trading-day forward return vs. same-day close. Quantile thresholds are computed from the Train return distribution only, then frozen and applied to Validation/Test; the two boundaries each keep a 5-trading-day gap. The old fixed ±2% version is kept as `labeling.py`'s `make_label_fixed_threshold()` for ablation comparisons only.
 6. Assemble everything into one JSON record per day (`build_dataset.py`).
-7. **Deliver an initial 50–100 sample days early** so B and C can start development against real formats sooner.
+7. Write the daily **chart caption** (`chart_caption.py`, decisions #109): Claude Haiku reads that day's candlestick and volume charts (no ticker, no date, no future prices), picks one of 7 patterns (`shared/patterns.py`: uptrend, downtrend, consolidation, breakout, breakdown, top reversal, bottom reversal), and writes three English sections `[K-line] … [Volume] … [Combined] …`. The volume label (one of 4: spike, expanding, contracting, flat; spike only counts the last 3 days) is computed from OHLCV and passed to Haiku as a plain description without any ratios, so the volume section agrees with it (decisions #127, #128). Captions are generated once and saved as an answer sheet in `data/labels/chart_caption/{TICKER}.json` (in git); B encodes them into H_t.
+8. **Deliver an initial 50–100 sample days early** so B and C can start development against real formats sooner.
 
 ## Suggested Order
 
@@ -22,6 +23,7 @@ fetch_ohlcv -> chart_generator -> labeling      # fastest path to a usable sampl
 fetch_news / fetch_news_alpaca -> text_cleaner  # news
 fetch_filings / fetch_transcripts -> chunker    # documents
 build_dataset last, to assemble all three lines
+chart_caption after build_dataset (needs the charts; calls the Claude API)
 ```
 
 ## Commands (run from the repo root)
@@ -36,6 +38,8 @@ python -m module_a_data.crawler.fetch_news_alpaca --ticker AAPL --start 2021-01-
 python -m module_a_data.crawler.fetch_filings --ticker AAPL          # SEC filings
 python -m module_a_data.crawler.fetch_transcripts --ticker AAPL --start 2021-01-01 --end 2026-08-08   # earnings-call transcripts (Alpha Vantage, needs ALPHA_VANTAGE_API_KEY)
 python -m module_a_data.build_dataset --ticker AAPL --limit 100      # assemble output (start with a 50-100 sample)
+python -m module_a_data.chart_caption --ticker AAPL --limit 5        # Haiku chart captions (needs ANTHROPIC_API_KEY); resumable
+python -m module_a_data.chart_caption --ticker AAPL --check          # volume-label agreement and pattern distribution
 python -m module_a_data.crawler.fetch_macro --kind all               # FRED/FOMC raw data (needs FRED_API_KEY)
 python -m module_a_data.build_dataset --ticker SPY --macro           # ETF/index point-in-time macro records
 ```

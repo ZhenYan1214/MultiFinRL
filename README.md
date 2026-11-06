@@ -16,28 +16,30 @@ Both phases remain in the project scope. The current automated pipeline covers P
 
 ## System Architecture
 
-Full interactive architecture (v2, the source of truth): [`docs/architecture/architecture.html`](docs/architecture/architecture.html) — open it in a browser. Decisions behind it: `docs/decisions.md` #108–#122.
+Full interactive architecture (v2, the source of truth): [`docs/architecture/architecture.html`](docs/architecture/architecture.html) — open it in a browser. Decisions behind it: `docs/decisions.md` #108–#131 (#123–#131 record how the code implements it).
 
 ```mermaid
 flowchart LR
     subgraph A["Track A — Data Engineering"]
-        A1["OHLCV, charts,\nnews, filings"]
+        A1["OHLCV, charts,\nnews, filings,\nHaiku chart caption"]
     end
     subgraph B["Track B — Encoding + RAG"]
-        B1["H_v (ViT)\nH_t (FinBERT)\nH_r (RAG top-K)"]
+        B1["H_v (ViT, 2 charts)\nH_t (FinBERT on the chart caption)\nH_r (RAG-1 pattern definitions)\nRAG-2 daily documents"]
     end
     subgraph C1["Track C — Fusion"]
-        C1a["Cross-Modal\nTransformer"]
+        C1a["Cross-Modal Transformer\nL_align + L_ground"]
         C1b["Z_fused"]
     end
-    subgraph C2["Track C — Validation"]
-        C2a["Sentiment /\nevent classification"]
+    subgraph C2["Track C — Decoder (main axis)"]
+        C2d["LLaMA-2 + LoRA\n[prefix; RAG-2; y_belief]\nL_belief"]
+        C2a["Auxiliary probes:\nsentiment / pattern / event"]
     end
     subgraph C3["[第二階段 - Pending] RL, Backtest"]
         C2b["PPO portfolio\nagent"]
         C2c["Backtest\n(Sharpe, MDD, return)"]
     end
     A1 --> B1 --> C1a --> C1b
+    C1b --> C2d
     C1b --> C2a
     C1b --> C2b --> C2c
 ```
@@ -102,6 +104,7 @@ MultiFinRL/
 │   │   └── chunker.py               # document chunking (≤512 tokens)
 │   ├── labeling.py                  # BULLISH / BEARISH / NEUTRAL label generation (quantile thresholds)
 │   ├── macro_context.py             # point-in-time as-of join for indicators/news/dot plots
+│   ├── chart_caption.py             # Claude Haiku reads both charts -> chart caption (answer sheet)
 │   └── build_dataset.py             # assembles the daily JSON records
 ├── module_b_encoder/                # Track B — encoders + RAG + event extraction
 │   ├── README.md
@@ -109,22 +112,22 @@ MultiFinRL/
 │   │   ├── vision_encoder.py        # ViT -> H_v
 │   │   └── text_encoder.py          # FinBERT -> H_t
 │   ├── rag/
-│   │   ├── vector_db.py             # FAISS index over filing/transcript chunks
-│   │   └── retriever.py             # top-K retrieval -> H_r
-│   ├── event_extraction.py          # keyword or --method llm; standalone Track A data-quality check, does not touch Z_fused
+│   │   ├── pattern_kb.py            # RAG-1: 7 pattern definitions -> FinBERT vectors
+│   │   └── rag2.py                  # RAG-2: daily 15–20 document snippets for the Decoder context
+│   ├── event_extraction.py          # keyword or --method llm; standalone data-quality check, not in the pipeline (#130)
 │   ├── event_ground_truth_llm.py    # LLM-assisted ground truth labeling for event_extraction.py
 │   ├── event_ground_truth_prompt.py # shared prompt used by the above and event_extraction.py --method llm
 │   ├── llm_client.py                 # shared LLM-calling helpers (claude/openai/deepseek)
-│   └── generate_vectors.py          # main entry point: produces H_v / H_t / H_r per day
+│   └── generate_vectors.py          # main entry point: produces H_v / H_t (caption) per day
 ├── module_c_fusion/                 # Track C — fusion, validation, decoder, RL, backtest, explainability
 │   ├── README.md
 │   ├── fusion/
-│   │   ├── model.py                 # Cross-Modal Transformer
-│   │   ├── train.py                 # trains the fusion model, exports Z_fused
+│   │   ├── model.py                 # CrossModalTransformer: shared P_v/P_t/P_r, RAG-1 retrieval, α̂
+│   │   ├── train.py                 # L_align + L_ground training, exports Z_fused
 │   │   └── consolidate.py           # merges per-day Z_fused into one index file
 │   ├── validation/
-│   │   ├── classifier.py            # diagnostic probe: Z_fused -> market sentiment (3-class)
-│   │   └── event_validation_head.py # diagnostic probe: Z_fused -> event types (7-class multi-label)
+│   │   ├── classifier.py            # auxiliary reference: Z_fused -> market sentiment (3-class)
+│   │   └── pattern_probe.py         # main probe: masked-H_t Z_fused -> chart pattern (7-class)
 │   ├── reporting/
 │   │   └── pipeline_report.py       # Phase 1 JSON -> report.md + provenance + figures
 │   ├── decoder/                     # Z_fused -> structured belief narrative (proposal sec. 3.4/3.5)
@@ -162,7 +165,7 @@ MultiFinRL/
 Full definition in `docs/data_format.md`; the handoff points are:
 
 1. **A → B**: `data/processed/dataset/{TICKER}/{YYYY-MM-DD}.json` — one record per day, containing the chart path, a news list (with a `days_ago` field), filing/transcript chunks, and the price-movement label.
-2. **B → C**: `data/vectors/{TICKER}/{YYYY-MM-DD}/` — `H_v.npy`, `H_t.npy`, `H_r.npy`, plus an `index.json` recording shapes and sources.
+2. **B → C**: `data/vectors/{TICKER}/{YYYY-MM-DD}/` — `H_v.npy`, `H_t.npy` (chart caption), plus an `index.json` recording shapes and the caption labels; RAG-1 definitions in `data/vectors/_patterns/patterns.npz`; RAG-2 snippets in `data/outputs/rag2/`.
 3. **C output**: `data/outputs/` — `Z_fused` (per day and as a consolidated index), model checkpoints, and backtest reports.
 
 ## Global Specifications
@@ -174,7 +177,7 @@ Full definition in `docs/data_format.md`; the handoff points are:
 | Charts | 20-day trailing window, PNG, 224×224, RGB |
 | Price-movement label | Return from close to the close 5 trading days later; train-period 1/3 and 2/3 quantiles define BEARISH / NEUTRAL / BULLISH in strict experiments |
 | Text chunking | ≤512 tokens per chunk (FinBERT's input limit) |
-| RAG retrieval | top-K = 3 |
+| RAG | RAG-1: top-K = 3 of 7 pattern definitions (into fusion); RAG-2: 15–20 date-filtered snippets (into the Decoder context) |
 | Missing daily news | backfilled from prior days, with a `days_ago` field so the model can weigh relevance |
 | Fine-tuning | Fusion model (`fusion/train.py`): full-parameter training. Decoder (`decoder/train.py`): QLoRA (4-bit, LoRA on all attention+MLP linear layers). ViT: LoRA r4 improved mean validation macro F1 over five seeds (0.3662 vs 0.3328) but won only 3/5 seeds, so Frozen remains the formal encoder pending broader cross-stock/time validation. |
 | Dev environment | `requirements.txt` in this repo is the single source of truth |

@@ -121,7 +121,7 @@ def _sample_vector_index(ticker: str, manifest: dict) -> Path:
         ordered_dates.extend(manifest.get("dates", {}).get(split_name, []))
     for date in ordered_dates:
         candidate = paths.vector_dir(ticker, date) / "index.json"
-        if candidate.exists():
+        if candidate.exists() and candidate.with_name("H_t.npy").exists():
             return candidate
     raise FileNotFoundError(f"找不到 {ticker} 的向量 index.json")
 
@@ -137,6 +137,12 @@ def _collect_sources(ticker: str, run_id: str) -> tuple[dict, dict[str, Path]]:
     fusion = _required_json(source_paths["fusion_train"], "Fusion 訓練報告")
     classification = _required_json(source_paths["classification"], "分類報告")
     z_meta = _required_json(source_paths["z_fused_meta"], "Z_fused metadata")
+    probe_path = paths.OUTPUTS / "metrics" / f"pattern_probe_report_{ticker}_mask_ht.json"
+    pattern_probe = read_json(probe_path) if probe_path.exists() else None
+    if pattern_probe is not None and pattern_probe.get("run_id") == run_id:
+        source_paths["pattern_probe"] = probe_path
+    else:
+        pattern_probe = None   # 不是同一次 pipeline 的 probe 不放進報告
     source_paths["vector_index"] = _sample_vector_index(ticker, manifest)
     vector_index = _required_json(source_paths["vector_index"], "向量 index")
 
@@ -218,19 +224,6 @@ def _collect_sources(ticker: str, run_id: str) -> tuple[dict, dict[str, Path]]:
                 if checkpoint.get("sha256") != actual_hash:
                     errors.append(f"{label} 的 Fusion checkpoint SHA256 不一致")
 
-    event = None
-    event_path = paths.OUTPUTS / "metrics" / "event_extraction_report.json"
-    if event_path.exists():
-        candidate = _required_json(event_path, "事件抽取報告")
-        if candidate.get("ticker") == ticker:
-            source_paths["event_extraction"] = event_path
-            event = candidate
-            if event.get("run_id") != run_id:
-                errors.append(
-                    f"event extraction report run_id={event.get('run_id')!r}，"
-                    f"預期 {run_id!r}"
-                )
-
     if errors:
         details = "\n- ".join(errors)
         raise ReportConsistencyError(
@@ -247,7 +240,7 @@ def _collect_sources(ticker: str, run_id: str) -> tuple[dict, dict[str, Path]]:
         "z_meta": z_meta,
         "vector_index": vector_index,
         "daily": daily,
-        "event": event,
+        "pattern_probe": pattern_probe,
     }
     return payloads, source_paths
 
@@ -255,31 +248,19 @@ def _collect_sources(ticker: str, run_id: str) -> tuple[dict, dict[str, Path]]:
 def _summary_report(ticker: str, run_id: str, payloads: dict) -> dict:
     manifest = payloads["manifest"]
     vectors = payloads["vector_index"].get("vectors", {})
-    event = payloads["event"]
-    event_summary = None
-    if event is not None:
-        event_summary = {
-            key: value for key, value in event.items() if key != "events_per_day"
-        }
-        event_summary["event_days"] = len(event.get("events_per_day", {}))
-        event_summary["detection_status"] = "complete"
-        evaluation = event.get("evaluation")
-        event_summary["evaluation_status"] = (
-            "complete" if isinstance(evaluation, dict) else "pending_ground_truth"
-        )
-
     return {
         "schema_version": 1,
         "run_id": run_id,
         "ticker": ticker,
         "generated_at": dt.datetime.now(ZoneInfo("Asia/Taipei")).isoformat(timespec="seconds"),
-        "scope": "phase_1_fusion_and_classification",
+        "scope": "phase_1_fusion",
         "phase_2": "pending_rl_and_backtest",
         "mode": "macro" if "macro" in payloads["daily"] else "equity",
         "inputs": {
             "vision": vectors.get("H_v", {}),
             "text": vectors.get("H_t", {}),
-            "retrieval": vectors.get("H_r", {}),
+            "caption": index_payload_caption(payloads),
+            "rag1_top_k": (payloads["fusion"].get("setup") or {}).get("top_k"),
         },
         "temporal_split": {
             "protocol": manifest.get("protocol"),
@@ -289,8 +270,8 @@ def _summary_report(ticker: str, run_id: str, payloads: dict) -> dict:
             "label": manifest.get("metadata", {}).get("label_quantile_thresholds", {}),
         },
         "fusion": payloads["fusion"],
+        "pattern_probe": payloads.get("pattern_probe"),
         "classification": payloads["classification"],
-        "event_extraction": event_summary,
         "z_fused": payloads["z_meta"],
     }
 
@@ -362,40 +343,39 @@ def _plot_temporal_split(report: dict, directory: Path, dpi: int) -> Path:
     return _save_figure(fig, directory, "temporal_split.png", dpi)
 
 
+def index_payload_caption(payloads: dict) -> dict:
+    """第一天 index.json 的 K 線敘述設定（model／型態）。"""
+    return (payloads.get("vector_index") or {}).get("caption", {})
+
+
 def _plot_fusion_history(report: dict, directory: Path, dpi: int) -> Path:
+    """左圖 Train／Validation objective（λ1·L_align + λ2·L_ground），右圖 Validation 的兩個 Loss。"""
     configure_style()
     fusion = report["fusion"]
     history = fusion.get("history", [])
     epochs = [row["epoch"] for row in history]
     fig, axes = plt.subplots(1, 2, figsize=(11, 4.2))
-    axes[0].plot(
-        epochs, [row["train_loss"] for row in history], marker="o",
-        color=COLORS["loss_train"], label="Train loss",
-    )
-    axes[0].plot(
-        epochs, [row["validation_loss"] for row in history], marker="s",
-        color=COLORS["loss_validation"], label="Validation loss",
-    )
-    axes[0].set_xlabel("Epoch")
-    axes[0].set_ylabel("Loss")
-    axes[0].set_title("A  Fusion loss", loc="left")
-    axes[0].legend(frameon=False)
-    axes[0].grid(color="#DDDDDD", linewidth=0.6)
-
-    scores = [row["validation_macro_f1"] for row in history]
-    axes[1].plot(epochs, scores, marker="o", color=COLORS["score"])
+    axes[0].plot(epochs, [row["train"]["objective"] for row in history], marker="o",
+                 color=COLORS["loss_train"], label="Train objective")
+    axes[0].plot(epochs, [row["validation"]["objective"] for row in history], marker="s",
+                 color=COLORS["loss_validation"], label="Validation objective")
     best_epoch = fusion.get("best_epoch")
     if best_epoch in epochs:
         index = epochs.index(best_epoch)
-        axes[1].scatter(
-            [best_epoch], [scores[index]], marker="*", s=120,
-            color="#CC79A7", edgecolor="black", linewidth=0.5, zorder=4,
-            label=f"Selected epoch {best_epoch}",
-        )
-        axes[1].legend(frameon=False)
+        axes[0].scatter([best_epoch], [history[index]["validation"]["objective"]], marker="*", s=120,
+                        color="#CC79A7", edgecolor="black", linewidth=0.5, zorder=4,
+                        label=f"Selected epoch {best_epoch}")
+    axes[0].set_xlabel("Epoch")
+    axes[0].set_ylabel("λ1·L_align + λ2·L_ground")
+    axes[0].set_title("A  Fusion objective", loc="left")
+    axes[0].legend(frameon=False)
+    axes[0].grid(color="#DDDDDD", linewidth=0.6)
+    for key, marker in (("L_align", "o"), ("L_ground", "s")):
+        axes[1].plot(epochs, [row["validation"].get(key) for row in history], marker=marker, label=key)
     axes[1].set_xlabel("Epoch")
-    axes[1].set_ylabel("Validation macro F1")
-    axes[1].set_title("B  Checkpoint selection metric", loc="left")
+    axes[1].set_ylabel("Validation loss")
+    axes[1].set_title("B  Validation L_align / L_ground", loc="left")
+    axes[1].legend(frameon=False)
     axes[1].grid(color="#DDDDDD", linewidth=0.6)
     fig.suptitle(f"Fusion training — {report['ticker']}", fontsize=13)
     fig.tight_layout(rect=(0, 0, 1, 0.94), w_pad=2)
@@ -510,32 +490,6 @@ def _plot_confusion_matrix(report: dict, directory: Path, dpi: int) -> Path:
     return _save_figure(fig, directory, "confusion_matrix.png", dpi)
 
 
-def _plot_event_metrics(report: dict, directory: Path, dpi: int) -> Path | None:
-    event = report.get("event_extraction")
-    evaluation = event.get("evaluation") if event else None
-    if not isinstance(evaluation, dict):
-        return None
-    configure_style()
-    names = ("Precision", "Recall", "F1")
-    values = [evaluation["precision"], evaluation["recall"], evaluation["f1"]]
-    fig, ax = plt.subplots(figsize=(6.8, 4.0))
-    bars = ax.bar(names, values, color=("#0072B2", "#E69F00", "#009E73"))
-    ax.set_ylim(0, 1)
-    ax.set_ylabel("Score")
-    ax.set_title(
-        f"Raw-text event extraction — {report['ticker']} "
-        f"(ground truth n={evaluation.get('n_days', '—')})"
-    )
-    ax.grid(axis="y", color="#DDDDDD", linewidth=0.6)
-    for bar, value in zip(bars, values):
-        ax.text(
-            bar.get_x() + bar.get_width() / 2, value, f"{value:.3f}",
-            ha="center", va="bottom",
-        )
-    fig.tight_layout()
-    return _save_figure(fig, directory, "event_extraction_metrics.png", dpi)
-
-
 def _fmt(value, digits: int = 4) -> str:
     if value is None:
         return "—"
@@ -576,29 +530,38 @@ def _write_markdown(report: dict, output: Path, source_names: dict[str, str]) ->
         f"- 產生時間：{report['generated_at']}",
         f"- 資料模式：`{report['mode']}`",
         f"- 時間協定：`{split['protocol']}`",
-        "- 本次範圍：第一階段（資料、向量、Fusion、分類驗證）",
+        "- 本次範圍：第一階段（資料、向量、Fusion；主要看 L_align／L_ground、RAG-1 檢索、遮掉 H_t 的型態 probe；"
+        "3 類情緒分類器只當附屬參考）",
         "- **[第二階段 - Pending] RL 與 Backtest 未執行，因此沒有 Sharpe、MDD 或累積報酬。**",
         "",
         "## 結果摘要",
         "",
     ]
+    best = next((row for row in fusion.get("history", []) if row["epoch"] == fusion.get("best_epoch")), {})
+    val = best.get("validation", {})
+    probe = report.get("pattern_probe") or {}
     lines.extend(_table(
-        ["Ticker", "Best Fusion epoch", "Selected C", "Test accuracy", "Test macro F1"],
+        ["Ticker", "Best epoch", "Val L_align", "Val L_ground", "Val α̂/α* top-1", "Val RAG-1 hit@1",
+         "Z_fused 兩兩 cosine", "型態 probe Test acc（遮 H_t）", "多數類 baseline"],
         [[
-            report["ticker"], fusion.get("best_epoch"), classification.get("selected_C"),
-            classification.get("accuracy"), classification.get("macro_f1"),
+            report["ticker"], fusion.get("best_epoch"), val.get("L_align"), val.get("L_ground"),
+            val.get("ground_top1"), val.get("retrieval_hit1"),
+            (fusion.get("input_sensitivity") or {}).get("z_pairwise_cosine_mean"),
+            probe.get("test_accuracy", "未跑"), probe.get("majority_baseline_accuracy", "—"),
         ]],
     ))
+    lines.extend(["", f"附屬參考（3 類情緒分類器，Test）：accuracy {_fmt(classification.get('accuracy'))}、"
+                  f"macro F1 {_fmt(classification.get('macro_f1'))}；融合層沒有為這個任務訓練，不當主要結果。"])
     lines.extend(["", "## 模型輸入", ""])
     lines.extend(_table(
         ["模態", "Encoder", "Shape／設定"],
         [
             ["H_v", inputs.get("vision", {}).get("encoder"),
              f"shape={inputs.get('vision', {}).get('shape')}；inputs={inputs.get('vision', {}).get('input_types')}"],
-            ["H_t", inputs.get("text", {}).get("encoder"),
-             f"shape={inputs.get('text', {}).get('shape')}"],
-            ["H_r", inputs.get("retrieval", {}).get("encoder"),
-             f"shape={inputs.get('retrieval', {}).get('shape')}；top_k={inputs.get('retrieval', {}).get('top_k')}"],
+            ["H_t（K 線文字敘述）", inputs.get("text", {}).get("encoder"),
+             f"shape={inputs.get('text', {}).get('shape')}；敘述模型={(inputs.get('caption') or {}).get('model')}"],
+            ["H_r（RAG-1 型態定義）", inputs.get("text", {}).get("encoder"),
+             f"7 段定義，每天取 top_k={inputs.get('rag1_top_k')}"],
         ],
     ))
 
@@ -627,18 +590,41 @@ def _write_markdown(report: dict, output: Path, source_names: dict[str, str]) ->
 
     lines.extend(["## Fusion 訓練", ""])
     history_rows = [[
-        row["epoch"], row["train_loss"], row["validation_loss"],
-        row["validation_macro_f1"], "★" if row["epoch"] == fusion.get("best_epoch") else "",
+        row["epoch"], row["train"]["objective"], row["validation"]["objective"],
+        row["validation"].get("L_align"), row["validation"].get("L_ground"),
+        row["validation"].get("retrieval_hit1"),
+        "★" if row["epoch"] == fusion.get("best_epoch") else "",
     ] for row in fusion.get("history", [])]
     lines.extend(_table(
-        ["Epoch", "Train loss", "Validation loss", "Validation macro F1", "採用"],
+        ["Epoch", "Train objective", "Validation objective", "Val L_align", "Val L_ground",
+         "Val RAG-1 hit@1", "採用"],
         history_rows,
     ))
+    sensitivity = fusion.get("input_sensitivity") or {}
+    if sensitivity:
+        lines.extend(["", f"輸入敏感度：遮掉 H_t 時 Z_fused 變動 {sensitivity.get('rel_change_mask_ht')}、"
+                      f"歸零 H_v 時變動 {sensitivity.get('rel_change_zero_hv')}；"
+                      f"Z_fused 兩兩 cosine 平均 {sensitivity.get('z_pairwise_cosine_mean')}（接近 1 代表塌成常數）。"])
     lines.append("")
     _figure(lines, "Fusion 訓練過程", "fusion_training_curves.png")
 
-    lines.extend(["## 分類器選模與 Test", ""])
+    lines.extend(["## 型態 probe（遮掉 H_t 的融合層）", ""])
+    if probe:
+        lines.append("K 線敘述直接寫了型態名稱，所以 probe 讀的是遮掉 H_t 訓練與輸出的 Z_fused，"
+                     "量的是圖本身有沒有學到型態。")
+        lines.append("")
+        lines.extend(_table(
+            ["Selected C", "Test accuracy", "Test macro F1", "多數類 baseline", "n_test"],
+            [[probe.get("selected_C"), probe.get("test_accuracy"), probe.get("test_macro_f1"),
+              probe.get("majority_baseline_accuracy"), probe.get("n_test")]],
+        ))
+    else:
+        lines.append("本次沒有同一個 run_id 的型態 probe 結果（要先跑 fusion.train --mask_ht --tag mask_ht 再跑 pattern_probe）。")
+    lines.append("")
+
+    lines.extend(["## 附屬參考：3 類情緒分類器", ""])
     lines.append(
+        "附屬參考，不當主要結果：融合層沒有為漲跌三分類訓練。"
         "Logistic Regression 的 C 只由 Validation 選擇；選定後以 Train＋Validation "
         "重新擬合，Test 只做最後評估。"
     )
@@ -668,39 +654,6 @@ def _write_markdown(report: dict, output: Path, source_names: dict[str, str]) ->
     _figure(lines, "分類指標", "classification_metrics.png")
     _figure(lines, "混淆矩陣（數量＋列百分比）", "confusion_matrix.png")
 
-    event = report.get("event_extraction")
-    if event:
-        lines.extend(["## 原始文字事件抽取（輔助分析）", ""])
-        lines.append("此結果直接分析新聞／文件，不是 Z_fused 的分類成績。")
-        lines.append("")
-        evaluation = event.get("evaluation")
-        if isinstance(evaluation, dict):
-            lines.extend(_table(
-                ["Method", "資料天數", "Ground truth 天數", "Precision", "Recall", "F1"],
-                [[
-                    event.get("method"), event.get("days"), evaluation.get("n_days"),
-                    evaluation.get("precision"), evaluation.get("recall"), evaluation.get("f1"),
-                ]],
-            ))
-            lines.append("")
-            _figure(lines, "事件抽取指標", "event_extraction_metrics.png")
-        else:
-            lines.extend([
-                f"- 事件偵測狀態：已完成（method=`{event.get('method', '—')}`）",
-                f"- 已處理資料：{event.get('days', '—')} 天",
-                f"- 偵測到至少一個事件：{event.get('event_days', 0)} 天",
-                f"- 評分狀態：尚未建立 `{report['ticker']}` ground truth，"
-                "因此暫不計算 Precision／Recall／F1。",
-                f"- 預期檔案：`data/labels/event_ground_truth/{report['ticker']}.json`",
-                "- 影響範圍：只影響事件抽取評分，不影響 Fusion 訓練或漲跌分類結果。",
-                "",
-            ])
-    else:
-        lines.extend([
-            "## 原始文字事件抽取（輔助分析）", "",
-            "本次沒有同 run_id、同 ticker 的事件抽取報告；macro 模式會略過此步驟。", "",
-        ])
-
     lines.extend(["## Provenance", ""])
     lines.extend(_table(
         ["來源", "快照"],
@@ -714,7 +667,6 @@ def _write_markdown(report: dict, output: Path, source_names: dict[str, str]) ->
         "",
         "## 限制", "",
         "- 本報告的 Test 指標只適合最終評估，不應拿來反覆調參。",
-        "- Event extraction 是原始文字的輔助分析，不能解讀成 Z_fused 的事件辨識能力。",
         "- [第二階段 - Pending] 尚未執行多資產 RL 與回測。",
         "",
     ])
@@ -764,7 +716,7 @@ def render_pipeline_report(ticker: str, run_id: str, dpi: int = 220) -> dict:
                 "z_fused_meta": "z_fused_index.meta.json",
                 "vector_index": "vector_index.json",
                 "dataset_sample": "dataset_sample.json",
-                "event_extraction": "event_extraction_report.json",
+                "pattern_probe": "pattern_probe_report.json",
             }[name]
             shutil.copy2(source, source_dir / filename)
             source_names[name] = filename
@@ -786,7 +738,6 @@ def render_pipeline_report(ticker: str, run_id: str, dpi: int = 220) -> dict:
             _plot_classifier_selection(report, figures_dir, dpi),
             _plot_classification_metrics(report, figures_dir, dpi),
             _plot_confusion_matrix(report, figures_dir, dpi),
-            _plot_event_metrics(report, figures_dir, dpi),
         ]
         figure_paths = [path for path in figure_paths if path is not None]
         _write_markdown(report, temporary_dir / "report.md", source_names)

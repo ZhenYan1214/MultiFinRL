@@ -53,8 +53,10 @@ _claude_client = None
 
 
 def call_claude(system: str, user: str, model: str, schema: dict | None = None) -> str:
-    """Haiku 5.5 預設會先思考（adaptive thinking），回應的第一個區塊可能是 thinking 不是 text，
-    所以要挑出 text 區塊；max_tokens 也要留給思考用，200 會被截斷。"""
+    """
+    Haiku 5.5 預設會先思考（adaptive thinking），回應的第一個區塊可能是 thinking 不是 text，
+    所以要挑出 text 區塊；max_tokens 也要留給思考用，200 會被截斷。
+    """
     global _claude_client
     import anthropic
     if _claude_client is None:  # client 可以跨執行緒共用，建一次就好
@@ -63,6 +65,42 @@ def call_claude(system: str, user: str, model: str, schema: dict | None = None) 
     resp = _claude_client.messages.create(
         model=model, max_tokens=16000, system=system,
         messages=[{"role": "user", "content": user}], **kwargs,
+    )
+    if resp.stop_reason in ("refusal", "max_tokens"):
+        raise RuntimeError(f"Claude 回應異常結束: stop_reason={resp.stop_reason}")
+    with _usage_lock:
+        USAGE["input_tokens"] += resp.usage.input_tokens
+        USAGE["output_tokens"] += resp.usage.output_tokens
+    return "".join(b.text for b in resp.content if b.type == "text")
+
+
+def call_claude_images(system: str, user: str, model: str, image_paths: list,
+                       schema: dict | None = None, effort: str | None = None) -> str:
+    """
+    跟 call_claude 一樣，但 user 訊息前面依序附上 PNG 圖片（K 線文字敘述用，module_a_data/chart_caption.py）。
+    圖片以 base64 內嵌，順序就是 image_paths 的順序。
+    """
+    global _claude_client
+    import base64
+    import anthropic
+    if _claude_client is None:
+        _claude_client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"], max_retries=5)
+    content = []
+    for path in image_paths:
+        with open(path, "rb") as f:
+            data = base64.standard_b64encode(f.read()).decode("utf-8")
+        content.append({"type": "image",
+                        "source": {"type": "base64", "media_type": "image/png", "data": data}})
+    content.append({"type": "text", "text": user})
+    output_config = {}
+    if schema:
+        output_config["format"] = {"type": "json_schema", "schema": schema}
+    if effort:
+        output_config["effort"] = effort
+    kwargs = {"output_config": output_config} if output_config else {}
+    resp = _claude_client.messages.create(
+        model=model, max_tokens=16000, system=system,
+        messages=[{"role": "user", "content": content}], **kwargs,
     )
     if resp.stop_reason in ("refusal", "max_tokens"):
         raise RuntimeError(f"Claude 回應異常結束: stop_reason={resp.stop_reason}")

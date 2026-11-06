@@ -146,17 +146,20 @@ ETF／指數的 `--macro` record 將 `filing_chunks`、`transcript_chunks` 設�
 
 ---
 
-## 2. B 的交付物：每日向量
+## 2. B 的交付物：每日向量（decisions.md #109–#113、#123、#124）
 
 **路徑規則**：`data/vectors/{TICKER}/{YYYY-MM-DD}/`
 向量本體用 `.npy` 儲存（float32），另附一份 `index.json` 描述中繼資料。JSON 內不直接放大型數值陣列。
+不再有每天的 `H_r.npy`：RAG-1 的 7 段型態定義所有日子共用，檢索（每天取哪 K 段）在融合層裡做。
 
 ```
 data/vectors/AAPL/2021-03-15/
-├── H_v.npy        # 視覺向量
-├── H_t.npy        # 文字向量
-├── H_r.npy        # 檢索向量
+├── H_v.npy        # 視覺向量：K 線圖＋成交量圖
+├── H_t.npy        # K 線文字敘述的 FinBERT 編碼
 └── index.json
+data/vectors/_patterns/
+├── patterns.npz   # RAG-1：H_r_all [7,512,768]、pooled [7,768]、ids [7]
+└── meta.json      # 每段定義的 token 數與 SHA256
 ```
 
 `index.json`：
@@ -167,14 +170,9 @@ data/vectors/AAPL/2021-03-15/
   "date": "2021-03-15",
   "vectors": {
     "H_v": { "file": "H_v.npy", "shape": [2, 197, 768], "dtype": "float32", "encoder": "google/vit-base-patch16-224", "input_types": ["candlestick", "volume"] },
-    "H_t": { "file": "H_t.npy", "shape": [512, 768], "dtype": "float32", "encoder": "ProsusAI/finbert", "method": "chunk_relevance_max" },
-    "H_r": { "file": "H_r.npy", "shape": [3, 512, 768], "dtype": "float32", "encoder": "ProsusAI/finbert", "top_k": 3 }
+    "H_t": { "file": "H_t.npy", "shape": [512, 768], "dtype": "float32", "encoder": "ProsusAI/finbert", "source": "chart_caption", "n_tokens": 118 }
   },
-  "retrieved_chunk_ids": [
-    "AAPL_10-Q_2021-02-01_003",
-    "AAPL_EC_2021Q1_012",
-    "AAPL_10-K_2020-10-30_047"
-  ],
+  "caption": { "model": "claude-haiku-5-5", "pattern": "BREAKOUT", "volume_label": "SPIKE" },
   "source_json": "data/processed/dataset/AAPL/2021-03-15.json"
 }
 ```
@@ -185,12 +183,19 @@ data/vectors/AAPL/2021-03-15/
 |---|---|
 | `shape` | 實際維度以最終選定的 encoder 為準，但**一旦定案不可再變**；換 encoder 需全員同意並重跑 |
 | `encoder` | HuggingFace model id，供實驗比較與論文記錄 |
-| `H_v` 第一維 | = 視覺輸入張數（目前 2），順序必須與 `chart.inputs`／`input_types` 一致；第二維為每張 ViT 的 CLS + patch tokens |
-| macro 模式 | H_v 目前為 K 線＋FOMC 點陣圖；可由 `macro.vision_inputs` 切成 K 線＋Volume 做 ablation。H_t = point-in-time 指標摘要＋FOMC／ticker 新聞；H_r 的候選庫加入總經指標與 FOMC 新聞 chunk。shape 不變，因此 C 不需新增第四模態 |
-| `H_t` 內容 / `method` | shape 固定 `[512, 768]`。`method=chunk_relevance_max`（2026-11 起預設，decisions.md #99）：**只有第 0 列有值**，是當日新聞段落級編碼後、只留內文提到公司 ≥3 次的段落再逐維 max 的 768 維向量，其餘 511 列為 0（下游取 `H_t[0]` 即可；若照舊對 512 列取平均，結果是 `H_t[0]/512`，方向相同、只差固定倍數）。`method=concat_truncate`（舊版）：token-level 特徵，全部新聞串接截 512 token。缺 `method` 欄位的舊向量視為 `concat_truncate` |
-| `retrieved_chunk_ids` | 對應 A 資料中的 `chunk_id`，供事後追溯與可解釋性分析 |
-| `context_sources` | H_t 實際使用的來源摘要；一般模式為 `ticker_news`，macro 模式可含 `macro_indicators`、`macro_news`，方便稽核 |
-| `H_r` 第一維 | = K（目前 K=3），順序為相似度由高至低 |
+| `H_v` 第一維 | = 視覺輸入張數（目前 2），順序必須與 `chart.inputs`／`input_types` 一致；第二維為每張 ViT 的 CLS + patch tokens。已有 H_v 且 encoder／圖別相同時 `generate_vectors` 直接沿用 |
+| `H_t` 內容 | K 線文字敘述的 token-level FinBERT 編碼：把答案卷的 `kline`、`volume`、`combined` 三段串成 `[K-line] … [Volume] … [Combined] …`（`chart_caption.compose_text()`，用到時才組，不另存），padding 列為 0；`n_tokens` 是實際 token 數，融合層只取這段 |
+| `caption` | 敘述的模型與標籤：`model` 是讀圖的 Claude 模型；`pattern` 屬於 `shared/patterns.PATTERN_IDS` 七類（Haiku 判斷）；`volume_label` 四選一，由 OHLCV 公式決定（`SPIKE`／`EXPANDING`／`CONTRACTING`／`FLAT`，`shared/patterns.VOLUME_LABEL_IDS`） |
+| 舊架構 | 新聞 H_t、每天的 H_r 與 `retrieved_chunk_ids` 已拿掉；舊格式的 index.json 會被 `validate_vector_index` 拒絕，要重跑 |
+
+### 2.1 答案卷與中間產物
+
+| 檔案 | 產生程式 | 內容 |
+|---|---|---|
+| `data/labels/chart_caption/{T}.json` | `module_a_data/chart_caption.py`（A） | `{date: {pattern, volume_label, kline, volume, combined, volume_ratios, model}}`；答案卷，進版控；只存三段，不存串起來的 text |
+| `data/knowledge/patterns/{NN}_{pattern}.md` | 人工／LLM 草稿 | 7 段英文定義，檔名前綴 = `PATTERN_IDS` 順序；進版控 |
+| `data/labels/grounding/{T}_rag1.json` | `module_c_fusion/grounding/alpha_star_rag1.py` | `{_meta: {kb_sha256, ...}, date: {cos: [7], caption_pattern}}`；α* 的 cosine 對照版本，只在 `--alpha_star_space frozen` 時用（預設 α* 用型態標籤，#131），定義改過要重跑 |
+| `data/outputs/rag2/{T}/{date}.json` | `module_b_encoder/rag/rag2.py` | `{snippets: [{source, doc_type, date, section, chunk_id, text}], context}`；Decoder 直接讀 `context` |
 
 ---
 
@@ -205,12 +210,17 @@ data/outputs/
 │   ├── {TICKER}_index.npz              # ★ 彙整索引：整段時間範圍一次讀取用
 │   └── {TICKER}_index.meta.json        # 索引摘要（split manifest、checkpoint SHA256）
 ├── checkpoints/
-│   ├── fusion_{TICKER}.pt               # 單股 Fusion；多股為 fusion_AAPL_NVDA.pt
+│   ├── fusion_{TICKER}.pt               # 融合層（L_align＋L_ground）；多股為 fusion_AAPL_NVDA.pt
+│   ├── decoder/                         # 聯合訓練：fusion.pt、projector.pt、lora_adapter/、config.json
+│   ├── decoder_512/                     # 選配：不加 RAG-2 的版本
 │   └── ppo_agent_{TICKER}.zip           # 各 ticker 的 PPO agent
 ├── metrics/
+│   ├── fusion_train_report_{TICKER}.json   # 融合層訓練過程與輸入敏感度
 │   ├── classification_report_{TICKER}.json # 情緒分類準確率（對照 A 的 label）
+│   ├── pattern_probe_report_{TICKER}.json  # Z_fused 預測 K 線型態的線性 probe
+│   ├── decoder_evaluation_{TICKER}.json # TREND/RISK、型態一致率、打亂 Z_fused
 │   ├── ppo_train_report_{TICKER}.json   # PPO 訓練 provenance
-│   └── event_extraction_report.json    # 事件抽取 P/R/F1（B 提供）
+│   └── event_extraction_report.json    # 事件抽取 P/R/F1（B 單獨工具，已不在 pipeline 裡，#130）
 ├── reports/
 │   ├── index.md                         # 第一階段 pipeline 報告索引
 │   └── {YYYYMMDD_HHMMSS}/               # run_id 不含 ticker；ticker 寫在報告內

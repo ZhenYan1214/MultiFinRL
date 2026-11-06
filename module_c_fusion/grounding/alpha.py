@@ -1,96 +1,91 @@
-"""LLM 分數 -> α*，以及 L_ground = KL(α* ‖ α̂)（計畫書 3.5 節 (2)）。
+"""L_align 與 L_ground（計畫書 3.5 (1)(2)，公式不動；只換了對象，decisions.md #114、#115）。
 
-α̂ 是融合層最後一層 CLS 對 K 段 chunk token 的注意力（各 head 平均、dropout 之前的機率，
-fusion/model.py 的 cls_attention）。兩種模式：
+L_align = −log [ exp(⟨H_v, H_t⟩/τ) / Σ_{t'} exp(⟨H_v, H_{t'}⟩/τ) ]
+    H_v、H_t 是融合層之前、經共用投影 P_v、P_t 後的池化向量（g_v、g_t），⟨·,·⟩ 取 L2 正規化後的內積
+    （計畫書轉錄註：⟨H_v H_t⟩ 應為 pooled 向量的內積）；分母的 t' 是同一個 batch 裡其他天的敘述。
+    同型態的日子不放同一個 batch，從資料端處理（fusion/train.py 的 pattern_distinct_batches）。
 
-- 不含「其他」槽位（null_score=None，預設）：
-      α* = softmax(s / T)，α̂ 在 K 段之間重新正規化；三段都 0 分的日子不計入。
-  只約束「K 段之間怎麼分」，不約束「分給檢索多少」——後者用 grounding_stats 的 doc_mass 監看。
-- 含「其他」槽位（null_score 給數值）：
-      α* = softmax([s_1, …, s_K, null_score] / T)，PAD 位置為 0
-      α̂ = [CLS→chunk_1, …, CLS→chunk_K, 1 − Σ CLS→chunk]   # 「其他」= 新聞、K 線圖等其餘 token
-  三段都不相關的日子，α* 大部分落在「其他」，教模型在證據過時／無關時少依賴檢索；
-  同時約束「分給檢索多少」。注意：實測 AAPL 現有 checkpoint 的 CLS 只把約 0.1–0.2% 的
-  注意力分給檢索區（其餘在 394 個 K 線圖 token 上），而這個模式的 α* 會要求檢索區拿到
-  一半以上，等於強迫大幅改變注意力分配，因此不設為預設（docs/decisions.md #100）。
+L_ground = Σ_i α*_i log(α*_i / α̂_i)
+    α̂：融合層裡 H_t token 對當天 K 段 RAG-1 定義的注意力（fusion/model.py）。
+    α*（Q13 定案為 label，decisions.md #131）：
+        label（預設）= 直接用 K 線敘述的型態標籤（Haiku 判的那一類）：當天取到的 K 段裡，敘述型態那段拿
+                       1−ε，其他段平分 ε（label smoothing，loss.ground_smoothing）。正確那段沒被取到的天
+                       不算 L_ground（回報 ground_coverage），不改融合層的輸入。
+        frozen       = 舊做法（Q5 選 b）：投影前凍結 FinBERT 池化向量的 cosine 經 softmax(cos/τ)，
+                       預先算在 data/labels/grounding/{T}_rag1.json。AAPL 實測只有 18.7% 的天 cosine 最高
+                       的定義跟敘述型態一致（FinBERT 分不出型態語意），保留只當對照。
+        projected    = 投影後的 g_t 與 P_r(定義) 的 cosine，訓練時即時算、detach。
 """
 import torch
+import torch.nn.functional as F
 
 EPS = 1e-8
 
 
-def valid_rows(scores: torch.Tensor, pad: torch.Tensor, has_label: torch.Tensor,
-               null_score: float | None) -> torch.Tensor:
-    """哪幾筆樣本可以算 L_ground：有標籤、至少一段非 PAD；無「其他」槽位時還要至少一段 > 0 分。"""
-    valid = has_label & (~pad).any(dim=-1)
-    if null_score is None:
-        valid = valid & (scores.masked_fill(pad, 0).amax(dim=-1) > 0)
-    return valid
+def align_loss(g_v: torch.Tensor, g_t: torch.Tensor, tau: float) -> torch.Tensor | None:
+    """g_v、g_t [B,d] -> 平均 L_align；batch 只有 1 筆時沒有負樣本，回傳 None。"""
+    if g_v.size(0) < 2:
+        return None
+    logits = F.normalize(g_v, dim=-1) @ F.normalize(g_t, dim=-1).T / tau     # [B,B]
+    target = torch.arange(g_v.size(0), device=g_v.device)
+    return F.cross_entropy(logits, target)
 
 
-def alpha_star(scores: torch.Tensor, pad: torch.Tensor, temperature: float = 1.0,
-               null_score: float | None = None) -> torch.Tensor:
-    """scores [B,K]（0–3）-> α* [B,K]（無槽位）或 [B,K+1]（最後一欄是「其他」）。"""
-    logits = (scores / temperature).masked_fill(pad, float("-inf"))
-    if null_score is not None:
-        null = torch.full_like(logits[:, :1], null_score / temperature)
-        logits = torch.cat([logits, null], dim=-1)
-    return torch.softmax(logits, dim=-1)
+@torch.no_grad()
+def align_top1(g_v: torch.Tensor, g_t: torch.Tensor) -> int:
+    """batch 內，每張圖最接近的敘述是不是自己那天的（驗證用，回傳命中數）。"""
+    sim = F.normalize(g_v, dim=-1) @ F.normalize(g_t, dim=-1).T
+    return int((sim.argmax(dim=-1) == torch.arange(g_v.size(0), device=g_v.device)).sum())
 
 
-def alpha_hat(doc_attn: torch.Tensor, null_score: float | None = None) -> torch.Tensor:
-    """doc_attn [B,K]（CLS 對各 chunk 的注意力）-> 與 alpha_star 同形狀的分布。"""
-    if null_score is not None:
-        other = (1.0 - doc_attn.sum(dim=-1, keepdim=True)).clamp_min(0.0)
-        return torch.cat([doc_attn, other], dim=-1)
-    return doc_attn / doc_attn.sum(dim=-1, keepdim=True).clamp_min(EPS)
+def alpha_star(cos_all: torch.Tensor, idx: torch.Tensor, tau: float) -> torch.Tensor:
+    """cos_all [B,N]（H_t 對全部 7 段定義）、idx [B,K]（當天取到的段）-> α* [B,K]。"""
+    return torch.softmax(cos_all.gather(1, idx) / tau, dim=-1)
+
+
+def projected_cos(g_t: torch.Tensor, r_def: torch.Tensor) -> torch.Tensor:
+    """Q13 選項 B：投影後的 cosine [B,N]，detach（α* 是目標，不回傳梯度）。"""
+    return (F.normalize(g_t, dim=-1) @ F.normalize(r_def, dim=-1).T).detach()
 
 
 def ground_kl(target: torch.Tensor, pred: torch.Tensor) -> torch.Tensor:
-    """逐筆 KL(target ‖ pred)，target 為 0 的位置不貢獻。回傳 [B]。"""
+    """逐筆 KL(target ‖ pred) [B]。"""
     terms = target * (target.clamp_min(EPS).log() - pred.clamp_min(EPS).log())
     return torch.where(target > 0, terms, torch.zeros_like(terms)).sum(dim=-1)
 
 
-def grounding_loss(doc_attn: torch.Tensor, scores: torch.Tensor, pad: torch.Tensor,
-                   has_label: torch.Tensor, temperature: float = 1.0,
-                   null_score: float | None = None) -> tuple[torch.Tensor, int]:
-    """回傳 (有效樣本的平均 L_ground, 有效樣本數)；沒有有效樣本時 loss 為 0（仍可 backward）。"""
-    valid = valid_rows(scores, pad, has_label, null_score)
+def label_target(pattern: torch.Tensor, idx: torch.Tensor, smoothing: float):
+    """pattern [B]（敘述型態的 PATTERN_IDS 索引）、idx [B,K] -> (α* [B,K], valid [B])。
+    valid = 敘述型態那段有在當天取到的 K 段裡；沒有的那天 α* 沒有定義，不算 L_ground。"""
+    hit = idx == pattern[:, None]
+    k = idx.size(1)
+    on, off = (1.0 - smoothing, smoothing / (k - 1)) if k > 1 else (1.0, 0.0)
+    target = torch.where(hit, torch.tensor(on, device=idx.device), torch.tensor(off, device=idx.device))
+    return target.float(), hit.any(dim=-1)
+
+
+def ground_target(space: str, out: dict, batch: dict, tau: float, smoothing: float):
+    """依 alpha_star_space 算 α* -> (α* [B,K], valid [B])。"""
+    idx = out["idx"]
+    if space == "label":
+        return label_target(batch["pattern"], idx, smoothing)
+    cos = batch.get("cos") if space == "frozen" else projected_cos(out["g_t"], out["r_def"])
+    if cos is None:
+        raise SystemExit("α* 用 frozen 向量時需要 data/labels/grounding/{T}_rag1.json（grounding/alpha_star_rag1.py）")
+    return alpha_star(cos, idx, tau), torch.ones(idx.size(0), dtype=torch.bool, device=idx.device)
+
+
+def ground_loss(alpha_hat: torch.Tensor, target: torch.Tensor, valid: torch.Tensor) -> torch.Tensor | None:
+    """valid 那幾天的平均 KL(α* ‖ α̂)；整個 batch 都沒有 valid 時回傳 None。"""
     if not bool(valid.any()):
-        return doc_attn.sum() * 0.0, 0
-    target = alpha_star(scores[valid], pad[valid], temperature, null_score)
-    pred = alpha_hat(doc_attn[valid], null_score)
-    return ground_kl(target, pred).mean(), int(valid.sum())
+        return None
+    return ground_kl(target[valid], alpha_hat[valid]).mean()
 
 
 @torch.no_grad()
-def grounding_stats(doc_attn: torch.Tensor, scores: torch.Tensor, pad: torch.Tensor,
-                    has_label: torch.Tensor, temperature: float = 1.0,
-                    null_score: float | None = None) -> dict[str, float]:
-    """驗證用的加總統計（呼叫端跨 batch 累加後再除以 n）。
-
-    - kl_sum：KL(α*‖α̂) 加總
-    - top1_hits：模型最關注的 chunk 是否落在 LLM 給最高分的 chunk 之一（平手都算對）；
-      只統計最高分 > 0 的日子（全部 0 分沒有「最相關」可言）
-    - doc_mass_sum：CLS 分給全部 chunk 的注意力總和（檢查檢索區有沒有被犧牲）
-    """
-    valid = valid_rows(scores, pad, has_label, null_score)
-    out = {"n": int(valid.sum()), "kl_sum": 0.0, "top1_n": 0, "top1_hits": 0,
-           "doc_mass_sum": 0.0}
-    if out["n"] == 0:
-        return out
-    s, p, a = scores[valid], pad[valid], doc_attn[valid]
-    target = alpha_star(s, p, temperature, null_score)
-    out["kl_sum"] = float(ground_kl(target, alpha_hat(a, null_score)).sum())
-    out["doc_mass_sum"] = float(a.sum(dim=-1).sum())
-
-    masked_scores = s.masked_fill(p, float("-inf"))
-    best = masked_scores.amax(dim=-1)
-    rated = best > 0
-    if bool(rated.any()):
-        pick = a.masked_fill(p, float("-inf")).argmax(dim=-1)
-        hit = masked_scores.gather(1, pick[:, None]).squeeze(1) == best
-        out["top1_n"] = int(rated.sum())
-        out["top1_hits"] = int((hit & rated).sum())
-    return out
+def ground_stats(alpha_hat: torch.Tensor, target: torch.Tensor, valid: torch.Tensor) -> dict:
+    """加總統計：n（有算 L_ground 的天數）、rows（全部天數）、kl_sum、top1_hits（α̂ 最高的段 = α* 最高的段）。"""
+    a, t = alpha_hat[valid], target[valid]
+    return {"n": int(valid.sum()), "rows": int(valid.numel()),
+            "kl_sum": float(ground_kl(t, a).sum()) if len(a) else 0.0,
+            "top1_hits": int((a.argmax(-1) == t.argmax(-1)).sum()) if len(a) else 0}
