@@ -52,10 +52,30 @@ rag1:
   # 在 L_align 對齊過的共用空間算 cosine；見 fusion/model.py 的 retrieve()
   retrieve_warmup_epochs: 1 # 前 N 個 epoch 共用空間還沒對齊，先用全部 N 段（K=N）
 
-# RAG-2：Decoder 生成前篩選當天候選（module_b_encoder/rag/rag2.py）
+# RAG-2：Decoder 生成前，從當天可得的文件檢索出要放進 context 的段落（module_b_encoder/rag/rag2.py）
 rag2:
-  max_snippets: 20          # 15–20 段
+  method: embed             # embed：嵌入模型檢索（主線）；rule：舊的固定規則（對照用）
+  max_snippets: 20          # 段數上限
+  max_tokens: 1000          # context 的 token 上限（LLaMA-2 tokenizer）；decoder/train.py 的 --max_ctx 是 1024
   snippet_words: 40         # 每段短版約前 40 個英文字
+  # --- method: embed ---
+  embed_model: BAAI/bge-base-en-v1.5   # 凍結，不訓練
+  query_entity: news about Apple Inc. (AAPL), the iPhone maker
+  query_aspects:            # 取最高分；分數 = 0.7 × 實體 query + 0.3 × 面向 query
+    - Apple revenue, earnings, margins and financial results
+    - Apple outlook, guidance and product demand
+    - risks, lawsuits, regulation and supply chain issues affecting Apple
+    - Apple new products, services and strategic announcements
+  entity_weight: 0.7
+  # 不同來源的原始分數尺度不同（新聞寫法常直接點名 Apple，分數普遍較高），不跨來源比分數：
+  # 各來源各自排名，依名額輪流放入；某來源候選不夠時，其他來源補位
+  quota: {news: 6, periodic: 3, transcript: 3}
+  older_8k_max: 2           # 以前的 8-K 最後補位，最多幾段
+  news_min_score: 0.48      # 新聞原始分數低於這個值不收（AAPL 實測：去掉 83% 的無關新聞；關鍵字判為相關的新聞會少 33%，多是內文才提到 Apple 的）
+  today_8k_per_doc: 2       # 當天 8-K 每份必收、取分數最高的幾段
+  older_8k_decay_days: 60   # 以前的 8-K 分數乘上 exp(−天數 / 60)
+  dedupe_cos: 0.85          # 跟已選段落 cosine 超過這個值就跳過（同一事件的多則新聞）
+  # --- method: rule ---
   background_sections: [mda, risk_factors]   # 背景 10-K／10-Q 固定挑的章節
   transcript_snippets: 4    # 最近一場法說會挑幾段
 

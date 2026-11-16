@@ -64,7 +64,7 @@ py -m module_b_encoder.generate_vectors --ticker AAPL --limit 100
 # 讀 A 的 JSON 與 K 線敘述，產出 H_v（ViT，兩張圖）與 H_t（FinBERT 編 K 線敘述），存到 data/vectors/AAPL/
 
 py -m module_b_encoder.rag.rag2 --ticker AAPL
-# RAG-2：每天先挑好 15–20 段新聞／財報／法說會短版文字，給 Decoder 用，存到 data/outputs/rag2/
+# RAG-2：每天用嵌入模型從新聞／財報／法說會檢索約 12 段短版文字（1,000 token 內），給 Decoder 用，存到 data/outputs/rag2/
 
 # 2026-10-02：既有 ViT 訓練實驗已完成並封存，舊 runner 已移除。
 # 統一結果：docs/vit_experiments_summary_2026-10-02.md

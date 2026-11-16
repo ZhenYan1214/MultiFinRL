@@ -486,35 +486,35 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line)
       </article>
 
       <article class="fcard" id="f-rag2">
-        <div class="fcard-head"><h3>RAG-2：當天候選篩選</h3><span class="chip nw">新元件・不算 Loss</span></div>
-        <div class="src">生成前篩選 · 只生成一次 · 不能看到未來</div>
+        <div class="fcard-head"><h3>RAG-2：當天文件檢索</h3><span class="chip nw">新元件・不算 Loss・檢索器凍結</span></div>
+        <div class="src">生成前檢索 · 只生成一次 · 不能看到未來 · #132</div>
         <div class="pair">
           <div><span class="tag">候選</span>分析日 t 可得的新聞（盤後歸隔日）、最新一份 10-K／10-Q、t 以前的 8-K、最近一場法說會。</div>
-          <div><span class="tag">怎麼縮</span>不做相似度排序、不用 K 線敘述當 query：新聞與當天 8-K 全收，背景 10-K／10-Q 固定挑 MD&amp;A、風險因素開頭等重要章節；每段壓成短版（標題＋第一句，或段落前約 40 token），總共 15–20 段。</div>
-          <div><span class="tag">輸出</span>短版文字加上來源與日期標頭，放進 Decoder context，由 Decoder 的注意力自己挑要參考哪幾段。</div>
+          <div><span class="tag">怎麼檢索</span>候選切成短段（新聞：標題＋一句，第一句沒提到 Apple 時改取提到 Apple 的句子；財報、法說會：依句子切成約 40 字，跳過表格、目錄、免責聲明）。凍結的嵌入模型（BAAI/bge-base-en-v1.5）把每段和固定 query（「Apple 的新聞」＋營收、展望、風險、產品四個面向）算 cosine。不同來源的分數尺度不同，所以各來源各自排名、依名額輪流放入（新聞 6、10-K／10-Q 3、法說會 3，不夠時互相補位；當天 8-K 必收），新聞分數太低不收、重複事件只留一則，總長控制在 1,000 token 內。query 不用 K 線敘述也不用 Z_fused：每天要問的都是「今天跟 Apple 有關的重要資訊」，每天不同的內容來自候選本身。</div>
+          <div><span class="tag">輸出</span>短版文字加上來源與日期標頭，放進 Decoder context；Decoder 的注意力再決定實際參考哪幾段。舊版固定規則（新聞全收、固定章節）保留為 <code>--method rule</code> 當對照。</div>
         </div>
         <div class="math">\[ \mathcal{C}_t = \{\,d : \text{available}(d) \le t,\ \ \text{date}(d) \in [t-n,\ t]\ \text{或}\ d\ \text{是當前背景財報}\,\} \]</div>
         <div class="small-wrap">
           <table class="numtbl">
             <thead><tr><th>AAPL 每天的候選段落（平均）</th><th>段數</th><th>建議配額</th></tr></thead>
             <tbody>
-              <tr><td>新聞（當天，含盤後歸隔日）</td><td class="n">11.2</td><td>全收（多的話取最新）</td></tr>
-              <tr><td>財報 chunk（背景 10-K／10-Q＋8-K）</td><td class="n">52.0</td><td>當天 8-K 全收，背景財報挑 MD&amp;A、風險因素開頭</td></tr>
-              <tr><td>法說會 chunk</td><td class="n">18.9</td><td>挑重要段落</td></tr>
-              <tr><td>合計</td><td class="n">約 82</td><td>縮到 15–20 段</td></tr>
+              <tr><td>新聞（當天，含盤後歸隔日）</td><td class="n">11.2</td><td>依分數取前 6（分數太低不收）</td></tr>
+              <tr><td>財報 chunk（背景 10-K／10-Q＋8-K）</td><td class="n">52.0</td><td>當天 8-K 每份取前 2 段；10-K／10-Q 依分數取前 3；以前的 8-K 補位</td></tr>
+              <tr><td>法說會 chunk</td><td class="n">18.9</td><td>依分數取前 3</td></tr>
+              <tr><td>合計</td><td class="n">約 82</td><td>約 12 段、1,000 token 內</td></tr>
             </tbody>
           </table>
         </div>
-        <p class="muted">數字來自目前 data/processed/dataset/AAPL 的 1,381 天。</p>
+        <p class="muted">數字來自目前 data/processed/dataset/AAPL 的 1,381 天（chunk 數；切成短段後每天約 290–320 段候選）。</p>
       </article>
 
       <article class="fcard main wide" id="f-onepass">
         <div class="fcard-head"><h3>只生成一次：Decoder 看 Z_fused 的同時就看候選</h3><span class="chip partial">已選定，有兩個風險要盯</span></div>
-        <p>context 裡同時有 Z_fused 的 prefix 和 RAG-2 的候選文字，Decoder 生成時的注意力自然會參考 Z_fused 來決定看哪幾段，等於「看 Z_fused 的時候同時查」。不需要另外學 query（W_q），也不用跑兩次。</p>
+        <p>context 裡同時有 Z_fused 的 prefix 和 RAG-2 檢索出的文件，Decoder 生成時的注意力會參考 Z_fused 決定看哪幾段。RAG-2 用固定 query 檢索，不另外學 query（W_q），也不用跑兩次。Z_fused 每天之間有明顯差異之後，再考慮把「Z_fused 相似度」加進檢索分數。</p>
         <p><b>可解釋性從哪來：</b>候選的短版原文就在 context 裡，敘述可以直接引用；Decoder 對各段候選的注意力可以畫出來，標出每句話主要參考哪幾段（只用來展示，不算 Loss）。</p>
         <div class="pair" style="grid-template-columns:repeat(2,minmax(0,1fr))">
           <div><span class="tag">風險 ① 只抄文件、不看圖</span>候選文字一開始就在 context，Decoder 很可能完全忽略 Z_fused。評估以「型態一致率」為主：Decoder 敘述的型態跟 Haiku 敘述一不一致。型態一致率分不出 Decoder 是看圖還是從文件抄，所以再補「打亂 Z_fused」當輔助檢查：換成別天的 Z_fused，敘述裡的型態應該要跟著變。</div>
-          <div><span class="tag">風險 ② context 變長</span>不加 RAG-2 的版本用 max_length 512。加上 15–20 段短版文字（約 600–800 token）後，序列大約 1,100–1,300 token，這是主線，等有 GPU 再跑。不加 RAG-2 的 512 版本是選配，可以先在 Mac 跑。</div>
+          <div><span class="tag">風險 ② context 變長</span>不加 RAG-2 的版本用 max_length 512。加上 RAG-2 後 context 上限 1,000 token（舊版規則有 76% 的天超過 1,024 被截掉尾端），加上 y_belief 約 1,300–1,500 token，這是主線，等有 GPU 再跑。不加 RAG-2 的 512 版本是選配，可以先在 Mac 跑。</div>
         </div>
       </article>
     </div>
@@ -535,7 +535,7 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line)
           <li><b>α*</b>：直接用 K 線敘述的型態標籤，不另外算答案卷（#131）。</li>
           <li><b>融合層輸入改成 H_t（K 線敘述）＋H_v＋RAG-1 的 H_r</b>，輸入投影改成共用的 P_v、P_t、P_r，拿掉新聞與舊 H_r。</li>
           <li><b>訓練 L_align＋L_ground</b>（batch 避開同型態；α̂ 取融合層注意力），用第一階段方法驗證：型態類別的線性 probe（只看遮掉 H_t 的融合層，敘述寫了型態名稱，沒遮會偷看答案）、α̂ 跟 α* 的一致率、RAG-1 檢索命中率、遮掉 H_t 的消融；3 類情緒分類器只當附屬參考（#125）。</li>
-          <li><b>建 RAG-2 候選篩選</b>：日期過濾、固定章節（MD&amp;A、風險因素開頭）、短版文字；人工抽查幾天的候選。</li>
+          <li><b>建 RAG-2 檢索</b>：日期過濾、切短段、凍結嵌入模型依固定 query 排序、各來源依名額輪流放入；人工抽查幾天的結果（#132）。</li>
           <li><b>Decoder 端程式</b>：候選放進 context、複合 Loss；小模型 smoke test。</li>
           <li><b>（選配）Mac 上跑不加 RAG-2 的 512 版本</b>：先看新的 Z_fused（K 線敘述＋RAG-1）對 Decoder 有沒有幫助。</li>
         </ol>
@@ -543,7 +543,7 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line)
       <article class="phase">
         <span class="phase-tag gpu">需要運算資源</span>
         <ol start="9">
-          <li><b>Decoder 聯合訓練（主線）</b>：加 RAG-2 候選，context 約 1,100–1,300 token。</li>
+          <li><b>Decoder 聯合訓練（主線）</b>：加 RAG-2 檢索結果，context 上限 1,000 token。</li>
           <li><b>評估</b>：TREND／RISK 準確率、LLM-judge、型態一致率（主）、打亂 Z_fused（輔助）。</li>
           <li><b>解讀 L_belief</b>：測試完看結果再決定怎麼解讀。</li>
           <li><b>消融</b>：只用 L_belief／＋L_align／＋L_ground／三個一起；有無 RAG-2 候選；遮掉 H_t。</li>
@@ -568,8 +568,8 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line)
           <tr data-node="rag1"><td>RAG-1 知識庫</td><td>7 類型態定義（教科書／技術分析資料庫）</td><td><span class="mono">data/knowledge/patterns/*.md → data/vectors/_patterns/patterns.npz</span></td><td>7 段定義各 ≤512 token（[7, 512, 768]）；每天取哪 K 段在融合層裡檢索；程式 rag/pattern_kb.py</td></tr>
           <tr data-node="lbl_alpha"><td>α*（RAG-1，型態標籤）</td><td>K 線敘述的型態、當天取到的 K 段</td><td><span class="mono">訓練時即時算（grounding/alpha.py）</span></td><td>敘述型態那段 0.9、其他段平分 0.1（#131）。cosine 對照版本仍可用 alpha_star_rag1.py 產生 data/labels/grounding/{T}_rag1.json（每天 7 個 cosine）</td></tr>
           <tr data-node="c_fusion"><td>融合層</td><td>H_t（K 線敘述）、H_v、H_r（RAG-1）</td><td><span class="mono">checkpoints/fusion_{T}.pt</span></td><td>H_t 改讀 K 線敘述；不再讀新聞與舊 H_r；Z_fused 仍輸出到 z_fused/{T}/</td></tr>
-          <tr data-node="doc_index"><td>RAG-2 候選庫</td><td>每日 JSON 的 news、filing_chunks、transcript_chunks</td><td>（不另建索引：不做相似度排序，直接讀每日 JSON）</td><td>chunk＋available_date、來源</td></tr>
-          <tr data-node="rag2"><td>RAG-2 每日候選</td><td>候選庫</td><td><span class="mono">data/outputs/rag2/{T}/{date}.json</span></td><td>15–20 段短版文字與來源、日期；程式 rag/rag2.py</td></tr>
+          <tr data-node="doc_index"><td>RAG-2 候選庫</td><td>每日 JSON 的 news、filing_chunks、transcript_chunks</td><td>（不另建索引：直接讀每日 JSON，切段後即時編碼，同一段只編碼一次）</td><td>短段＋available_date、來源</td></tr>
+          <tr data-node="rag2"><td>RAG-2 每日候選</td><td>候選庫</td><td><span class="mono">data/outputs/rag2/{T}/{date}.json</span></td><td>約 12 段短版文字（1,000 token 內）與來源、日期、檢索分數；程式 rag/rag2.py</td></tr>
         </tbody>
       </table>
     </div>
@@ -602,7 +602,7 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line)
           <li><b>Q4</b> RAG-1 query：K 線圖的池化向量。</li>
           <li><b>Q5</b> α*：原本選相似度換算；11/05 改成型態類別直接對應（見 Q13）。</li>
           <li><b>Q6</b> α̂：取融合層裡 H_t 對 H_r 的注意力。</li>
-          <li><b>Q7</b> RAG-2 候選：固定挑章節（MD&amp;A、風險因素開頭等重要章節）；不用 K 線敘述當 query。</li>
+          <li><b>Q7</b> RAG-2 候選：原本固定挑章節；11/16 改成凍結嵌入模型＋固定 query 檢索（#132）。不用 K 線敘述、也暫不用 Z_fused 當 query。</li>
           <li><b>Q8</b> 長 context 的運算成本：等有 GPU 再跑。</li>
           <li><b>Q9</b> 確認有用到圖：以型態一致率為主。</li>
           <li><b>Q10</b> H_t 的副作用：每天的敘述產生一次就存檔，之後固定使用；加做「遮掉 H_t」消融。</li>
@@ -693,10 +693,10 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line)
     // ---- Decoder：只生成一次 ----
     { id: 'projector', m: 'D', yr: 1, s: 'done', ph: 'both', main: 1, x: 250, y: 1150, w: 220, t: 'Soft-prompt Projector', f: 'ZFusedProjector', o: '→ 4 × 4096 prefix',
       d: 'Z_fused 投影成 4 個 LLM prefix token（現行程式已實作）。', r: ['#57'] },
-    { id: 'decoder', m: 'D', yr: 1, s: 'partial', ph: 'both', main: 1, x: 50, y: 1250, w: 650, h: 96, t: 'Decoder：LLaMA-2 7B（4-bit 凍結）＋ LoRA', f: 'decoder/model.py · decoder/train.py', o: 'context = [ 4 個 prefix ; RAG-2 候選短版文字 × 15–20 段 ; y_belief ]', sub: '只生成一次；看 Z_fused 的同時看候選，由注意力自己挑要參考哪幾段',
+    { id: 'decoder', m: 'D', yr: 1, s: 'partial', ph: 'both', main: 1, x: 50, y: 1250, w: 650, h: 96, t: 'Decoder：LLaMA-2 7B（4-bit 凍結）＋ LoRA', f: 'decoder/model.py · decoder/train.py', o: 'context = [ 4 個 prefix ; RAG-2 檢索出的短版文字（約 12 段）; y_belief ]', sub: '只生成一次；看 Z_fused 的同時看檢索出的文件',
       d: '以 Z_fused（prefix）與 RAG-2 候選文字為條件生成敘述。訓練時 teacher forcing 跑 y_belief，只算 L_belief。',
-      i: ['prefix [4, 4096]', 'RAG-2 的 15–20 段短版文字', 'y_belief（teacher forcing）'], out: ['checkpoints/decoder/（不加 RAG-2：decoder_512/）'],
-      st: ['組 context：prefix → 每段候選加標頭「[來源 日期]」→ y_belief', 'forward：只對 y_belief token 算 L_belief', '加上 L_align、L_ground（融合層算好的），一次 backward'], goal: 'context 多了 RAG-2 候選，序列約 1,100–1,300 token。',
+      i: ['prefix [4, 4096]', 'RAG-2 檢索出的短版文字（1,000 token 內）', 'y_belief（teacher forcing）'], out: ['checkpoints/decoder/（不加 RAG-2：decoder_512/）'],
+      st: ['組 context：prefix → 每段候選加標頭「[來源 日期]」→ y_belief', 'forward：只對 y_belief token 算 L_belief', '加上 L_align、L_ground（融合層算好的），一次 backward'], goal: 'context 多了 RAG-2 檢索結果（上限 1,000 token）。',
       td: ['主線：加 RAG-2 的長 context，等 GPU（程式已完成，tiny 模型 smoke test 通過）', '選配：Mac 先跑 --no_rag2 的 512 版本', 'L_belief 怎麼解讀：測試完再決定'], r: ['#57', '#59', '#64'], fm: ['f-onepass', 'f-belief'] },
     { id: 'gen', m: 'D', yr: 1, s: 'partial', nw: 1, ph: 'gpu', main: 1, x: 260, y: 1390, w: 200, t: '可解釋敘述', f: 'generate()', o: '<TREND><RISK> 敘述＋依據',
       d: '最後的敘述；Decoder 對各段候選的注意力可以標出每句話主要參考哪幾段（只用來展示，不算 Loss）。', fm: ['f-onepass'] },
@@ -719,15 +719,15 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line)
     { id: 'a_docjson', m: 'A', yr: 1, s: 'done', x: 760, y: 300, w: 440, t: '每日資料 JSON', f: 'build_dataset.py → dataset/{T}/{date}.json', o: 'news[] · filing_chunks[] · transcript_chunks[] · label',
       d: '格式不變。v2 裡它是 RAG-2 候選庫、y_belief 答案卷的來源。' },
     { id: 'doc_index', m: 'B', yr: 1, s: 'partial', nw: 1, ph: 'now', x: 760, y: 440, w: 440, h: 70, t: 'RAG-2 候選庫（依日期過濾）', f: 'chunk 原文 · available_date · 來源', o: 'AAPL 每天候選約 82 段：新聞 11、財報 52、法說 19',
-      d: '把新聞、財報、法說會 chunk 都放進同一個庫，每段帶可得日期與來源。現行向量庫只放財報與法說，要把新聞也放進來。',
+      d: '新聞、財報、法說會都從每日 JSON 取，每段帶可得日期與來源；切成短段後由凍結嵌入模型即時編碼。',
       td: ['MSFT 還沒有新聞／財報／法說資料，要先抓'], fm: ['f-rag2'] },
-    { id: 'rag2', m: 'B', yr: 1, s: 'partial', nw: 1, ph: 'now', x: 760, y: 1250, w: 440, h: 80, t: 'RAG-2 當天候選篩選（生成前）', f: 'rag2.py：日期過濾 ＋ 固定章節 ＋ 壓成短版', o: '→ 15–20 段短版文字進 Decoder context', sub: '不做相似度排序、不學 W_q、不算 Loss',
-      d: '生成前依日期與來源把當天候選縮到 15–20 段，每段壓成標題＋第一句（或前約 40 token），放進 Decoder context。Decoder 的注意力自己挑要參考哪幾段。',
+    { id: 'rag2', m: 'B', yr: 1, s: 'partial', nw: 1, ph: 'now', x: 760, y: 1250, w: 440, h: 80, t: 'RAG-2 當天文件檢索（生成前）', f: 'rag2.py：日期過濾 ＋ 嵌入模型檢索 ＋ 各來源名額', o: '→ 約 12 段短版文字進 Decoder context', sub: '檢索器凍結、固定 query、不學 W_q、不算 Loss',
+      d: '生成前把當天可得的文件切成短段，用凍結的嵌入模型（bge-base）對固定 query 打分數，各來源依名額挑出約 12 段放進 Decoder context（#132）。',
       i: ['RAG-2 候選庫'], out: ['data/outputs/rag2/{TICKER}/{date}.json'],
-      st: ['候選：available_date ≤ t 的當天新聞、當前背景財報、t 以前的 8-K、最近一場法說會', '新聞與當天 8-K 全收；背景財報固定挑 MD&A、風險因素開頭；法說會挑重要段落', '每段壓成短版、加上來源與日期標頭', '交給 Decoder'],
-      td: ['人工抽查幾天的候選（--show）', '確定法說會挑哪些段落（目前挑財務關鍵字最多的 4 段）'], fm: ['f-rag2', 'f-onepass'] },
+      st: ['候選：available_date ≤ t 的當天新聞、當前背景財報、t 以前的 8-K、最近一場法說會', '切短段：新聞取標題＋一句（優先提到 Apple 的句子），財報與法說會依句子切約 40 字，跳過表格與免責聲明', '分數 = 0.7 × cos(段, 「Apple 的新聞」) + 0.3 × max cos(段, 四個面向 query)', '當天 8-K 必收；新聞 6、10-K／10-Q 3、法說會 3 輪流放入，不夠互補；新聞分數 < 0.48 不收；重複事件去重；1,000 token 內', '加上來源與日期標頭，交給 Decoder；舊規則保留為 --method rule'],
+      td: ['人工抽查更多天（--show）', '待決定：y_belief 重跑時要不要改讀同一份 RAG-2 結果（答案跟 Decoder 看到的一致）', '之後可考慮把 Z_fused 相似度加進分數'], fm: ['f-rag2', 'f-onepass'] },
     { id: 'l_belief', m: 'D', yr: 1, s: 'done', ph: 'gpu', x: 860, y: 1390, w: 230, t: 'L_belief', f: 'Decoder 文字 vs. y_belief', o: '−Σ log p(y_t | …)',
-      d: '公式照計畫書；context 多了 RAG-2 候選。', grad: ['decoder', 'projector', 'c_fusion'], fm: ['f-belief'] },
+      d: '公式照計畫書；context 多了 RAG-2 檢索結果。', grad: ['decoder', 'projector', 'c_fusion'], fm: ['f-belief'] },
     { id: 'l_total', m: 'D', yr: 1, s: 'partial', ph: 'both', main: 1, x: 860, y: 1500, w: 230, h: 72, t: '複合 Loss', f: 'λ1·La + λ2·Lg + λ3·Lb', o: '一次 backward',
       d: 'L = λ1·L_align + λ2·L_ground + λ3·L_belief（計畫書 3.5 (4)）。ViT、FinBERT、LLaMA 本體凍結。',
       grad: ['decoder', 'projector', 'c_fusion', 'b_vit', 'b_capenc', 'rag1'], td: ['decoder/train.py 已實作聯合訓練迴圈', 'λ 在 Validation 上調'], fm: ['f-overview'] },

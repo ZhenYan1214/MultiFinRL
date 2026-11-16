@@ -9,7 +9,7 @@
 組 batch 時同一批不放同型態的日子（L_align）。舊版是讀預先存好的 Z_fused，L_belief 到不了融合層。
 
 兩個版本（#118）：
-    主線     --rag2（預設）：context 約 1,100–1,300 token，等有 GPU 再跑
+    主線     --rag2（預設）：RAG-2 檢索結果上限 1,000 token（rag2.max_tokens），等有 GPU 再跑
     選配     --no_rag2：不放候選文字，y_belief 上限 512 token，Mac 可以先跑
 
 沿用唯一的 strict temporal manifest：Train 更新參數、Validation 選最佳 epoch、Test 留給 evaluate.py。

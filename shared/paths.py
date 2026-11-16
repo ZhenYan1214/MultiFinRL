@@ -82,7 +82,7 @@ def fusion_checkpoint_path(tickers: str | list[str], tag: str | None = None) -> 
 
 
 def rag2_path(ticker: str, date: str) -> Path:
-    """RAG-2 每日候選（15–20 段短版文字），見 module_b_encoder/rag/rag2.py。"""
+    """RAG-2 每日檢索結果（約 12 段短版文字），見 module_b_encoder/rag/rag2.py。"""
     return OUTPUTS / "rag2" / ticker / f"{date}.json"
 
 

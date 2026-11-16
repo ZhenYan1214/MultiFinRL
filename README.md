@@ -113,7 +113,7 @@ MultiFinRL/
 │   │   └── text_encoder.py          # FinBERT -> H_t
 │   ├── rag/
 │   │   ├── pattern_kb.py            # RAG-1: pattern definitions (data/knowledge/patterns/) -> FinBERT vectors
-│   │   └── rag2.py                  # RAG-2: daily 15–20 document snippets for the Decoder context
+│   │   └── rag2.py                  # RAG-2: daily document retrieval (frozen embedding model) for the Decoder context
 │   ├── event_extraction.py          # keyword or --method llm; standalone data-quality check, not in the pipeline (#130)
 │   ├── event_ground_truth_llm.py    # LLM-assisted ground truth labeling for event_extraction.py
 │   ├── event_ground_truth_prompt.py # shared prompt used by the above and event_extraction.py --method llm
@@ -177,7 +177,7 @@ Full definition in `docs/data_format.md`; the handoff points are:
 | Charts | 20-day trailing window, PNG, 224×224, RGB |
 | Price-movement label | Return from close to the close 5 trading days later; train-period 1/3 and 2/3 quantiles define BEARISH / NEUTRAL / BULLISH in strict experiments |
 | Text chunking | ≤512 tokens per chunk (FinBERT's input limit) |
-| RAG | RAG-1: top-K pattern definitions out of all definitions in `data/knowledge/patterns/` (K and the class set are still being tuned; see `configs/config.yaml`), into fusion; RAG-2: 15–20 date-filtered snippets, into the Decoder context |
+| RAG | RAG-1: top-K pattern definitions out of all definitions in `data/knowledge/patterns/` (K and the class set are still being tuned; see `configs/config.yaml`), into fusion; RAG-2: date-filtered candidates ranked by a frozen embedding model (bge-base) against a fixed query, ~12 snippets within 1,000 tokens, into the Decoder context |
 | Missing daily news | backfilled from prior days, with a `days_ago` field so the model can weigh relevance |
 | Fine-tuning | Fusion model (`fusion/train.py`): full-parameter training. Decoder (`decoder/train.py`): QLoRA (4-bit, LoRA on all attention+MLP linear layers). ViT: LoRA r4 improved mean validation macro F1 over five seeds (0.3662 vs 0.3328) but won only 3/5 seeds, so Frozen remains the formal encoder pending broader cross-stock/time validation. |
 | Dev environment | `requirements.txt` in this repo is the single source of truth |

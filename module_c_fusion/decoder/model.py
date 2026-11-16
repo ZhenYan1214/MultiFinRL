@@ -1,7 +1,7 @@
 """Decoder：Z_fused 當 soft-prompt 前綴，加上 RAG-2 候選文字，接凍結的 LLaMA-2 + LoRA
 （計畫書 3.4/3.5；decisions.md #113、#117、#118）。
 
-    context = [ 4 個 prefix ; RAG-2 候選短版文字（15–20 段）; y_belief ]
+    context = [ 4 個 prefix ; RAG-2 檢索出的短版文字（約 12 段，1,000 token 內）; y_belief ]
 
 - ZFusedProjector：Z_fused [B,768] -> 4 個 LLM prefix token。
 - ZFusedDecoder.forward：只對 y_belief 的 token 算 L_belief = −Σ log p(y_t | y_<t, prefix, 候選)；
