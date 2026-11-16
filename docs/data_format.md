@@ -77,6 +77,7 @@ data/raw/macro/
       "chunk_id": "AAPL_10-Q_2021-02-01_003",
       "doc_type": "10-Q",
       "filing_date": "2021-02-01",
+      "available_date": "2021-02-01",
       "text": "（≤512 token 的段落）"
     }
   ],
@@ -85,6 +86,7 @@ data/raw/macro/
       "chunk_id": "AAPL_EC_2021Q1_012",
       "doc_type": "earnings_call",
       "event_date": "2021-01-27",
+      "available_date": "2021-01-28",
       "text": "（≤512 token 的段落）"
     }
   ],
@@ -138,7 +140,8 @@ ETF／指數的 `--macro` record 將 `filing_chunks`、`transcript_chunks` 設�
 | `news[].days_ago` | 該則新聞發布日距 `date` 的天數；當日新聞為 0；當日無新聞時以近日新聞回補 |
 | `news[].published_at` | 含時區（美東），供後續切齊時間、避免 look-ahead |
 | `*_chunks[].text` | 每段 ≤512 token（以 FinBERT tokenizer 計） |
-| `filing_chunks` / `transcript_chunks` | 「最新一份沿用到下一份發布為止」；當日無有效文件時為空陣列 `[]` |
+| `filing_chunks` / `transcript_chunks` | 「最新一份沿用到下一份可得為止」；當日無有效文件時為空陣列 `[]` |
+| `*_chunks[].available_date` | 可得交易日，必須 ≤ `date`。美東 16:00 以後公開的文件延到下一個交易日（跟新聞盤後規則一致）：財報用 EDGAR 收件時間 `accepted_at`，法說會用 `report_time`（只有 pre-market 算當天）。`filing_date`／`event_date` 保留文件本身的日期 |
 | `macro` | 僅 `--macro` 模式存在。`indicators`、`news`、`dot_plot` 都只能使用 `available_date/published_at <= date` 的資料；一般個股 record 可省略此欄位 |
 | `macro.dot_plot` | 當時最新一份 SEP 點陣圖的可追溯資料。目前直接作為 ViT 第二張圖，`path` 必須等於 `chart.inputs[1].path`；若做 Volume ablation，則仍保留此 context 但不進 ViT |
 | `prices.future_closes` | 未來第 1~5 個交易日收盤價（標籤依據，**僅供產生標籤與回測，不可作為模型輸入**） |

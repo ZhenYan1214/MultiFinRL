@@ -56,6 +56,9 @@ def validate_daily_record(record: dict) -> None:
             for k in keys:
                 if k not in c:
                     raise ValueError(f"{field}[{i}] missing key: {k}")
+            # 可得交易日（盤後公開的文件延到下一個交易日，見 build_dataset.py）不能晚於分析日
+            if c.get("available_date", c[keys[2]]) > record["date"]:
+                raise ValueError(f"{field}[{i}] is not available on {record['date']}")
     # ETF／指數才會有 macro；個股舊資料沒有此欄位仍保持相容。
     macro = record.get("macro")
     if macro is not None:

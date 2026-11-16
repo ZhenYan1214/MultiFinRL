@@ -73,6 +73,12 @@ def skip_boilerplate(text: str) -> str:
     return text
 
 
+def _available(chunk: dict) -> str:
+    """可得交易日：盤後送件的 8-K 從下一個交易日才算「當天」的新文件（build_dataset.py）。
+    舊資料沒有 available_date 時退回 filing_date。"""
+    return chunk.get("available_date", chunk["filing_date"])
+
+
 def _doc_key(chunk_id: str) -> str:
     return chunk_id.rsplit("_", 1)[0]
 
@@ -121,8 +127,9 @@ def build_snippets(record: dict, cfg: dict) -> list[dict]:
     for key in eight_k:
         chunks = docs[key]
         filing_date = chunks[0]["filing_date"]
-        target = today_8k if filing_date == date else older_8k
-        for s in _eight_k_snippets(chunks, n_words, 2 if filing_date == date else 1):
+        is_today = _available(chunks[0]) == date
+        target = today_8k if is_today else older_8k
+        for s in _eight_k_snippets(chunks, n_words, 2 if is_today else 1):
             target.append(item("8-K", "8-K", filing_date, s["chunk_id"], s["text"]))
 
     news = [item("News", "news", n["published_at"][:10], None,
