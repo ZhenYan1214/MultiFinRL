@@ -15,7 +15,7 @@ DAILY_RECORD_REQUIRED_KEYS = {
 }
 
 VECTOR_INDEX_REQUIRED_KEYS = {
-    "ticker", "date", "vectors", "retrieved_chunk_ids", "source_json",
+    "ticker", "date", "vectors", "caption", "source_json",
 }
 
 
@@ -56,6 +56,9 @@ def validate_daily_record(record: dict) -> None:
             for k in keys:
                 if k not in c:
                     raise ValueError(f"{field}[{i}] missing key: {k}")
+            # 可得交易日（盤後公開的文件延到下一個交易日，見 build_dataset.py）不能晚於分析日
+            if c.get("available_date", c[keys[2]]) > record["date"]:
+                raise ValueError(f"{field}[{i}] is not available on {record['date']}")
     # ETF／指數才會有 macro；個股舊資料沒有此欄位仍保持相容。
     macro = record.get("macro")
     if macro is not None:
@@ -109,11 +112,12 @@ def validate_daily_record(record: dict) -> None:
 
 
 def validate_vector_index(index: dict) -> None:
-    """驗證 B 的 index.json。不合法時 raise ValueError。"""
+    """驗證 B 的 index.json（H_v＋K 線敘述的 H_t）。不合法時 raise ValueError。"""
+    from shared.patterns import PATTERNS, VOLUME_LABELS
     missing = VECTOR_INDEX_REQUIRED_KEYS - index.keys()
     if missing:
-        raise ValueError(f"vector index missing keys: {missing}")
-    for name in ("H_v", "H_t", "H_r"):
+        raise ValueError(f"vector index missing keys: {missing}（舊架構的 index.json 要重跑 generate_vectors）")
+    for name in ("H_v", "H_t"):
         if name not in index["vectors"]:
             raise ValueError(f"vectors missing: {name}")
         for k in ("file", "shape", "dtype", "encoder"):
@@ -125,3 +129,12 @@ def validate_vector_index(index: dict) -> None:
         raise ValueError(f"vectors.H_v shape must be [2, 197, 768], got {h_v['shape']}")
     if h_v.get("input_types") is None or len(h_v["input_types"]) != 2:
         raise ValueError("vectors.H_v.input_types must contain exactly two ordered input types")
+    if index["vectors"]["H_t"]["shape"] != [512, 768]:
+        raise ValueError(f"vectors.H_t shape must be [512, 768], got {index['vectors']['H_t']['shape']}")
+    if index["vectors"]["H_t"].get("source") != "chart_caption":
+        raise ValueError("vectors.H_t 必須是 K 線文字敘述的編碼（source=chart_caption）")
+    caption = index["caption"]
+    if caption.get("pattern") not in PATTERNS:
+        raise ValueError(f"caption.pattern 不在 PATTERNS 型態內: {caption.get('pattern')}")
+    if caption.get("volume_label") not in VOLUME_LABELS:
+        raise ValueError(f"caption.volume_label 不在四類內: {caption.get('volume_label')}")

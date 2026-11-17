@@ -3,8 +3,21 @@
   "date": "2021-03-15",
   "chart": {
     "path": "data/raw/charts/AAPL/2021-03-15.png",
+    "inputs": [
+      {
+        "type": "candlestick",
+        "path": "data/raw/charts/AAPL/2021-03-15.png"
+      },
+      {
+        "type": "volume",
+        "path": "data/raw/charts/AAPL/volume/2021-03-15.png"
+      }
+    ],
     "window_days": 20,
-    "size": [224, 224],
+    "size": [
+      224,
+      224
+    ],
     "channels": 3
   },
   "news": [

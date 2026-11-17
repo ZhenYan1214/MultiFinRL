@@ -17,6 +17,9 @@
 """
 import argparse
 import datetime as dt
+from bisect import bisect_left
+from functools import lru_cache
+from zoneinfo import ZoneInfo
 
 from shared import paths, schemas
 from shared.temporal_split import build_temporal_manifest, save_temporal_manifest
@@ -28,6 +31,57 @@ from module_a_data.preprocess.chunker import make_chunks
 from module_a_data.preprocess.text_cleaner import clean
 
 NEWS_BACKFILL_DAYS = 7  # 當日無新聞時，最多往前找幾天
+ET = ZoneInfo("America/New_York")
+MARKET_CLOSE = dt.time(16, 0)
+
+
+# ---------------------------------------------------------------------------
+# 文件的「可得交易日」（available_date）
+#
+# 分析日 t 以收盤為準（標籤 = 第 5 個交易日收盤 / t 收盤），所以 t 收盤後才公開的文件只能從
+# 下一個交易日開始用，跟新聞的盤後規則一致（fetch_news.py、decisions.md #23）。
+# 財報 8-K 和法說會都在美東 16:30 之後才公開（AAPL 全部是 post-market），舊版用
+# filing_date／event_date <= t 判斷，財報日當天就看得到盤後財報，是 look-ahead。
+# 下一個交易日取 OHLCV 的交易日序列，會跳過假日。
+# ---------------------------------------------------------------------------
+
+@lru_cache(maxsize=None)
+def _trading_days(ticker: str) -> tuple[str, ...]:
+    return tuple(ts.strftime("%Y-%m-%d") for ts in load_ohlcv(ticker).index)
+
+
+def available_trading_day(ticker: str, date: str, after_close: bool) -> str:
+    """在美東日期 date 公開的文件，第一個能用它的分析日。
+
+    盤前／盤中公開且 date 是交易日 → date；盤後公開或 date 不是交易日 → 下一個交易日。
+    超出 OHLCV 範圍時回傳 date 的隔天（反正沒有分析日會用到）。
+    """
+    days = _trading_days(ticker)
+    i = bisect_left(days, date)
+    if after_close and i < len(days) and days[i] == date:
+        i += 1
+    if i < len(days):
+        return days[i]
+    return (dt.date.fromisoformat(date) + dt.timedelta(days=1)).isoformat()
+
+
+def filing_available_date(ticker: str, filing: dict) -> str:
+    """EDGAR 收件時間（accepted_at，UTC）換成美東時間判斷；舊 index 沒有收件時間時保守當成盤後。"""
+    accepted = filing.get("accepted_at")
+    if not accepted:
+        return available_trading_day(ticker, filing["filing_date"], after_close=True)
+    t = dt.datetime.fromisoformat(accepted.replace("Z", "+00:00")).astimezone(ET)
+    return available_trading_day(ticker, t.date().isoformat(), t.time() >= MARKET_CLOSE)
+
+
+def transcript_available_date(ticker: str, transcript: dict) -> str:
+    """法說會依 report_time：只有明確 pre-market 才算當天可得，其他（post-market、未知）都延到下一個交易日。"""
+    return available_trading_day(ticker, transcript["event_date"],
+                                 after_close=transcript.get("report_time") != "pre-market")
+
+
+def _with_available(chunks: list[dict], available_date: str) -> list[dict]:
+    return [{**c, "available_date": available_date} for c in chunks]
 
 
 def collect_news(ticker: str, date: str) -> list[dict]:
@@ -49,51 +103,63 @@ def collect_news(ticker: str, date: str) -> list[dict]:
 def collect_filing_chunks(ticker: str, date: str, max_tokens: int) -> list[dict]:
     """10-K/10-Q 當背景、8-K 當補充事件，兩者並存，不互相覆蓋（decisions.md #41/#44/#45）。
 
-    10-K/10-Q：維持原本「取最新一份沿用到下一份發布為止」的邏輯，不變。
-    8-K：只列「比目前背景這份 10-K/10-Q 還新」的部分，每則標上「N 天前」前綴（比照新聞
-    days_ago 的做法，見 #21），讓模型自己從文字學相關性強度衰減，不用額外規則判斷還算不算
-    新事件。用「背景 10-K/10-Q 之後」當篩選邊界，一旦有新一份 10-K/10-Q 發布，背景更新，
-    舊的 8-K 自然被排除，不會無上限地累積下去。
+    一律用 available_date（可得交易日，見上方說明）判斷 t 能不能用，不用 filing_date。
+    10-K/10-Q：取 available_date <= t 的最新一份，沿用到下一份可得為止。
+    8-K：只列「比目前背景這份 10-K/10-Q 還新」的部分，每則標上「N 天前」前綴（N 從
+    available_date 算，比照新聞 days_ago，見 #21），讓模型自己從文字學相關性強度衰減。
+    例外：今天剛變成可得的 8-K 一定列入。財報 8-K（t 盤後）和 10-Q（t 晚上收件）常常同一個
+    交易日變成可得，只用「比背景新」的話財報 8-K 會在可得的那天就被新背景擋掉、永遠看不到；
+    之後幾天就跟原本一樣，由 10-Q 當背景、不再重複列 8-K。
+    chunk 保留原本的 filing_date，另外加 available_date。
     """
     index_path = paths.RAW_FILINGS / ticker / "index.json"
     if not index_path.exists():
         return []
-    filings = read_json(index_path)["filings"]
+    filings = [{**f, "available_date": filing_available_date(ticker, f)}
+               for f in read_json(index_path)["filings"]]
 
-    periodic = [f for f in filings if f["form"] in ("10-K", "10-Q") and f["filing_date"] <= date]
+    periodic = [f for f in filings if f["form"] in ("10-K", "10-Q") and f["available_date"] <= date]
     chunks: list[dict] = []
     background_since = None
     if periodic:
-        latest = max(periodic, key=lambda f: f["filing_date"])
-        background_since = latest["filing_date"]
+        latest = max(periodic, key=lambda f: (f["available_date"], f["filing_date"]))
+        background_since = latest["available_date"]
         html = (paths.RAW_FILINGS / ticker / latest["file"]).read_text(encoding="utf-8", errors="ignore")
-        chunks += make_chunks(ticker, latest["form"], latest["filing_date"], clean(html),
-                              max_tokens, date_key="filing_date")
+        chunks += _with_available(
+            make_chunks(ticker, latest["form"], latest["filing_date"], clean(html),
+                        max_tokens, date_key="filing_date"),
+            latest["available_date"])
 
-    eight_k = [f for f in filings if f["form"] == "8-K" and f["filing_date"] <= date
-              and (background_since is None or f["filing_date"] > background_since)]
+    eight_k = [f for f in filings if f["form"] == "8-K" and f["available_date"] <= date
+              and (background_since is None or f["available_date"] > background_since
+                   or f["available_date"] == date)]
     d0 = dt.date.fromisoformat(date)
-    for f in sorted(eight_k, key=lambda f: f["filing_date"]):
-        days_ago = (d0 - dt.date.fromisoformat(f["filing_date"])).days
+    for f in sorted(eight_k, key=lambda f: (f["available_date"], f["filing_date"])):
+        days_ago = (d0 - dt.date.fromisoformat(f["available_date"])).days
         html = (paths.RAW_FILINGS / ticker / f["file"]).read_text(encoding="utf-8", errors="ignore")
         text = f"[{days_ago} 天前的重大訊息揭露 8-K] {clean(html)}"
-        chunks += make_chunks(ticker, f["form"], f["filing_date"], text,
-                              max_tokens, date_key="filing_date")
+        chunks += _with_available(
+            make_chunks(ticker, f["form"], f["filing_date"], text, max_tokens, date_key="filing_date"),
+            f["available_date"])
     return chunks
 
 
 def collect_transcript_chunks(ticker: str, date: str, max_tokens: int) -> list[dict]:
-    """同上，取 event_date <= date 的最新一份法說會逐字稿。"""
+    """取 available_date <= date 的最新一場法說會逐字稿（盤後開的法說會從下一個交易日才可得）。"""
     index_path = paths.RAW_TRANSCRIPTS / ticker / "index.json"
     if not index_path.exists():
         return []
-    valid = [t for t in read_json(index_path)["transcripts"] if t["event_date"] <= date]
+    transcripts = [{**t, "available_date": transcript_available_date(ticker, t)}
+                   for t in read_json(index_path)["transcripts"]]
+    valid = [t for t in transcripts if t["available_date"] <= date]
     if not valid:
         return []
     latest = max(valid, key=lambda t: t["event_date"])
     text = (paths.RAW_TRANSCRIPTS / ticker / latest["file"]).read_text(encoding="utf-8", errors="ignore")
-    return make_chunks(ticker, "earnings_call", latest["event_date"], text,
-                       max_tokens, date_key="event_date")
+    return _with_available(
+        make_chunks(ticker, "earnings_call", latest["event_date"], text,
+                    max_tokens, date_key="event_date"),
+        latest["available_date"])
 
 
 def _vision_input_types(cfg: dict, macro_store: MacroDataStore | None) -> list[str]:

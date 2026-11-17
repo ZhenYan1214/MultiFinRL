@@ -68,9 +68,10 @@ def extract_from_daily_record(record: dict) -> list[dict]:
     新聞：先做公司相關性檢查，不相關的新聞直接跳過，不進關鍵字比對。
     財報／法說會 chunk：collect_filing_chunks()/collect_transcript_chunks()
     是「沿用最新一份到下一份發布為止」（build_dataset.py），所以同一份財報會被
-    很多天重複讀到，不代表那天真的有新事件——只有 chunk 的 filing_date/event_date
-    等於這天的 record["date"]，才是這天真正新發生的財報/法說會，才進關鍵字比對，
-    否則只是拿來當背景脈絡用的舊資料，跳過（docs/decisions.md #32）。
+    很多天重複讀到，不代表那天真的有新事件——只有 chunk 的 available_date（可得交易日；
+    盤後公開的財報／法說會是下一個交易日，見 build_dataset.py）等於這天的 record["date"]，
+    才是這天真正新出現的財報/法說會，才進關鍵字比對，否則只是拿來當背景脈絡用的舊資料，
+    跳過（docs/decisions.md #32）。舊資料沒有 available_date 時退回 filing_date/event_date。
     """
     ticker = record["ticker"]
     date = record["date"]
@@ -82,7 +83,7 @@ def extract_from_daily_record(record: dict) -> list[dict]:
             events.append({**e, "source": "news", "ref": n["headline"]})
     for field, date_key in (("filing_chunks", "filing_date"), ("transcript_chunks", "event_date")):
         for c in record[field]:
-            if c.get(date_key) != date:
+            if c.get("available_date", c.get(date_key)) != date:
                 continue
             for e in extract_events(c["text"]):
                 events.append({**e, "source": field, "ref": c["chunk_id"]})
@@ -95,8 +96,10 @@ def _relevant_filing_transcript_chunks(record: dict) -> tuple[list[dict], list[d
     的主要修正），LLM 方法一樣需要，不然舊資料照樣會被誤判成當天的新事件。
     """
     date = record["date"]
-    filing = [c for c in record["filing_chunks"] if c.get("filing_date") == date]
-    transcript = [c for c in record["transcript_chunks"] if c.get("event_date") == date]
+    filing = [c for c in record["filing_chunks"]
+              if c.get("available_date", c.get("filing_date")) == date]
+    transcript = [c for c in record["transcript_chunks"]
+                  if c.get("available_date", c.get("event_date")) == date]
     return filing, transcript
 
 

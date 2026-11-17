@@ -6,13 +6,17 @@
   3. 逐份下載主文件 HTML
 
 輸出：
-  data/raw/filings/{TICKER}/index.json                 # filing 清單（型別/日期/檔名）
+  data/raw/filings/{TICKER}/index.json                 # filing 清單（型別/日期/EDGAR 收件時間/檔名）
   data/raw/filings/{TICKER}/{TYPE}_{DATE}.html          # 原始文件
 
 8-K（重大訊息即時揭露）：decisions.md #41/#44/#45——10-K/10-Q 走「取最新一份沿用到下一
 份發布為止」的背景邏輯不變，8-K 在 build_dataset.py 的 collect_filing_chunks() 另外處理
 成標時間戳記的補充事件 chunk，不會互相覆蓋，這裡只負責把三種表格都抓下來、寫進同一份
 index.json，下游自己依 form 分流。
+
+accepted_at：EDGAR 的 acceptanceDateTime（UTC）。filingDate 只有日期，盤後送件的 8-K（例如
+財報新聞稿，美東 16:30）跟盤中送件的分不出來；build_dataset 依這個時間判斷「哪一個交易日
+才可得」，美東 16:00 以後收件的延到下一個交易日（跟新聞的盤後規則 #23 一致）。
 
 用法：
     python -m module_a_data.crawler.fetch_filings --ticker AAPL --start 2021-01-01
@@ -44,11 +48,12 @@ def list_filings(cik: str, start: str) -> list[dict]:
     r.raise_for_status()
     recent = r.json()["filings"]["recent"]
     filings = []
-    for form, date, accession, doc in zip(
-        recent["form"], recent["filingDate"], recent["accessionNumber"], recent["primaryDocument"]
+    for form, date, accepted, accession, doc in zip(
+        recent["form"], recent["filingDate"], recent["acceptanceDateTime"],
+        recent["accessionNumber"], recent["primaryDocument"]
     ):
         if form in FORMS and date >= start:
-            filings.append({"form": form, "filing_date": date,
+            filings.append({"form": form, "filing_date": date, "accepted_at": accepted,
                             "accession": accession.replace("-", ""), "document": doc})
     return filings
 
@@ -65,7 +70,8 @@ def download_filings(ticker: str, start: str) -> None:
     for f in filings:
         fname = f"{f['form']}_{f['filing_date']}.html"
         out_path = out_dir / fname
-        index.append({"form": f["form"], "filing_date": f["filing_date"], "file": fname})
+        index.append({"form": f["form"], "filing_date": f["filing_date"],
+                      "accepted_at": f["accepted_at"], "file": fname})
 
         if out_path.is_file():
             skipped += 1
