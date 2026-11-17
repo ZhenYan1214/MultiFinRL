@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>v2 改版進度報告</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap">
+<style>
+/* 色彩與字體沿用 docs/architecture/architecture.html */
+:root {
+  --bg: #eef1f0; --panel: #ffffff; --panel-2: #f6f8f7; --ink: #15202a; --muted: #5a6772;
+  --line: #c6cfd2; --grid: #dde3e3; --hi: #1f4fa8;
+  --a: #a5601a; --b: #0c776b; --c: #3a4cc0; --d: #b3306a; --new: #7a3fc4;
+  --ok: #2b8547; --wip: #c2830b; --no: #8c96a0;
+  --ok-bg: #e3f2e7; --wip-bg: #fbf0d6; --no-bg: #eceff1; --new-bg: #efe6fa; --bad: #b8402f; --bad-bg: #f8e4e0;
+  --bar: #3a4cc0; --bar-ref: #9aa6b0;
+  --font-display: "IBM Plex Sans Condensed", "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+  --font-body: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1317; --panel: #151c21; --panel-2: #1a2228; --ink: #e3e9ed; --muted: #92a0ab;
+    --line: #34414b; --grid: #1d262c; --hi: #7fa6ff;
+    --a: #e3a452; --b: #3fc3b0; --c: #96a3ff; --d: #f27dab; --new: #c49bff;
+    --ok: #5ec47e; --wip: #f1b63f; --no: #7f8c97;
+    --ok-bg: #173022; --wip-bg: #33280f; --no-bg: #20282e; --new-bg: #2a1f3a; --bad: #ff8a78; --bad-bg: #3a1d19;
+    --bar: #8f9cff; --bar-ref: #66737d;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1317; --panel: #151c21; --panel-2: #1a2228; --ink: #e3e9ed; --muted: #92a0ab;
+  --line: #34414b; --grid: #1d262c; --hi: #7fa6ff;
+  --a: #e3a452; --b: #3fc3b0; --c: #96a3ff; --d: #f27dab; --new: #c49bff;
+  --ok: #5ec47e; --wip: #f1b63f; --no: #7f8c97;
+  --ok-bg: #173022; --wip-bg: #33280f; --no-bg: #20282e; --new-bg: #2a1f3a; --bad: #ff8a78; --bad-bg: #3a1d19;
+  --bar: #8f9cff; --bar-ref: #66737d;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font-family: var(--font-body); font-size: 15px; line-height: 1.7;
+  padding: 32px 16px 72px;
+}
+.wrap { max-width: 1080px; margin: 0 auto; display: flex; flex-direction: column; gap: 44px; }
+h1, h2, h3 { font-family: var(--font-display); margin: 0; line-height: 1.3; text-wrap: balance; }
+h1 { font-size: clamp(28px, 4.4vw, 40px); }
+h2 { font-size: 23px; }
+h3 { font-size: 17px; }
+p { margin: 0; }
+code { font-family: var(--font-mono); font-size: 0.86em; background: var(--panel-2); border: 1px solid var(--grid); border-radius: 4px; padding: 0 4px; overflow-wrap: anywhere; }
+.eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.06em; color: var(--muted); text-transform: uppercase; margin-bottom: 6px; }
+.muted { color: var(--muted); }
+section { display: flex; flex-direction: column; gap: 18px; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 20px 22px; }
+header { display: flex; flex-direction: column; gap: 12px; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 13px; color: var(--muted); font-family: var(--font-mono); }
+.lede { font-size: 17px; max-width: 64ch; }
+
+/* 指標磚 */
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
+.tile { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; display: flex; flex-direction: column; gap: 4px; }
+.tile .k { font-size: 13px; color: var(--muted); }
+.tile .v { font-family: var(--font-display); font-size: 32px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.tile .s { font-size: 13px; color: var(--muted); }
+
+/* 表格 */
+.tbl { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+th { font-weight: 600; color: var(--muted); font-size: 13px; white-space: nowrap; }
+td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+tr.em td { font-weight: 600; }
+
+/* 狀態標籤 */
+.tag { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; border-radius: 999px; padding: 1px 9px; white-space: nowrap; }
+.tag::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.tag.ok { color: var(--ok); background: var(--ok-bg); }
+.tag.wip { color: var(--wip); background: var(--wip-bg); }
+.tag.no { color: var(--no); background: var(--no-bg); }
+.tag.bad { color: var(--bad); background: var(--bad-bg); }
+
+/* 進度清單 */
+.steps { display: flex; flex-direction: column; }
+.step { display: grid; grid-template-columns: 92px 1fr; gap: 6px 14px; padding: 12px 0; border-bottom: 1px solid var(--grid); }
+.step:last-child { border-bottom: 0; }
+.step .t { font-weight: 600; }
+.step .d { grid-column: 2; font-size: 14px; color: var(--muted); }
+.phase { font-family: var(--font-mono); font-size: 12px; color: var(--muted); letter-spacing: 0.05em; margin: 14px 0 2px; }
+.phase:first-child { margin-top: 0; }
+
+/* 長條圖（單一系列，無圖例） */
+.chart { display: flex; flex-direction: column; gap: 10px; }
+.chart .title { font-weight: 600; }
+.bars { display: flex; flex-direction: column; gap: 10px; position: relative; }
+.bar-row { display: grid; grid-template-columns: minmax(120px, 210px) 1fr 52px; align-items: center; gap: 10px; font-size: 14px; }
+.bar-row .lbl { color: var(--ink); }
+.bar-row .val { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink); font-weight: 600; }
+.track { position: relative; height: 22px; }
+.track .ref { position: absolute; top: -4px; bottom: -4px; width: 0; border-left: 2px dashed var(--ink); z-index: 1; }
+.fill { height: 100%; background: var(--bar); border-radius: 0 4px 4px 0; cursor: default; }
+.fill.refbar { background: var(--bar-ref); }
+.fill:hover { filter: brightness(1.12); }
+.axis-note { font-size: 12px; color: var(--muted); }
+.tip { position: fixed; pointer-events: none; background: var(--ink); color: var(--panel); font-size: 12.5px; padding: 6px 9px; border-radius: 6px; opacity: 0; transition: opacity .12s; max-width: 260px; z-index: 10; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+
+ul.clean { margin: 0; padding-left: 1.2em; display: flex; flex-direction: column; gap: 6px; }
+.issue { display: grid; grid-template-columns: 1fr; gap: 6px; padding: 14px 0; border-bottom: 1px solid var(--grid); }
+.issue:last-child { border-bottom: 0; }
+.issue .h { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-weight: 600; }
+.issue p { font-size: 14px; color: var(--muted); }
+.decide { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; }
+.card .q { font-weight: 600; }
+.card p, .card li { font-size: 14px; }
+.foot { font-size: 13px; color: var(--muted); }
+
+@media (max-width: 560px) {
+  .step { grid-template-columns: 1fr; }
+  .step .d { grid-column: 1; }
+  .bar-row { grid-template-columns: 1fr 48px; }
+  .bar-row .lbl { grid-column: 1 / -1; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">MultiFinRL · 架構 v2 · 進度報告</div>
+  <h1>v2 改版進度：第一階段跑通，融合層還沒勝過凍結 ViT</h1>
+  <div class="meta"><span>2026-11-10</span><span>分支 Yn/v2</span><span>股票：AAPL</span><span>決策 #108–#131</span></div>
+  <p class="lede">v2 把 H_t 從新聞換成「K 線文字敘述」，融合層改接型態定義（RAG-1），新聞與財報改在 Decoder 前放進 context（RAG-2）。AAPL 第一階段（融合層＋L_align＋L_ground）已經從頭跑通並評估過，Decoder 程式完成、只做過小模型 smoke test，正式訓練要等 GPU。</p>
+</header>
+
+<section aria-label="重點數字">
+  <div class="tiles">
+    <div class="tile"><span class="k">K 線文字敘述（7 類、20 根）</span><span class="v">1,381 天</span><span class="s">AAPL 全量，約 0.79 美元</span></div>
+    <div class="tile"><span class="k">型態 probe（遮掉 H_t 的 Z_fused）</span><span class="v">0.596</span><span class="s">多數類 0.315；凍結 ViT 0.645</span></div>
+    <div class="tile"><span class="k">3 類情緒分類（附屬參考）</span><span class="v">0.394</span><span class="s">亂猜 0.333；全猜最多那類 0.384</span></div>
+    <div class="tile"><span class="k">L_ground：α̂ 最高 = 敘述型態</span><span class="v">0.977</span><span class="s">α* 改用型態標籤後（#131）</span></div>
+  </div>
+</section>
+
+<section aria-labelledby="s-prog">
+  <div><div class="eyebrow">01 · 進度</div><h2 id="s-prog">分階段計畫的完成狀況</h2></div>
+  <div class="panel steps">
+    <div class="phase">現在可做（不需要 GPU）</div>
+    <div class="step"><span class="tag ok">完成</span><span class="t">K 線文字敘述（AAPL）</span><span class="d">7 類、20 根 K 線，1,381 天。比較過 9／6／7 類 × 20／30／40 根，7 類沒有空類別、矛盾降到個位數。NVDA、MSFT 還沒做。</span></div>
+    <div class="step"><span class="tag wip">草稿</span><span class="t">RAG-1 型態定義知識庫</span><span class="d">7 段英文定義與索引已建好（<code>data/knowledge/patterns/</code>），但目前是 LLM 寫的草稿，還沒對照教科書或技術分析資料庫人工校對。</span></div>
+    <div class="step"><span class="tag ok">完成</span><span class="t">α* 改用型態標籤</span><span class="d">原本凍結 FinBERT 的 cosine 版本只有 18.7% 指向正確定義，改用型態標籤（#131）。</span></div>
+    <div class="step"><span class="tag ok">完成</span><span class="t">融合層改版＋訓練 L_align、L_ground</span><span class="d">輸入改成 H_t（敘述）＋H_v＋RAG-1；AAPL 跑完一輪完整 pipeline（run 20261105_230521）。</span></div>
+    <div class="step"><span class="tag ok">完成</span><span class="t">第一階段驗證</span><span class="d">型態 probe、α̂ 一致率、RAG-1 命中率、遮掉 H_t 消融、3 類分類器、二元漲跌對照都跑過，結果見下一節。</span></div>
+    <div class="step"><span class="tag wip">要改</span><span class="t">RAG-2 候選篩選</span><span class="d">1,381 天都產生了，平均每天 15.8 段；但新聞沒有相關性過濾，而且其實沒有檢索步驟（見第 03 節）。</span></div>
+    <div class="step"><span class="tag ok">完成</span><span class="t">Decoder 端程式</span><span class="d">融合層＋三個 Loss 一次 backward，支援主線 <code>--rag2</code> 與 512 版本 <code>--no_rag2</code>；小模型 smoke test 已通過。</span></div>
+    <div class="step"><span class="tag no">未開始</span><span class="t">（選配）Mac 上跑 512 版本 Decoder</span><span class="d">可先看新的 Z_fused 對 Decoder 有沒有幫助。</span></div>
+    <div class="phase">需要 GPU</div>
+    <div class="step"><span class="tag no">未開始</span><span class="t">Decoder 聯合訓練（主線）</span><span class="d">加 RAG-2，context 約 1,100–1,300 token。</span></div>
+    <div class="step"><span class="tag no">未開始</span><span class="t">評估與消融</span><span class="d">型態一致率（主）、打亂 Z_fused（輔）、TREND／RISK 準確率；只用 L_belief／＋L_align／＋L_ground／全部；有無 RAG-2。</span></div>
+  </div>
+</section>
+
+<section aria-labelledby="s-res">
+  <div><div class="eyebrow">02 · 實驗結果</div><h2 id="s-res">第一階段（AAPL，Test 203 天）</h2></div>
+
+  <div class="grid2">
+    <div class="panel chart" data-chart>
+      <div class="title">型態 probe 的 Test accuracy</div>
+      <div class="bars">
+        <div class="bar-row"><span class="lbl">凍結 ViT（直接 probe）</span><div class="track"><div class="fill refbar" style="width:64.5%" data-tip="凍結 ViT：accuracy 0.645、macro F1 0.489"></div></div><span class="val">0.645</span></div>
+        <div class="bar-row"><span class="lbl">融合層 Z_fused（遮掉 H_t）</span><div class="track"><div class="fill" style="width:59.6%" data-tip="Z_fused（遮掉 H_t）：accuracy 0.596、macro F1 0.440"></div></div><span class="val">0.596</span></div>
+        <div class="bar-row"><span class="lbl">全猜多數類</span><div class="track"><div class="fill refbar" style="width:31.5%" data-tip="全猜多數類：0.315"></div></div><span class="val">0.315</span></div>
+      </div>
+      <p class="axis-note">橫軸 0–1。圖本身有型態資訊，但融合層比凍結 ViT 少約 5 個百分點。</p>
+    </div>
+    <div class="panel chart" data-chart>
+      <div class="title">二元漲跌 walk-forward 合併 AUC（7 窗）</div>
+      <div class="bars">
+        <div class="bar-row"><span class="lbl">Z_fused（4 個 seed 中最好的）</span><div class="track"><div class="ref" style="left:50%"></div><div class="fill" style="width:54.7%" data-tip="Z_fused seed 42：0.547；4 個 seed 的範圍 0.484–0.547"></div></div><span class="val">0.547</span></div>
+        <div class="bar-row"><span class="lbl">凍結 ViT</span><div class="track"><div class="ref" style="left:50%"></div><div class="fill refbar" style="width:53.3%" data-tip="凍結 ViT：0.533，7 窗中 6 窗 > 0.5"></div></div><span class="val">0.533</span></div>
+        <div class="bar-row"><span class="lbl">只用 H_t（敘述）</span><div class="track"><div class="ref" style="left:50%"></div><div class="fill refbar" style="width:47.5%" data-tip="只用 H_t：0.475"></div></div><span class="val">0.475</span></div>
+        <div class="bar-row"><span class="lbl">價格數值特徵</span><div class="track"><div class="ref" style="left:50%"></div><div class="fill refbar" style="width:46.4%" data-tip="價格數值特徵：0.464"></div></div><span class="val">0.464</span></div>
+      </div>
+      <p class="axis-note">虛線 = 0.5（亂猜）。改成兩類並沒有比較好預測，主線維持分位數三類。</p>
+    </div>
+  </div>
+
+  <div class="panel tbl">
+    <table>
+      <thead><tr><th>指標（run 20261105_230521）</th><th class="n">結果</th><th>參考</th></tr></thead>
+      <tbody>
+        <tr><td>Validation L_align</td><td class="n">1.292</td><td>batch 內圖對到自己敘述 0.497（亂猜約 0.17）</td></tr>
+        <tr><td>Validation L_ground</td><td class="n">0.073</td><td>只算正確定義有被取到的天（ground_coverage 64.9%）</td></tr>
+        <tr><td>α̂ 最高那段 = 敘述型態那段</td><td class="n">0.977</td><td>α* 改型態標籤之前，cosine 版只有 18.7% 指向正確定義</td></tr>
+        <tr><td>RAG-1 hit@1／hit@3</td><td class="n">0.317／0.649</td><td>7 段亂猜 0.14／0.43</td></tr>
+        <tr><td>Z_fused 兩兩 cosine</td><td class="n">0.963</td><td>遮掉 H_t 變動 20%，歸零 H_v 變動 38%</td></tr>
+        <tr class="em"><td>型態 probe（遮掉 H_t）Test</td><td class="n">0.596</td><td>macro F1 0.440；凍結 ViT 0.645／0.489</td></tr>
+        <tr><td>3 類情緒分類 Test（附屬）</td><td class="n">0.394</td><td>三個 seed 平均 0.378；直接加 CE 會讓 Z_fused 塌成常數</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="grid2">
+    <div class="panel">
+      <h3>型態類別數 × K 線根數</h3>
+      <ul class="clean" style="margin-top:10px">
+        <li>9 類的四種反轉合計只有 1.7–2.5%，頭肩底 0 天。</li>
+        <li>7 類（反轉拆成頂部、底部）有效類別數 5.36，突破／跌破命中 89%／90%，矛盾 3／5 天。</li>
+        <li>拉長到 30、40 根好處很小，40 根的跌破只剩 16 天。定案 7 類、20 根（#129）。</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h3>資料盤點：新聞與 y_belief</h3>
+      <ul class="clean" style="margin-top:10px">
+        <li>15,467 則當天新聞，約 78% 明顯跟 Apple 相關；但 RAG-2 的新聞短版只有 55.6% 提到 Apple。</li>
+        <li>舊 y_belief（DeepSeek）只到 2026-02-26，Test 只涵蓋 87／203 天。</li>
+        <li>舊 y_belief 的 risk_level 預測未來 5 天波動 AUC 0.531；只看過去 20 天波動就有 0.692。無關新聞多寡看不出差別。</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section aria-labelledby="s-issue">
+  <div><div class="eyebrow">03 · 問題與風險</div><h2 id="s-issue">目前看到的問題</h2></div>
+  <div class="panel">
+    <div class="issue"><div class="h"><span class="tag bad">主要</span>融合層沒有比凍結 ViT 多學到東西</div><p>型態 probe 低約 5 個百分點，Z_fused 兩兩 cosine 0.963，仍偏向常數。RAG-1 hit@1 只有 0.32，三分之一的天正確定義沒被取到，L_ground 在這些天不起作用。</p></div>
+    <div class="issue"><div class="h"><span class="tag bad">主要</span>y_belief 需要重做</div><p>舊版用 DeepSeek，只涵蓋 1,223 天、有 14 天的 TREND 跟 A 現在的標籤不一致；risk_level 接近亂猜。如果改用 Haiku 全部重跑，約 7–8 美元，方法跟舊版一樣。</p></div>
+    <div class="issue"><div class="h"><span class="tag wip">設計</span>RAG-2 其實不是檢索</div><p>沒有 query、沒有相關性排序，只依日期和來源配額組 context；新聞超過上限時從當天較晚發布的開始刪（253 天被截）。背景 10-K／10-Q 與法說會段落約一季都一樣。</p></div>
+    <div class="issue"><div class="h"><span class="tag wip">設計</span>新聞含有不少無關內容</div><p>無關新聞裡約 40% 是大盤／總經、18% 是同業、9% 是清單式閒聊（關鍵字粗分）。加上「背景」標記也沒辦法驗證模型有沒有用對。</p></div>
+    <div class="issue"><div class="h"><span class="tag no">待補</span>只做了 AAPL</div><p>NVDA、MSFT 的 K 線敘述還沒產生（每檔約 0.8 美元）；RAG-1 定義仍是草稿。</p></div>
+  </div>
+</section>
+
+<section aria-labelledby="s-next">
+  <div><div class="eyebrow">04 · 待決定與下一步</div><h2 id="s-next">需要決定的事</h2></div>
+  <div class="decide">
+    <div class="card"><div class="q">RAG-2：改名，還是改成真的檢索？</div><p>改名：照實描述成「依可得日期與來源組成的文件 context」，不用多做事。改成檢索：用「Apple 在日期 t」當 query，對每天約 82 段候選打相關性分數、排出前 20 段，同時解決新聞無關和背景段落重複的問題。</p></div>
+    <div class="card"><div class="q">新聞要不要過濾？</div><p>建議只收以 Apple 為主角的新聞（約 78%），y_belief 與 RAG-2 用同一套規則，讓答案和 Decoder 看到的內容一致。大盤資訊之後要加的話，用數值會比用新聞文字可靠。</p></div>
+    <div class="card"><div class="q">risk_level 改用公式？</div><p>跟 TREND、成交量標籤一樣，用未來 5 天實際波動的分位數決定，LLM 只寫敘述；這會改到 y_belief 的定義。</p></div>
+    <div class="card"><div class="q">y_belief 用 Haiku 全部重跑？</div><p>約 7–8 美元，補齊 1,381 天、避免混用兩種 LLM。最好等上面三件事定案後一起做。</p></div>
+  </div>
+  <div class="panel">
+    <h3>接著可以直接做的</h3>
+    <ul class="clean" style="margin-top:10px">
+      <li>RAG-1 定義人工校對，並查 hit@1 偏低的原因（哪些型態的定義最常被取錯）。</li>
+      <li>NVDA、MSFT 的 K 線敘述與第一階段驗證，確認 AAPL 的結論不是單一股票的現象。</li>
+      <li>Mac 上跑 512 版本 Decoder，先看 Z_fused 對 Decoder 有沒有幫助。</li>
+    </ul>
+  </div>
+</section>
+
+<p class="foot">資料來源：<code>docs/decisions.md</code> #108–#131、<code>docs/data_and_experiments_log.md</code>（2026-11-05、11-06 各節）、<code>data/outputs/reports/20261105_230521/report.md</code>。所有數字都是 AAPL、單一切分（Train 966／Validation 202／Test 203 天），除非另外註明。</p>
+
+</div>
+<div class="tip" role="tooltip" id="tip"></div>
+<script>
+(() => {
+  const tip = document.getElementById('tip');
+  document.querySelectorAll('.fill[data-tip]').forEach(el => {
+    el.addEventListener('mousemove', e => {
+      tip.textContent = el.dataset.tip;
+      tip.style.left = Math.min(e.clientX + 12, window.innerWidth - 270) + 'px';
+      tip.style.top = (e.clientY + 14) + 'px';
+      tip.style.opacity = 1;
+    });
+    el.addEventListener('mouseleave', () => { tip.style.opacity = 0; });
+  });
+})();
+</script>
+</body>
+</html>

@@ -75,6 +75,13 @@ rag2:
   today_8k_per_doc: 2       # 當天 8-K 每份必收、取分數最高的幾段
   older_8k_decay_days: 60   # 以前的 8-K 分數乘上 exp(−天數 / 60)
   dedupe_cos: 0.85          # 跟已選段落 cosine 超過這個值就跳過（同一事件的多則新聞）
+  # --- pool：候選範圍 ---
+  pool: daily               # daily：只用每日 JSON（當天新聞、最新一份財報與法說會）；all：t 以前所有文件，不設視窗，分數乘上衰減
+  decay_on: margin          # pool: all。relevance：分數 = 相似度 × 衰減；margin：分數 = (相似度 − relevance_floor) × 衰減
+  relevance_floor: 0.45     #   相似度普遍在 0.4–0.7，直接乘衰減會讓衰減決定一切，所以只對超過門檻的部分衰減
+  news_half_life_days: 10   # pool: all。新聞權重 0.5 ^ (距今天數 / 10)（AAPL 掃描見實驗紀錄 11/16）
+  older_8k_half_life_days: 30   # pool: all。以前的 8-K 權重 0.5 ^ (距今天數 / 30)
+  generation_decay: 0.5     # pool: all。10-K／10-Q、法說會不看天數：之後每多可得一份同類文件，權重乘 0.5（新的通常涵蓋舊的）
   # --- method: rule ---
   background_sections: [mda, risk_factors]   # 背景 10-K／10-Q 固定挑的章節
   transcript_snippets: 4    # 最近一場法說會挑幾段

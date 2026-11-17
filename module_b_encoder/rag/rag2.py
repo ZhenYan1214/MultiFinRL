@@ -18,6 +18,11 @@ method: embed（主線，#132）
        token 上限 max_tokens 限制；跟已選段落 cosine 超過 dedupe_cos 的跳過（同一事件的多則新聞）。
     4. 輸出依來源排列：當天 8-K → 新聞（分數高到低）→ 10-K／10-Q → 法說會 → 以前的 8-K。
 
+pool: all（rag2.pool，實驗中；預設 daily）
+    候選不靠每日 JSON，改成 t 以前所有可得文件（build_pool，不設視窗），分數乘上衰減（PoolRetriever）：
+    新聞與以前的 8-K 依天數半衰；10-K／10-Q、法說會依「之後又出了幾份」衰減（新的通常涵蓋舊的）。
+    decay_on: margin 時只對超過 relevance_floor 的相似度衰減。
+
 method: rule（舊版，對照用）
     當天 8-K 全收、當天新聞全收（標題＋第一句）、背景 10-K／10-Q 固定挑 MD&A 與風險因素開頭、
     法說會挑財務關鍵字最多的段落、以前的 8-K 補到上限；超過時從新聞尾端刪。不做相似度排序。
@@ -37,6 +42,7 @@ import datetime as dt
 import math
 import re
 from collections import Counter
+from pathlib import Path
 
 import numpy as np
 
@@ -60,10 +66,11 @@ BOILERPLATE = re.compile(r"forward-looking|Private Securities Litigation|assumes
                          r"Unless otherwise stated|should be read in conjunction|Table of Contents", re.I)
 SOURCE_NAMES = {"10-K": "10-K", "10-Q": "10-Q", "8-K": "8-K", "earnings_call": "Earnings call"}
 GROUP_ORDER = ["today_8k", "news", "periodic", "transcript", "older_8k"]
-# method: embed 切段時額外跳過的段落：附件清單、無變動聲明、法說會開場與主持人串場
+# method: embed 切段時額外跳過的段落：附件清單、無變動聲明、法說會開場與主持人串場、8-K 封面
 SKIP_WINDOW = re.compile(r"Incorporated by Reference|Exhibit (Number|Description)|no material changes|"
                          r"welcome to the|thank you for joining|Earnings Call Transcript|"
-                         r"Operator \(Operator\)|SIGNATURES?\b|Pursuant to the requirements|/s/", re.I)
+                         r"Operator \(Operator\)|SIGNATURES?\b|Pursuant to the requirements|/s/|"
+                         r"SECURITIES AND EXCHANGE COMMISSION|Exact name of registrant|Commission File Number", re.I)
 PAGE_HEADER = re.compile(r"Apple Inc\. \| (Q\d )?\d{4} Form 10-[KQ] \| \d+\s*")   # 10-K／10-Q 每頁頁首
 SECTION_HEADER = re.compile(r"(PART [IV]+ — [A-Z ]+)|(Item \d+[A-Z]?\.\s*)$")
 
@@ -420,6 +427,10 @@ class EmbedRetriever:
             llm_tok = AutoTokenizer.from_pretrained(name)
         self.count_tokens = lambda text: len(llm_tok(text, add_special_tokens=False)["input_ids"])
 
+    def relevance(self, emb: np.ndarray) -> np.ndarray:
+        w = self.rc["entity_weight"]
+        return w * (emb @ self.q_entity) + (1 - w) * (emb @ self.q_aspects.T).max(axis=1)
+
     def __call__(self, record: dict) -> tuple[list[dict], int]:
         cands = build_candidates(record, self.cfg)
         if not cands:
@@ -427,6 +438,126 @@ class EmbedRetriever:
         emb = self.embedder.passages([c["text"] for c in cands])
         scores = score_candidates(cands, emb, self.q_entity, self.q_aspects, self.rc, record["date"])
         return select(cands, emb, scores, self.rc, self.count_tokens), len(cands)
+
+
+# ---------------------------------------------------------------- method: embed，pool: all（不限視窗＋衰減）
+
+def build_pool(ticker: str, cfg: dict) -> list[dict]:
+    """t 以前「所有」可得文件的短段（不靠每日 JSON，直接讀 raw；可得交易日的規則跟 build_dataset.py 相同）。
+    每段帶 avail（可得交易日）、doc（文件代號）與 series（periodic／transcript 用來算「後面又出了幾份」）。"""
+    from module_a_data.build_dataset import filing_available_date, transcript_available_date
+    from module_a_data.preprocess.chunker import make_chunks
+    from module_a_data.preprocess.text_cleaner import clean
+
+    n_words, max_tokens = cfg["rag2"]["snippet_words"], cfg["text"]["max_chunk_tokens"]
+    pool = []
+
+    def add(item, avail, doc, series=None):
+        pool.append({**item, "avail": avail, "doc": doc, "series": series})
+
+    # 新聞：raw 檔名就是可得交易日（盤後與週末的新聞已歸到下一個交易日）
+    for f in sorted((paths.RAW_NEWS / ticker).glob("*.json")):
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", f.stem):
+            continue
+        for k, n in enumerate(read_json(f)["news"]):
+            add(_item("News", "news", n["published_at"][:10], None, news_snippet(n, n_words), group="news"),
+                f.stem, f"news_{f.stem}_{k}")
+
+    index = paths.RAW_FILINGS / ticker / "index.json"
+    for fl in (read_json(index)["filings"] if index.exists() else []):
+        form, fdate = fl["form"], fl["filing_date"]
+        avail = filing_available_date(ticker, fl)
+        html = (paths.RAW_FILINGS / ticker / fl["file"]).read_text(encoding="utf-8", errors="ignore")
+        for c in make_chunks(ticker, form, fdate, clean(html), max_tokens, date_key="filing_date"):
+            for w in window_text(c["text"], n_words):
+                add(_item(SOURCE_NAMES.get(form, form), form, fdate, c["chunk_id"], w,
+                          group="8k" if form == "8-K" else "periodic"),
+                    avail, f"{form}_{fdate}", None if form == "8-K" else "periodic")
+
+    index = paths.RAW_TRANSCRIPTS / ticker / "index.json"
+    for tr in (read_json(index)["transcripts"] if index.exists() else []):
+        avail = transcript_available_date(ticker, tr)
+        text = (paths.RAW_TRANSCRIPTS / ticker / tr["file"]).read_text(encoding="utf-8", errors="ignore")
+        for c in make_chunks(ticker, "earnings_call", tr["event_date"], text, max_tokens, date_key="event_date"):
+            for w in window_text(c["text"], n_words):
+                add(_item("Earnings call", "earnings_call", tr["event_date"], c["chunk_id"], w, group="transcript"),
+                    avail, f"EC_{tr['event_date']}", "transcript")
+    return pool
+
+
+class PoolRetriever:
+    """rag2.pool: all。候選是 t 以前所有可得的文件，不設視窗；分數 = 相關度 × 衰減：
+        新聞：0.5 ^ (距今天數 / news_half_life_days)
+        以前的 8-K：0.5 ^ (距今天數 / older_8k_half_life_days)；當天 8-K 每份必收
+        10-K／10-Q、法說會：generation_decay ^ (之後又可得了幾份同類文件)。新的一份通常涵蓋舊的資訊，
+            所以不看天數，看「被取代了幾次」；最新一份權重 1。
+    相關度（固定 query 的嵌入相似度）每段只算一次；挑段方式跟 pool: daily 相同（select）。"""
+
+    def __init__(self, cfg: dict, ticker: str):
+        self.base = EmbedRetriever(cfg)
+        self.rc = cfg["rag2"]
+        self.pool = build_pool(ticker, cfg)
+        texts = [p["text"] for p in self.pool]
+        self.emb = self.base.embedder.passages(texts)
+        self.rel = self.base.relevance(self.emb)
+        self.avail = np.array([p["avail"] for p in self.pool])
+        self.group = np.array([p["group"] for p in self.pool])
+        self.series_docs = {s: sorted({(p["avail"], p["doc"]) for p in self.pool if p["series"] == s})
+                            for s in ("periodic", "transcript")}
+        print(f"[rag2] {ticker} 候選池 {len(self.pool)} 段（{dict(Counter(self.group.tolist()))}）")
+
+    def _generation(self, series: str, date: str) -> dict[str, int]:
+        """date 當下，每份 periodic／transcript 文件之後又可得了幾份（最新一份 = 0）。"""
+        docs = [d for a, d in self.series_docs[series] if a <= date]
+        return {d: len(docs) - 1 - k for k, d in enumerate(docs)}
+
+    def __call__(self, date: str, top_per_group: int = 60) -> tuple[list[dict], int]:
+        rc = self.rc
+        idx = np.flatnonzero(self.avail <= date)
+        if len(idx) == 0:
+            return [], 0
+        d0 = dt.date.fromisoformat(date)
+        age = np.array([(d0 - dt.date.fromisoformat(a)).days for a in self.avail[idx]])
+        gen = {**self._generation("periodic", date), **self._generation("transcript", date)}
+        decay = np.ones(len(idx))
+        groups = []
+        for j, i in enumerate(idx):
+            p = self.pool[i]
+            g = p["group"]
+            if g == "news":
+                decay[j] = 0.5 ** (age[j] / rc["news_half_life_days"])
+            elif g == "8k":
+                g = "today_8k" if p["avail"] == date else "older_8k"
+                if g == "older_8k":
+                    decay[j] = 0.5 ** (age[j] / rc["older_8k_half_life_days"])
+            else:
+                decay[j] = rc["generation_decay"] ** gen[p["doc"]]
+            groups.append(g)
+        groups = np.array(groups)
+        rel = self.rel[idx]
+        if rc.get("decay_on", "relevance") == "margin":
+            # 相似度普遍落在 0.4–0.7，直接乘衰減時衰減幾乎決定一切；改成乘在「超過 relevance_floor 的部分」
+            rel = np.clip(rel - rc["relevance_floor"], 0, None)
+        score = rel * decay
+        # 每個來源只留分數最高的前 top_per_group 段給 select（其餘不可能被選到；新聞門檻看原始相關度）
+        keep = []
+        for g in set(groups.tolist()):
+            m = np.flatnonzero(groups == g)
+            if g == "news":
+                m = m[self.rel[idx[m]] >= rc["news_min_score"]]
+            if g != "today_8k" and len(m) > top_per_group:
+                m = m[np.argsort(-score[m])[:top_per_group]]
+            keep.extend(m.tolist())
+        cands, sub = [], []
+        for j in keep:
+            p = self.pool[idx[j]]
+            cands.append({**{k: p[k] for k in ("source", "doc_type", "date", "section", "chunk_id", "text")},
+                          "group": groups[j], "score": None, "age_days": int(age[j]),
+                          "relevance": round(float(self.rel[idx[j]]), 4), "decay": round(float(decay[j]), 4)})
+            sub.append(idx[j])
+        # select() 內的 news_min_score 是針對原始分數；這裡已先用相關度過濾，傳衰減後分數時關掉它
+        snippets = select(cands, self.emb[sub], score[keep], {**rc, "news_min_score": -1.0}, self.base.count_tokens)
+        return snippets, len(idx)
 
 
 # ---------------------------------------------------------------- 共用
@@ -451,7 +582,11 @@ def main():
     ap.add_argument("--date", default=None, help="只做這一天")
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--show", action="store_true", help="印出 context（人工抽查用）")
+    ap.add_argument("--pool", choices=["all", "daily"], default=cfg["rag2"].get("pool", "daily"),
+                    help="embed 的候選：all＝t 以前所有文件＋衰減；daily＝只用每日 JSON")
+    ap.add_argument("--out", default=None, help="另存到這個資料夾（比較用；預設 data/outputs/rag2/{TICKER}/）")
     args = ap.parse_args()
+    out_dir = Path(args.out) if args.out else None
 
     files = sorted((paths.DATASET / args.ticker).glob("*.json"))
     if args.date:
@@ -461,23 +596,29 @@ def main():
     if not files:
         raise SystemExit(f"找不到 {paths.DATASET / args.ticker} 的每日 JSON")
 
-    retriever = EmbedRetriever(cfg) if args.method == "embed" else None
+    pool_mode = args.pool if args.method == "embed" else None
+    if pool_mode == "all":
+        retriever = PoolRetriever(cfg, args.ticker)
+    else:
+        retriever = EmbedRetriever(cfg) if args.method == "embed" else None
     counts, sources = [], Counter()
     for f in files:
         record = read_json(f)
-        if retriever is not None:
+        if pool_mode == "all":
+            snippets, n_cand = retriever(record["date"])
+        elif retriever is not None:
             snippets, n_cand = retriever(record)
         else:
             snippets, n_cand = build_snippets_rule(record, cfg), None
         context = render(snippets)
-        write_json({"ticker": args.ticker, "date": record["date"], "method": args.method,
+        write_json({"ticker": args.ticker, "date": record["date"], "method": args.method, "pool": pool_mode,
                     "n_candidates": n_cand, "snippets": snippets, "context": context},
-                   paths.rag2_path(args.ticker, record["date"]))
+                   out_dir / f"{record['date']}.json" if out_dir else paths.rag2_path(args.ticker, record["date"]))
         counts.append(len(snippets))
         sources.update(s["source"] for s in snippets)
         if args.show:
             print(f"===== {record['date']}（{len(snippets)} 段，候選 {n_cand}）\n{context}\n")
-    print(f"[rag2] {args.ticker}（{args.method}）: {len(files)} 天 -> {paths.OUTPUTS / 'rag2' / args.ticker}")
+    print(f"[rag2] {args.ticker}（{args.method}, pool={pool_mode}）: {len(files)} 天 -> {out_dir or paths.OUTPUTS / 'rag2' / args.ticker}")
     print(f"[rag2] 每天平均 {sum(counts) / len(counts):.1f} 段（最少 {min(counts)}、最多 {max(counts)}）；"
           f"來源分布 {dict(sources)}")
 
